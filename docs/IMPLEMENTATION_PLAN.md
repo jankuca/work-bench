@@ -44,7 +44,7 @@ on Linux once a toolchain is installed — see §6.
 
 Six modules. The top three are pure Swift (Foundation only, no AppKit) so they build and test off-device.
 
-```
+```text
 PRStackMonitor.app  (AppKit shell: NSStatusItem, NSPopover, SwiftUI views)
         │
         ├── PanelUI            SwiftUI views + design tokens          (macOS only)
@@ -62,24 +62,53 @@ testable without a Mac in the loop.
 
 ### Data flow
 
-```
+```text
 poll tick ─► GitHubKit.fetch(repos)   ┐
-            LinearKit.fetch(issueIds) ┼─► RawSnapshot ─► PRStackCore.derive(snapshot, localState, now)
+            LinearKit.fetch(issueIds) ┼─► RawSnapshot ─► PRStackCore.derive(...)
             Persistence.load()        ┘                          │
+            previous PanelModel ──────────────────────────────────┤
                                                                  ├─► PanelModel  ─► PanelUI
                                                                  ├─► IconState   ─► StatusItemController
                                                                  └─► [DomainEvent] ─► EventBus ─► sinks
 ```
 
-`localState` = dismissed IDs, snooze deadlines, last-read digests, release bindings. Derivation is a pure
-function of `(RawSnapshot, LocalState, Date)`; the same inputs always yield the same panel.
+```swift
+func derive(snapshot: RawSnapshot,
+            local: LocalState,
+            previous: PanelModel?,   // nil on cold start
+            now: Date) -> (model: PanelModel, events: [DomainEvent])
+```
+
+`local` = dismissed IDs, snooze deadlines, last-read digests, release bindings. `previous` is the model from
+the last derivation, held by `SyncEngine` and **not persisted**. Derivation is a pure function of all four
+inputs; the same inputs always yield the same panel and the same event list.
+
+`previous: nil` is the cold-start baseline: the model is built normally and the event list is **empty**, so
+a relaunch never replays history as fresh activity. Unread dots on relaunch come from the persisted read
+digests, which is a separate mechanism — that distinction gets an explicit test (`relaunch emits no events
+but preserves unread`).
+
+### Snooze semantics
+
+A PR with a snooze deadline in the future (`local.snoozedUntil[id] > now`) is **suppressed** across every
+derived surface, uniformly:
+
+- `RowStatus` still resolves normally, but `isAttention` is forced false — no warm tint, no bolder title.
+- The row does not count toward the icon's red badge, and cannot raise the icon out of idle.
+- No `DomainEvent` is emitted for it, so a future notification sink stays quiet too.
+- The row renders dimmed with the wake time in the meta line (PRD §8).
+
+The deadline is compared against the injected `now`, so expiry is deterministic and testable — at
+`now >= deadline` the row resumes full derivation with no further input, and the transition back into
+attention emits its event normally. Snooze never suppresses `shipped` or `closed`, which are not attention
+states and still move to Done.
 
 ### Event bus (the notification extension point)
 
 Derivation also returns the **transitions** it observed, not just the new state:
 `reachedProduction(PRID)`, `changesRequested(PRID)`, `checksFailed(PRID)`, `becameMergeable(PRID)`,
-`newComments(PRID, count)`, `connectionLost`. These are diffed from the previous `PanelModel`, so they're a
-pure by-product of derivation and equally testable.
+`newComments(PRID, count)`, `connectionLost(Source)`. These are diffed against `previous`, so they're a pure
+by-product of derivation and equally testable.
 
 ```swift
 protocol EventSink { func handle(_ events: [DomainEvent], context: PanelModel) }
@@ -129,29 +158,49 @@ struct PullRequest {
 
 struct Stack { var members: [PRID] }        // ordered top-most first, base last
 struct Release { var tag: String; var prs: [PRID]; var taggedAt: Date }
-enum TrackSegment { case checks(CheckRollup), merged(Bool), released(Bool) }
+
+/// Semantic release stage. v1's tag tracker only ever produces the first three
+/// cases; `deploying` and `deployFailed` exist so a DeploymentAPITracker can
+/// populate them without changing this type or the views that switch over it.
+enum ReleaseStage {
+  case unmerged            // segment 2 and 3 empty
+  case mergedAwaitingTag   // segment 2 filled
+  case released(tag: String)
+  case deploying(tag: String)      // reserved — not produced in v1
+  case deployFailed(tag: String)   // reserved — not produced in v1
+}
 ```
 
 ### Row status — single value, strict precedence
 
 Each row resolves to exactly one `RowStatus`. First match wins:
 
-1. `conflicted` — mergeable == conflicting → red
-2. `changesRequested` — review decision → red
-3. `checksFailing` — check rollup failing → red
-4. `blocked(on: PRID)` — parent PR still open → neutral grey, meta reads `waiting on #NNNN`
-5. `merged` — merged, no matching tag yet → purple, meta reads `merged · awaiting release`
-6. `shipped` — merge commit contained in a matching tag → green, moves to Done
-7. `approved` / `readyToMerge` — green (`readyToMerge` when approved **and** checks green **and** mergeable)
-8. `inReview` — default
-9. `closed` — grey, Done section
+Terminal states are checked **first**, because they're facts about the PR rather than signals about it — a
+closed PR carries whatever stale review metadata it had at close, and must not fall through to a live status:
+
+1. `closed` — state == closed and not merged → grey, Done section
+2. `shipped` — merged **and** merge commit contained in a matching tag → green, moves to Done
+3. `merged` — merged, no matching tag yet → purple, meta reads `merged · awaiting release`
+
+Then, for open PRs only, first match wins:
+
+4. `conflicted` — mergeable == conflicting → red
+5. `changesRequested` — review decision → red
+6. `checksFailing` — check rollup failing → red
+7. `blocked(on: PRID)` — parent PR still open → neutral grey, meta reads `waiting on #NNNN`
+8. `approved` / `readyToMerge` — green (`readyToMerge` when approved **and** checks green **and** mergeable)
+9. `inReview` — default fallback
+
+Fixtures pin the ordering hazard directly: a closed PR with no review metadata, and a closed PR carrying a
+stale `changesRequested` decision, must both resolve to `closed` and land in Done.
 
 Invariant from the PRD (§5.2): *a row that needs attention always has a matching icon; a green icon never
 appears in a tinted row.* Encode this as a unit test over all `RowStatus` × tint combinations, not as a
 convention.
 
-**Attention** = statuses 1–3. That set drives the warm tint, the bolder title weight, and the red badge
-count. Note 4 (`blocked`) is deliberately **not** attention — it's the layer below's problem.
+**Attention** = statuses 4–6, and only when the row is not snoozed. That set drives the warm tint, the bolder
+title weight, and the red badge count. Note 7 (`blocked`) is deliberately **not** attention — it's the layer
+below's problem.
 
 Under tags-only release tracking (§3) there is no deploy-failure signal, so no deploy state can reach
 attention. See the note there — this is the one place the model is narrower than the PRD.
@@ -162,22 +211,55 @@ Build `head → PR` index over the user's own open PRs; a PR's parent is the PR 
 PR's `baseRef`. Chains of length ≥ 2 become a `Stack`, rendered top-most first (walk to the leaf, emit
 downward). Cases to handle explicitly, each with a fixture test:
 
-- **Merged out of order** — merged parent drops out; children re-target trunk; spine reflows silently.
-- **Fork (two PRs share a base)** — the design assumes a linear chain. Decision: the longest chain keeps
-  the spine; sibling branches render as their own runs directly beneath. No error state.
-- **Cycle** — impossible in git but cheap to guard: visited-set, break and treat as loose PRs.
-- **Parent in another repo / not authored by user** — not a stack; row shows normally.
+Each case below is a **named fixture with golden assertions** in `PRStackCoreTests`, not just a documented
+intention — fixture names in parentheses:
+
+- **Merged out of order** (`stack-merged-out-of-order`) — merged parent drops out; children re-target trunk;
+  spine reflows silently.
+- **Fork, two PRs share a base** (`stack-fork-sibling-runs`) — the design assumes a linear chain. Decision:
+  the longest chain keeps the spine; sibling branches render as their own runs directly beneath. No error
+  state. Golden asserts both runs and their relative order.
+- **Cycle** (`stack-cycle-guard`) — impossible in git but cheap to guard: visited-set, break, and emit the
+  members as loose PRs. Golden asserts no spine is drawn.
+- **Parent in another repo** (`stack-parent-foreign-repo`) and **parent authored by someone else**
+  (`stack-parent-foreign-author`) — not a stack; each row renders normally with no spine and no
+  `blocked` status.
 
 ### Project grouping (Linear)
 
 Resolve an issue identifier per PR, in order: (1) branch name match `([A-Z][A-Z0-9]+-\d+)`, (2) PR title
-prefix, (3) `linear.app/…/issue/XXX-123` URL in the body. Then batch-resolve identifiers → project via
-Linear's GraphQL. No identifier, or an issue with no project → **Other**. Cache the mapping on disk; issues
-rarely change project, so this is one cheap query per new identifier.
+prefix, (3) `linear.app/…/issue/XXX-123` URL in the body. No identifier, or an issue with no project →
+**Other**.
+
+Resolution keeps the **full identifier** as the key throughout. Linear's `issue(id:)` accepts the
+human-readable identifier directly, so each uncached identifier is one aliased field in a single batched
+query:
+
+```graphql
+query { a: issue(id: "BIL-312") { identifier url project { id name } }
+        b: issue(id: "SRC-97")  { identifier url project { id name } } }
+```
+
+Do **not** resolve via `issues(filter: { team: { key: { in: [...] } }, number: { in: [...] } })`. Independent
+`in` lists match the cross-product: given `BIL-312` and `SRC-97`, that filter also matches `BIL-97` and
+`SRC-312`, silently filing PRs under the wrong project. If a filtered query is ever needed for volume, results
+must be matched back by returned `identifier` — never by position or by number alone. A two-team fixture
+(`linear-cross-team-number-collision`) pins this.
+
+Cache the identifier → project mapping on disk, refreshed on cache miss and once a day. **When Linear is
+unavailable, cached mappings are still used** — rows keep their project headings, and only identifiers with no
+cached entry fall into `Other`. Linear is marked stale in the footer rather than silently reshuffling the
+panel; a Linear outage must never make project sections appear to empty out.
 
 Section order: projects by most recent activity among their PRs, then `Other`, then `Done`. **Within a
-section, order is stable** — stacks first (as runs), then loose PRs by PR number descending. Never re-sort
-by urgency (PRD §5.1).
+section, order is stable and fully deterministic** — never API order:
+
+1. Stack runs first, ordered by their **base PR number, descending**.
+2. Then loose PRs by PR number, descending.
+
+Stack members within a run stay top-most first, base last. A golden test with two runs in one project pins
+run ordering, since API order alone would let whole runs swap places between polls. Never re-sort by urgency
+(PRD §5.1).
 
 ### Unread
 
@@ -208,40 +290,78 @@ plus the All/Selected toggle. Switching to Selected pre-checks whatever is curre
 switch never blanks the panel. Trunk is whatever each repo reports as `defaultBranchRef` — not configured
 per repo, just read.
 
-One GraphQL query per poll (not per repo) returns everything the list needs:
+One GraphQL search per poll (not per repo), **paginated to completion**:
 
 ```graphql
-search(query: "is:pr author:@me -is:draft <repo qualifiers>", type: ISSUE, first: 50) {
+search(query: "is:pr author:@me -is:draft <repo qualifiers>", type: ISSUE, first: 50, after: $cursor) {
+  pageInfo { hasNextPage endCursor }
   nodes { ... on PullRequest {
-    number title url headRefName baseRefName isDraft state createdAt updatedAt
-    mergeable  reviewDecision  mergeCommit { oid }  comments { totalCount }
+    number title url headRefName baseRefName isDraft state createdAt updatedAt mergedAt
+    mergeable  reviewDecision  mergeCommit { oid }
+    repository { nameWithOwner  defaultBranchRef { name } }
+    comments(last: 1) { totalCount nodes { createdAt } }   # totalCount + lastCommentAt
     reviews(last: 20) { nodes { author { login avatarUrl } state submittedAt } }
     commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first:20){ ... } } } } }
   } }
 }
 ```
 
-Merged PRs are fetched with a second, narrower query bounded to the last 14 days — enough to follow a
-release to production without unbounded history.
+Loop on `pageInfo.hasNextPage`, passing `endCursor` as `after`, until exhausted. This is not optional in
+either scope: All mode would otherwise silently drop everything past the 50th PR, and Selected mode would
+drop repos whose PRs happen to sort onto a later page. A safety cap of 10 pages (500 PRs) guards against a
+runaway loop; hitting it surfaces a footer warning rather than truncating silently.
+
+Field notes, since the domain model depends on them: `repository.nameWithOwner` supplies repo identity for
+`PRID` and the meta-line repo name; `repository.defaultBranchRef.name` is the trunk (§ repo scope);
+`mergedAt` is the merge **time** — `mergeCommit.oid` is only the commit ID and carries no timestamp;
+`comments(last: 1)` yields both `totalCount` and the newest `createdAt` for `lastCommentAt`, both of which
+feed the unread digest.
+
+**Merged PRs** are fetched by a second query whose lower bound is *dynamic*, not a fixed window: it starts at
+the oldest **unbound** merged PR still in local state (i.e. merged but not yet matched to a tag), defaulting
+to 14 days back when there are none. Unbound merged PRs are persisted indefinitely with their merge commit,
+so a release cut six weeks after the merge still binds and still flips the row to shipped. A fixed 14-day
+window would drop the PR out of the query, lose the merge commit, and leave it stranded at
+`merged · awaiting release` forever — exactly the case PRD §10 says should resolve quietly whenever the tag
+finally appears.
 
 ### Release tracking — tags only
 
 **Shipped means "the merge commit is contained in a tag matching the pattern."** No Deployments API, no
-workflow runs, no deploy outcome. Default pattern `v*`, configurable per repo (glob, matched against the tag
-name).
+workflow runs, no deploy outcome.
 
-1. On merge, record `mergeCommit.oid`. Fallback if absent (squash rewrote history): match `(#NNNN)` in
-   recent trunk commit messages.
-2. Poll tags via GraphQL `refs(refPrefix: "refs/tags/", query: <pattern prefix>, first: 20, orderBy: TAG_COMMIT_DATE)`,
-   ETag/`updatedAt`-gated. Only tags newer than the PR's merge time can contain it, which keeps the
-   candidate set tiny.
-3. Test containment oldest-candidate-first with `GET /repos/{o}/{r}/compare/{tag}...{sha}`: `status` of
+Tag patterns are stored as a **repository-keyed map**, `[String: String]` from `nameWithOwner` to glob, with
+`v*` as the default for any repo without an entry. A single global pattern can't serve a user whose repos tag
+as `v1.2.3` and `release-2026-01-04`; Settings edits the per-repo value inline in the repo list, showing the
+default greyed out until overridden.
+
+1. On merge, record `mergeCommit.oid` and `mergedAt`. Fallback if the oid is absent (squash rewrote history):
+   match `(#NNNN)` in recent trunk commit messages.
+2. Poll tags via GraphQL, **paginated**, ascending by tag commit date:
+
+   ```graphql
+   refs(refPrefix: "refs/tags/", query: <pattern prefix>, first: 100, after: $cursor,
+        orderBy: { field: TAG_COMMIT_DATE, direction: ASC }) {
+     pageInfo { hasNextPage endCursor }
+     nodes { name target { oid ... on Tag { committedDate } } }
+   }
+   ```
+
+   `orderBy` takes a `RefOrder` — both `field` and `direction` are required, and the direction must be
+   explicit rather than left to the default. Walk every page: a repo that tags often can easily push the
+   matching tag past the first page, and a truncated candidate list produces a false "not shipped yet" that
+   never self-corrects. Filter to tags newer than the PR's `mergedAt`, which keeps the tested set small even
+   though the fetched set is complete.
+3. Test containment **oldest candidate first** with `GET /repos/{o}/{r}/compare/{tag}...{sha}`: `status` of
    `identical` or `behind` means the tag contains the commit. First hit wins — that's the release the PR
-   shipped in. Bind PR → tag and cache the binding permanently; never re-test a bound PR.
+   shipped in, and testing oldest-first is what makes it the *earliest* such release rather than an arbitrary
+   one. Bind PR → tag and cache the binding permanently; never re-test a bound PR.
 4. A tag carries several of the user's PRs, so they flip to shipped together — the `1c` release grouping,
    for free.
 
-Cost is one cheap `compare` per (merged PR × new tag) until bound, and zero afterwards.
+Cost is one cheap `compare` per (merged PR × new candidate tag) until bound, and zero afterwards. A fixture
+with 25+ matching tags and the containing tag on the second page (`release-tag-on-later-page`) pins the
+pagination requirement.
 
 **What this model gives up**, relative to PRD §4/§7 — worth stating plainly, since it removes states the
 design draws:
@@ -256,8 +376,12 @@ design draws:
   Segments no longer pulse.
 
 This is a deliberate simplification and it removes roughly a milestone of work. Everything sits behind a
-`ReleaseTracker` protocol with `TagContainmentTracker` as the v1 implementation, so a `DeploymentAPITracker`
-that restores the in-flight and failed states can be added later without touching the model or the row view.
+`ReleaseTracker` protocol with `TagContainmentTracker` as the v1 implementation. `ReleaseStage` (§2) already
+carries `deploying` and `deployFailed` cases that v1 never produces, and both `PRStackCore` and the row view
+switch over the full enum from the start, so a `DeploymentAPITracker` can populate them without changing the
+model or the view. Two things it *would* still touch: `RowStatus` gains a `deployFailed` case in the attention
+set, and the icon regains its amber in-flight state (the drawing code keeps that case, §5). That's the honest
+scope of the seam — the data path and the segment rendering are ready; the attention rules are not.
 
 Budget: GraphQL 5,000 points/hr, REST 5,000 req/hr. One search query plus a handful of tag/compare calls per
 poll puts steady state well under 500 req/hr. Honour `X-RateLimit-Remaining`; below 10% fall back to the idle
@@ -265,47 +389,68 @@ interval and mark the footer.
 
 ### Linear
 
-Auth: personal API key (Settings → API), read-only usage. One query resolves identifiers to projects:
+Auth: personal API key (Settings → API), read-only usage. Resolution is by full identifier via aliased
+`issue(id:)` fields — see *Project grouping* in §2 for the query shape and for why the `issues(filter:)`
+cross-product form is unsafe.
 
-```graphql
-issues(filter: { number: { in: [...] }, team: { key: { in: [...] } } }) {
-  nodes { identifier url project { id name } }
-}
-```
-
-Cached indefinitely, refreshed on cache miss and once a day. Linear being down degrades to everything in
-`Other` — never blocks the GitHub list from rendering.
+Cached indefinitely, refreshed on cache miss and once a day. Linear being down never blocks the GitHub list
+from rendering: cached mappings keep their headings, only uncached identifiers fall to `Other`, and the
+Linear source is marked stale.
 
 ### Storage
 
 - `~/Library/Application Support/PRStackMonitor/state.json` — dismissed set, snooze deadlines, read
-  digests, PR→tag bindings, Linear project cache, last successful sync. Atomic writes, schema-versioned.
+  digests, PR→tag bindings, **unbound merged PRs with their merge commit and `mergedAt`**, Linear project
+  cache, per-source last successful sync. Atomic writes, schema-versioned.
 - Keychain (generic password, one item per service) — GitHub token, Linear key.
-- `UserDefaults` — repo scope mode + selected repos, tag pattern, poll intervals, launch-at-login, per-event
-  sink toggles.
+- `UserDefaults` — repo scope mode + selected repos, **per-repo tag pattern map** (`nameWithOwner` → glob,
+  default `v*`), poll intervals, launch-at-login, per-event sink toggles.
 
 ---
 
 ## 4. Sync engine
 
-Adaptive polling (PRD §9), driven by one state machine, never by scattered timers:
+Adaptive polling (PRD §9), driven by one state machine, never by scattered timers. Several conditions are
+true at once most of the time, so the table is **strictly ordered — first match wins**, top to bottom:
 
-| Condition | Interval |
-| --- | --- |
-| Panel open | 30 s |
-| Merged PR awaiting a release tag | 60 s |
-| Recently active (any change in last 15 min) | 2 min |
-| Idle | 5 min |
-| On battery below threshold (default 20%) | 15 min |
-| Display asleep / system asleep | suspended |
+| # | Condition | Interval |
+| --- | --- | --- |
+| 1 | Display or system asleep | suspended |
+| 2 | On battery below threshold (default 20%) | 15 min |
+| 3 | Panel open | 30 s |
+| 4 | Merged PR awaiting a release tag | 60 s |
+| 5 | Recently active (any change in last 15 min) | 2 min |
+| 6 | Idle | 5 min |
 
-Sleep and wake via `NSWorkspace.notificationCenter` (`willSleep` / `didWake`), power source via
-`IOPSCopyPowerSourcesInfo`. On wake: immediate sync, and if the last successful sync is older than the
-current interval the footer reads `stale · last synced 41m ago` rather than showing the data as fresh.
+The two power conditions outrank everything, including an open panel: a sleeping machine polls nothing, and a
+low battery is not worth a 30-second loop no matter what's on screen. Below those, the fastest applicable
+interval wins by virtue of ordering — panel-open beats release-waiting beats recent-activity beats idle.
 
-Failure handling: exponential backoff with jitter on 5xx/network; `401` flips global state to
-`disconnected` and raises the reconnect banner over the **last known list** (design `1e`), never over an
-empty panel. Any partial failure still renders — a Linear timeout must not blank the GitHub rows.
+**Manual refresh** syncs immediately and restarts the current interval's timer from zero; it never changes
+which interval applies. **Reconnecting** a source does the same, and additionally clears that source's
+backoff. Waking from sleep syncs immediately, then re-evaluates the table from the top.
+
+Sleep and wake need **two** subscriptions, since the conditions differ:
+
+- System sleep — `NSWorkspace.notificationCenter`, `willSleepNotification` / `didWakeNotification`.
+- Display sleep — `NSWorkspace.notificationCenter`, `screensDidSleepNotification` /
+  `screensDidWakeNotification`. `willSleep` does not fire when only the display sleeps, so without this the
+  app keeps polling at full rate against a dark screen.
+
+Power source via `IOPSCopyPowerSourcesInfo`. On wake, if the last successful sync is older than the current
+interval the footer reads `stale · last synced 41m ago` rather than showing the data as fresh.
+
+### Failure handling — per source, not global
+
+Connection state and last-success timestamps are held **per integration** (`github`, `linear`), never as one
+global flag. Exponential backoff with jitter on 5xx/network, tracked per source.
+
+A `401` marks **only that source** disconnected and raises its reconnect banner over that source's last known
+data (design `1e`) — never over an empty panel. Concretely: an expired Linear key leaves every GitHub row
+rendering normally, with cached project headings (§2) and a Linear-specific banner; an expired GitHub token
+raises the GitHub banner over the last known list while Linear stays healthy and irrelevant. The menu bar's
+`disconnected` glyph appears when **GitHub** is disconnected, since that's the source the panel's contents
+actually depend on; Linear alone being down is a footer/staleness condition, not an icon state.
 
 ---
 
@@ -344,8 +489,10 @@ dot, `synced 34s ago`, `Mark all read`, `Settings`).
   the member's position in the run. Top member draws downward only, base member upward only.
 - Title, 12.5 pt, single line, ellipsis; weight 500 → 560 as the row gains urgency.
 - Meta line, 11 pt: Linear identifier (indigo, clickable), repo name **only when the list spans more than
-  one repo**, `#number`, **one** status phrase (the only coloured token), age. The repo name is a tertiary
-  token — same grey as `#number`, no colour, and it truncates before the number does.
+  one repo**, `#number`, **one** status phrase, age. The status phrase is the only coloured *status* token —
+  the identifier's indigo is a link affordance, not a state signal, which is why it's the one other colour
+  permitted here. The repo name is tertiary: same grey as `#number`, no colour, and it truncates before the
+  number does.
 - Reviewer avatars, 18 pt circles, −2 pt overlap, each with a 1 pt row-tint halo and a 3 pt ring in that
   reviewer's state colour. Overflow becomes a count.
 - Release track: three 9×3 pt segments, 2 pt gap. Segment 1 carries **CI** state (green/red/amber/grey),
@@ -373,6 +520,11 @@ Implementation notes, because this is fiddlier than it looks:
   the standard arrangement and doesn't change dismissal feel.
 - Track hover with `.onContinuousHover` on the row, holding the hovered `PRID` in the panel's view model.
   Intercept keys with a local `NSEvent` monitor scoped to the popover's window, not a global monitor.
+- **Own the monitor's lifecycle explicitly.** `addLocalMonitorForEvents(matching:handler:)` returns a token
+  that stays live until removed. Store it in a single optional property; before registering, remove and nil
+  any existing token; tear it down on popover close and on resign. Skipping this leaks a monitor per open,
+  and every previous handler keeps firing — so the third open of the panel would dismiss three rows on one
+  `X`. Remove each token exactly once: double `removeMonitor` over-releases.
 - Every key action must also exist as a pointer affordance (the ✕, the row menu). The keyboard is an
   accelerator, never the only path.
 - Hovered-row highlight is a subtle raise of the row background, distinct from the attention tint — an
@@ -421,11 +573,17 @@ added without disturbing anything else.
 
 ## 6. Testing
 
-- **Fixture-driven derivation tests** (the bulk). Record real GitHub/Linear JSON once into
-  `Tests/Fixtures/`, scrub tokens and logins. Each PRD edge case (§10) is a named fixture: no Linear issue,
-  draft flip, out-of-order merge, never-tagged release, empty state, multi-repo list (repo name appears) and
-  single-repo list (it doesn't). Rollback-after-Done is not fixtured — it's undetectable under tags-only
-  tracking (§3).
+- **Fixture-driven derivation tests** (the bulk). Fixtures in `Tests/Fixtures/` are **synthetic by default** —
+  hand-written JSON in the shape of the API responses, with invented repos, logins, titles and identifiers.
+  Recording a real response is a fallback for getting a shape right, and anything recorded must be fully
+  anonymised before it is committed: PR titles, branch names, repo names, `nameWithOwner`, URLs, Linear
+  identifiers, reviewer logins, avatar URLs, and tokens. These fixtures describe private repositories, so
+  scrubbing only credentials would still commit the contents of the user's work to a public repo.
+  Each PRD edge case (§10) is a named fixture: no Linear issue, draft flip, out-of-order merge, never-tagged
+  release, empty state, multi-repo list (repo name appears) and single-repo list (it doesn't), plus the stack
+  cases named in §2 and `release-tag-on-later-page`, `linear-cross-team-number-collision`, and the two closed
+  PR variants from the precedence table. Rollback-after-Done is not fixtured — it's undetectable under
+  tags-only tracking (§3).
 - **Golden panel models.** Assert the full derived `PanelModel` against a checked-in snapshot — catches
   ordering regressions, which are the ones a human reviewer will miss.
 - **Invariant tests.** Attention ⇒ tinted ⇒ non-green icon. Section order stable across re-derivation with
@@ -447,14 +605,14 @@ Each is independently demoable. Estimates assume one engineer working in focused
 | # | Milestone | Contents | Done when |
 | --- | --- | --- | --- |
 | **M0** | Skeleton & local build | SwiftPM package + Xcode app target, `LSUIElement`, self-signed local identity, `make run`, empty popover | A signed-to-run-locally menu bar app opens an empty popover; keychain access doesn't re-prompt across rebuilds |
-| **M1** | Core model | Entities, `RowStatus` precedence, stack derivation, section ordering, fixtures + golden tests | `derive()` turns a fixture snapshot into the exact 2a panel model |
-| **M2** | GitHub ingestion | GraphQL client, repo scope modes, DTO→domain mapping, token in Keychain, ETag/rate-limit handling | Real PRs appear in a debug dump under both All and Selected scope |
+| **M1** | Core model | Entities, `RowStatus` precedence (terminal states first), stack derivation, deterministic run/section ordering, snooze suppression, fixtures + golden tests | `derive()` turns a fixture snapshot into the exact 2a panel model; every stack fixture in §2 has a golden |
+| **M2** | GitHub ingestion | GraphQL client with search pagination, repo scope modes, DTO→domain mapping, token in Keychain, ETag/rate-limit handling | Real PRs appear in a debug dump under both All and Selected scope, including past the first page of 50 |
 | **M3** | Panel UI | Tokens, `PRRow`, spine, sections, header/footer, needs-attention + all-clear states | Panel is pixel-comparable to 2a against real data |
-| **M4** | Icon + unread + events | Status item drawing (4 states), domain-event diffing, `EventSink` bus, digest-based unread, open/mark-all-read | Icon tracks the priority table; events fire with exactly one sink registered |
-| **M5** | Linear grouping | Identifier extraction, project resolution, cache, `Other` fallback | Rows group under real project headings; Linear outage degrades to `Other` |
-| **M6** | Release tracking | Merge-commit capture, tag polling by pattern, containment via `compare`, binding cache, third segment + Done section | A merged PR flips to shipped when a `v*` tag containing it appears, and lands in Done |
-| **M7** | Interactions & persistence | Click-through, issue link, dismiss, `Clear all`, snooze, refresh, hovered-row keyboard actions, Settings (tokens, repo scope, tag pattern) | Every row in PRD §8 works by pointer *and* by key; state survives relaunch |
-| **M8** | Sync & resilience | Adaptive intervals, sleep/battery, staleness, reconnect banner, backoff | Laptop sleeps overnight and wakes to correct, visibly-fresh state |
+| **M4** | Icon + unread + events | Status item drawing (4 states), domain-event diffing against `previous`, `EventSink` bus, digest-based unread, open/mark-all-read | Icon tracks the priority table; events fire with one sink registered; a relaunch emits no events but preserves unread |
+| **M5** | Linear grouping | Identifier extraction, per-identifier `issue(id:)` resolution, cache, `Other` fallback | Rows group under real project headings; a Linear outage keeps cached headings and marks the source stale |
+| **M6** | Release tracking | Merge-commit capture, unbound-merge persistence, paginated tag polling by per-repo pattern, containment via `compare`, binding cache, third segment + Done section | A merged PR flips to shipped when a matching tag appears — including a tag cut weeks later, and one found past the first page |
+| **M7** | Interactions & persistence | Click-through, issue link, dismiss, `Clear all`, snooze, refresh, hovered-row keyboard actions with monitor teardown, Settings (tokens, repo scope, per-repo tag pattern) | Every row in PRD §8 works by pointer *and* by key; ten open/close cycles fire each action exactly once; state survives relaunch |
+| **M8** | Sync & resilience | Ordered interval table, display *and* system sleep, battery, staleness, per-source connection state and reconnect banners, backoff | Laptop sleeps overnight and wakes to correct, visibly-fresh state; an expired Linear key leaves GitHub rows intact |
 | **M9** | Polish | Dark appearance, accessibility pass, long-list scroll performance | VoiceOver reads each row's state; contrast and reduced-colour verified; 25-PR fixture scrolls at 60fps |
 
 M0–M4 is the useful core: an app that tells you when something needs you. M6 is the other half of the
@@ -472,7 +630,7 @@ product's promise and shouldn't slip past M8.
 4. **Auto-collapse** — no collapsing at all, of stacks or projects. Scrolling is fine. Removed from §5 and M9.
 5. **Repo scope** — switchable: all repos, or a selected subset. §3.
 6. **Trunk and tags** — trunk is each repo's default branch, read not configured. Releases are tags matching
-   a glob, default `v*`.
+   a glob, stored **per repository** with `v*` as the default.
 7. **Deploy tracking** — tags only, outcome ignored. Shipped = merge commit is contained in a matching tag.
    §3 spells out what this removes (deploy-in-flight, deploy-failed, rollback detection) and the
    `ReleaseTracker` seam that would restore it.
@@ -485,7 +643,7 @@ release" indefinitely, which per PRD §10 is quiet by design and not an error st
 
 ## 9. Repository layout
 
-```
+```text
 PRStackMonitor/
   Package.swift                 # PRStackCore, GitHubKit, LinearKit (+ tests)
   Sources/
