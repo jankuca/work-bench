@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  doc-page:not(:defined) { visibility: hidden }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,sans-serif; -webkit-font-smoothing:antialiased; color:#1D1D1F; }
+  a { color:#5E6AD2; text-decoration:none; }
+  a:hover { color:#4C58BF; text-decoration:underline; }
+  h1,h2,h3 { color:#1D1D1F; }
+  p, li { orphans:3; widows:3; }
+  table { border-collapse:collapse; width:100%; }
+  th { text-align:left; font-size:12.5px; font-weight:640; color:#3C4149; border-bottom:1px solid #D8D8DC; padding:7px 10px 7px 0; }
+  td { font-size:13.5px; line-height:1.5; color:#3C4149; border-bottom:1px solid #ECECEF; padding:8px 10px 8px 0; vertical-align:top; }
+  td:last-child, th:last-child { padding-right:0; }
+</style>
+<script src="./doc-page.js"></script>
+</helmet>
+
+<doc-page margin="0.85in">
+
+  <div slot="footer" style="display:flex;align-items:center;gap:8px;padding-top:8px;border-top:1px solid #ECECEF;font-size:10.5px;color:#8A8F98">
+    <span>PR Stack Monitor — Product Requirements</span>
+    <span style="flex:1"></span>
+    <span>Draft v0.1 · August 2026</span>
+  </div>
+
+  <h1 style="font-size:30px;font-weight:660;letter-spacing:-0.025em;line-height:1.15;margin:0 0 10px">PR Stack Monitor</h1>
+  <p style="font-size:15.5px;line-height:1.6;color:#57606A;margin:0 0 6px;text-wrap:pretty">A macOS menu bar app that answers one question at a glance: <strong style="color:#1D1D1F;font-weight:600">is anything waiting on me, and did my merged work reach production?</strong></p>
+  <p style="font-size:13px;line-height:1.6;color:#8A8F98;margin:0 0 30px">Status: draft for review · Owner: engineering tools · Companion design: <a href="Tray App.dc.html">Tray App</a> (option 2a)</p>
+
+  <h2 style="font-size:18px;font-weight:640;letter-spacing:-0.015em;margin:0 0 10px">1. Problem</h2>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 12px">An engineer working across several Linear projects routinely keeps ten to twenty pull requests open at once, many of them arranged in stacks where each PR is based on the one below it. GitHub's own surfaces answer "what PRs exist"; they do not answer "which of these is blocked on me right now", "which stack is stuck and at which layer", or "has the squash commit for this merged PR actually shipped to production yet".</p>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 12px">Today that state is reconstructed manually — several browser tabs, the Linear board, and a CI/deploy dashboard — several times a day. The cost is not the time spent looking; it is the reviews and failed deploys that go unnoticed for hours because nobody was looking.</p>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 26px">The app is an <em>observer</em>. It does not attempt to replace GitHub or Linear for doing work; it replaces the act of checking.</p>
+
+  <h2 style="font-size:18px;font-weight:640;letter-spacing:-0.015em;margin:0 0 10px">2. Goals and non-goals</h2>
+  <table style="margin:0 0 8px">
+    <thead><tr><th style="width:50%">Goals</th><th>Non-goals</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Surface, without interaction, whether anything needs the user's attention — via the menu bar icon alone.</td>
+        <td>Reviewing PRs, approving, commenting, or merging from inside the app.</td>
+      </tr>
+      <tr>
+        <td>Show every non-draft PR authored by the user, grouped by Linear project, in one scroll with no tabs or filters.</td>
+        <td>Tracking PRs where the user is only a reviewer.</td>
+      </tr>
+      <tr>
+        <td>Make stack structure and the position of a blockage inside a stack legible at a glance.</td>
+        <td>Creating, restacking, or rebasing stacks.</td>
+      </tr>
+      <tr>
+        <td>Follow a merged PR's squash commit through staging to production and say when it is live.</td>
+        <td>Triggering, retrying, or rolling back deploys.</td>
+      </tr>
+      <tr>
+        <td>Let the user clear finished work out of the list so the panel stays short.</td>
+        <td>Historical reporting, cycle-time analytics, or team dashboards.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p style="font-size:13px;line-height:1.6;color:#8A8F98;margin:0 0 26px">Drafts are excluded by definition: the app covers PRs from the moment they enter review.</p>
+
+  <h2 style="font-size:18px;font-weight:640;letter-spacing:-0.015em;margin:0 0 10px">3. Information model</h2>
+  <table style="margin:0 0 26px">
+    <thead><tr><th style="width:20%">Entity</th><th>Definition and source</th></tr></thead>
+    <tbody>
+      <tr><td style="font-weight:600;color:#1D1D1F">Pull request</td><td>A non-draft, open or recently-merged PR authored by the user, from GitHub. Carries title, number, age, review state, check state, mergeability.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Project</td><td>The Linear project of the issue the PR is linked to (via branch name or PR title/body reference). PRs with no linked issue, or an issue with no project, fall into <strong style="font-weight:600">Other</strong>.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Stack</td><td>A chain of the user's own open PRs where each PR's base branch is another PR's head branch. Derived entirely from base/head relationships — no tooling-specific metadata required. The <em>base</em> of the stack targets the trunk; the <em>top</em> is the most recent descendant.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Release</td><td>A git tag that contains a merged PR's squash commit. A PR is considered shipped when a tag containing its merge commit has completed its production deployment.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Deploy stage</td><td>Three ordered stages: <strong style="font-weight:600">preview</strong> (checks on the PR branch), <strong style="font-weight:600">staging</strong> (merged to trunk and deployed to staging), <strong style="font-weight:600">production</strong> (tag containing the merge commit deployed to production).</td></tr>
+    </tbody>
+  </table>
+
+  <h2 style="font-size:18px;font-weight:640;letter-spacing:-0.015em;margin:0 0 10px">4. Menu bar icon</h2>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 12px">The icon is the product's only always-visible surface, so it carries exactly one signal at a time, in a strict priority order. Higher rows win.</p>
+  <table style="margin:0 0 12px">
+    <thead><tr><th style="width:26%">State</th><th style="width:30%">Appearance</th><th>Trigger</th></tr></thead>
+    <tbody>
+      <tr><td style="font-weight:600;color:#1D1D1F">Action needed</td><td>Red badge with a count</td><td>Changes requested on the user's PR, CI failure, or merge conflict. The count is the number of such PRs.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Deploy in flight</td><td>Amber dot, slow pulse</td><td>A tag containing one of the user's merge commits is mid-deployment. Resolves to <em>unread</em> when it reaches production, or to <em>action needed</em> if it fails.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Unread activity</td><td>Indigo dot</td><td>New comments, a new approval, or a PR becoming mergeable since the panel was last opened.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Idle</td><td>Plain glyph</td><td>Nothing new since last read.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Disconnected</td><td>Dashed glyph, dimmed</td><td>No credentials, expired token, or offline. Never silently shows stale data as if fresh.</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 26px">Opening the panel clears <em>unread</em> but never clears <em>action needed</em> — a failing check stays badged until the underlying condition resolves or the PR is snoozed. The badge is monochrome-safe: shape and position, not colour alone, distinguish the states, so it survives dark menu bars and reduced-colour accessibility settings.</p>
+
+  <h2 style="font-size:18px;font-weight:640;letter-spacing:-0.015em;margin:0 0 10px;break-before:page">5. The panel</h2>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 12px">A single popover, roughly 440 points wide and up to 800 tall, anchored under the icon. One scrolling list, no tabs, no segmented control, no filter bar. Everything the user tracks is on one screen; the only structure is project headings.</p>
+
+  <h3 style="font-size:14.5px;font-weight:640;margin:18px 0 8px">5.1 Order</h3>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 10px">Sections appear in a stable order — Linear projects by most recent activity, then <strong style="font-weight:600">Other</strong>, then <strong style="font-weight:600">Done</strong>. Within a project, stacks come before loose PRs, and stacks are drawn top-most PR first, base last, matching how the branches sit on top of each other.</p>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 10px">Rows are deliberately <em>not</em> re-sorted by urgency. Position stability is what makes the panel scannable day to day; urgency is carried by the appearance of the row, not by its place in the list. There is no summary banner counting problems — if the rows cannot communicate it, the row design is wrong.</p>
+
+  <h3 style="font-size:14.5px;font-weight:640;margin:18px 0 8px">5.2 Row anatomy</h3>
+  <table style="margin:0 0 12px">
+    <thead><tr><th style="width:22%">Element</th><th>Behaviour</th></tr></thead>
+    <tbody>
+      <tr><td style="font-weight:600;color:#1D1D1F">Unread dot</td><td>Leading indigo dot when the PR changed since the panel was last opened. Absent otherwise; the gutter is reserved so rows never shift.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Status icon</td><td>A single tinted chip carrying the PR's overall state: in review, approved, blocked by a parent, changes requested, checks failing, conflicted, merged, closed. A row that needs attention always has a matching icon — a green icon never appears in a tinted row.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Stack spine</td><td>A hairline connecting the status icons of consecutive members of a stack. No box, no indentation: stacked and unstacked PRs share one left edge, so the list keeps a single rhythm.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Title</td><td>PR title, single line, truncated with an ellipsis. Weight increases slightly when the row needs attention.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Meta line</td><td>Linear issue identifier, PR number, the one most important status phrase, and age or time since last activity. The status phrase is the only coloured token.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Reviewers</td><td>Up to three avatars, overlapping by 2 points, each ringed in the colour of that reviewer's state: approved, changes requested, or pending. A count replaces the overflow.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Deploy track</td><td>Three short segments for preview, staging, production. The <em>first segment carries CI state</em> — green passing, red failing, amber running, grey none — so there is no separate CI icon to confuse with review state. Later segments fill as the change advances; the active one pulses.</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 10px">Rows needing attention are marked by a warm background tint alone — no accent rule, no icon pile-up. Merged and closed rows use a muted title.</p>
+
+  <h3 style="font-size:14.5px;font-weight:640;margin:18px 0 8px">5.3 Done section</h3>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 26px">Merged PRs that reached production, and PRs closed without merging, collect in a trailing <strong style="font-weight:600">Done</strong> section. Each row can be dismissed individually, and the section header offers <em>Clear all</em>. Dismissal is local and permanent for that PR — it never re-appears, even if a later event touches it. A merged PR whose deploy is still in flight stays in its project section until it lands, because it is still information the user is waiting on.</p>
+
+  <h2 style="font-size:18px;font-weight:640;letter-spacing:-0.015em;margin:0 0 10px">6. Stacks</h2>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 10px">A stack is rendered as a run of adjacent rows joined by the spine. Members are ordered top-most first; the bottom row is the PR based on the trunk. A PR whose parent is not yet merged shows <em>waiting on #NNNN</em> in its meta line and a neutral status icon: it is not the user's problem until the layer beneath it clears.</p>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 26px">When the number of open PRs makes full expansion impractical, a stack may collapse to a single summary row: name, member count, one segment per member coloured by that member's state, and the position of the first blockage. This is a scaling affordance, not the default presentation.</p>
+
+  <h2 style="font-size:18px;font-weight:640;letter-spacing:-0.015em;margin:0 0 10px">7. Deployment tracking</h2>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 10px">On merge, the app records the PR's squash commit. It then watches the repository's tags; when a tag contains that commit, the PR is bound to that release and follows the release's deployment status. Because a release usually carries several of the user's PRs, they advance together.</p>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 10px">Three outcomes matter. <strong style="font-weight:600">Reached production</strong> is a notable event: it sets the unread dot, and the row moves to Done on next open. <strong style="font-weight:600">Deploy failed or held</strong> raises the row to action-needed and badges the icon. <strong style="font-weight:600">Not yet tagged</strong> is quiet — merged to staging, waiting for a release cut, with the third segment empty.</p>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 26px">Merge commits are matched by the commit recorded at merge time, with a fallback to matching the PR reference in the commit message, so squash-merges with rewritten history still resolve.</p>
+
+  <h2 style="font-size:18px;font-weight:640;letter-spacing:-0.015em;margin:0 0 10px">8. Interactions</h2>
+  <table style="margin:0 0 26px">
+    <thead><tr><th style="width:26%">Action</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td style="font-weight:600;color:#1D1D1F">Click a row</td><td>Opens the PR on GitHub in the default browser and marks it read.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Click the issue identifier</td><td>Opens the Linear issue.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Dismiss (Done rows)</td><td>Removes the row permanently.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Snooze</td><td>Suppresses a PR's attention state until a chosen time. Snoozed rows render dimmed with the wake time in the meta line.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Mark all read</td><td>Clears every unread dot and the indigo icon state.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Refresh</td><td>Forces an immediate sync; the footer reports the time of the last successful one.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 style="font-size:18px;font-weight:640;letter-spacing:-0.015em;margin:0 0 10px">9. Data and sync</h2>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 10px">GitHub supplies pull requests, review state, checks, mergeability, merge commits, tags and deployment status. Linear supplies the issue-to-project mapping. Both are read-only scopes.</p>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 26px">Polling is adaptive: frequent while a deploy is in flight or the panel is open, slower when idle, suspended on sleep and on battery below a threshold. The footer always states how fresh the data is, and stale data is visibly marked rather than silently shown. An expired token replaces the header with a reconnect banner over the last known list.</p>
+
+  <h2 style="font-size:18px;font-weight:640;letter-spacing:-0.015em;margin:0 0 10px">10. Edge cases</h2>
+  <ul style="font-size:14.5px;line-height:1.65;margin:0 0 26px;padding-left:20px">
+    <li style="margin-bottom:5px">A PR is linked to no Linear issue, or to an issue with no project — it lands in <strong style="font-weight:600">Other</strong>.</li>
+    <li style="margin-bottom:5px">A PR moves out of draft — it appears; a PR converted back to draft disappears without a notification.</li>
+    <li style="margin-bottom:5px">A stack member is merged out of order — the spine reflows and the remaining members re-target; no error state.</li>
+    <li style="margin-bottom:5px">A release is never cut for a merged PR — it sits at staging indefinitely and is not surfaced as a problem.</li>
+    <li style="margin-bottom:5px">A production deploy is rolled back after being reported live — the row returns from Done with an action-needed state.</li>
+    <li style="margin-bottom:5px">Nothing to show at all — the panel states plainly that everything is clear rather than rendering an empty list.</li>
+  </ul>
+
+  <h2 style="font-size:18px;font-weight:640;letter-spacing:-0.015em;margin:0 0 10px">11. Visual direction</h2>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 10px">Native macOS structure — popover geometry, control sizing, system typeface, no custom chrome — with GitHub's semantic state colours and Linear's typographic restraint and spacing. Light appearance is the reference; the same palette maps to dark.</p>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 10px">Specifics established in design: no monospaced type anywhere, numerals set with tabular figures instead. No decorative colour — project headings are plain text, never coloured bullets, so colour means status and nothing else. Rows sit on a lightly grey panel field, with state carried by tint. Reviewer avatars use a thin light ring separated by a one-point halo in the row's own tint.</p>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 26px">The full state set is documented in the companion design file: needs-attention, all-clear, deploy in flight, heavy load with collapsed stacks, and first-run/disconnected.</p>
+
+  <h2 style="font-size:18px;font-weight:640;letter-spacing:-0.015em;margin:0 0 10px">12. Open questions</h2>
+  <ol style="font-size:14.5px;line-height:1.65;margin:0 0 8px;padding-left:20px">
+    <li style="margin-bottom:5px">Should reaching production raise a system notification, or only the menu bar dot?</li>
+    <li style="margin-bottom:5px">Is a keyboard-driven open-and-jump worth building, or is the panel purely pointer-driven?</li>
+    <li style="margin-bottom:5px">How many repositories does a single user realistically span, and does the row need a repository name once that number exceeds one?</li>
+    <li style="margin-bottom:5px">At what open-PR count should stacks collapse automatically?</li>
+  </ol>
+
+</doc-page>
+
+</x-dc>
+</body>
+</html>

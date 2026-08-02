@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+  body { margin:0; background:#EFEFF1; font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#5E6AD2; text-decoration:none; }
+  a:hover { color:#4C58BF; text-decoration:underline; }
+  @keyframes pulseBar { 0%,100% { opacity:1 } 50% { opacity:.35 } }
+  @keyframes spin { to { transform:rotate(360deg) } }
+</style>
+</helmet>
+
+<section style="padding:56px 56px 24px;display:flex;flex-direction:column;gap:32px">
+
+  <div style="display:flex;flex-direction:column;gap:8px;max-width:760px">
+    <div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#8A8F98">Turn 2 — one screen, no chrome</div>
+    <div style="font-size:26px;font-weight:640;letter-spacing:-0.022em;color:#1D1D1F">Single scroll, stacks drawn as a spine</div>
+    <div style="font-size:14px;line-height:1.55;color:#57606A;text-wrap:pretty">Tabs and the attention banner are gone — urgency now comes only from the rows themselves. Stacks are a connected run of status icons, top-most PR first, base at the bottom. Shipped and closed PRs collect at the end and can be dismissed.</div>
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start">
+
+    <div id="2a" style="display:flex;flex-direction:column;gap:12px;width:452px">
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <div style="font-size:11px;font-weight:700;color:#fff;background:#1D1D1F;border-radius:4px;padding:3px 6px">2a</div>
+        <div style="font-size:13px;font-weight:600;color:#1D1D1F">Everything on one screen (440×800)</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;align-items:stretch;width:452px">
+        <div style="height:26px;border-radius:7px 7px 0 0;background:linear-gradient(#FAFAFB,#F1F1F3);border:1px solid rgba(0,0,0,0.10);border-bottom:none;display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:0 12px">
+          <div style="width:13px;height:13px;border-radius:4px;border:1.5px solid #3C3C43;opacity:.5"></div>
+          <div style="width:13px;height:13px;border-radius:999px;border:1.5px solid #3C3C43;opacity:.5"></div>
+          <div style="position:relative;display:flex;align-items:center">
+            <div style="width:14px;height:14px;border-radius:4px;border:1.6px solid #1D1D1F;display:flex;align-items:center;justify-content:center"><div style="width:4px;height:4px;border-radius:999px;background:#1D1D1F"></div></div>
+            <div style="position:absolute;top:-3px;right:-6px;min-width:13px;height:13px;border-radius:999px;background:#CF222E;color:#fff;font-size:8.5px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;box-shadow:0 0 0 1.5px #F4F4F6">3</div>
+          </div>
+          <div style="font-size:11.5px;color:#3C3C43;opacity:.6;font-variant-numeric:tabular-nums">Sat 14:32</div>
+        </div>
+
+        <div style="width:450px;height:800px;background:#F5F5F6;border:1px solid rgba(0,0,0,0.10);border-radius:0 0 12px 12px;box-shadow:0 18px 44px rgba(0,0,0,0.18),0 2px 6px rgba(0,0,0,0.06);display:flex;flex-direction:column;overflow:hidden">
+
+          <div style="padding:10px 12px;border-bottom:1px solid rgba(0,0,0,0.06);display:flex;align-items:center;gap:8px;background:#F0F0F1">
+            <div style="font-size:13px;font-weight:640;color:#1D1D1F;letter-spacing:-0.01em;white-space:nowrap;flex:none">Pull requests</div>
+            <div style="font-size:11.5px;color:#8A8F98;font-variant-numeric:tabular-nums">10 in review · 3 shipping</div>
+            <div style="flex:1"></div>
+            <div style="width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;background:#F1F1F3"><div style="width:11px;height:11px;border:1.5px solid #57606A;border-radius:999px;border-top-color:transparent"></div></div>
+            <div style="width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;gap:2px"><div style="width:3px;height:3px;border-radius:999px;background:#57606A"></div><div style="width:3px;height:3px;border-radius:999px;background:#57606A"></div><div style="width:3px;height:3px;border-radius:999px;background:#57606A"></div></div>
+          </div>
+
+          <div style="flex:1;min-height:0;overflow:hidden;padding-bottom:8px">
+
+            <!-- ============ Billing Revamp ============ -->
+            <div style="display:flex;align-items:baseline;gap:8px;padding:14px 12px 6px">
+              <div style="font-size:11.5px;font-weight:640;color:#3C4149;letter-spacing:-0.003em">Billing Revamp</div>
+              <div style="font-size:11px;color:#A2A6AE;font-variant-numeric:tabular-nums">4</div>
+            </div>
+
+            <!-- stack: top-most first, base last -->
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 8px;margin:0 6px;border-radius:7px">
+              <div style="width:5px;flex:none"></div>
+              <div style="width:16px;flex:none;align-self:stretch;display:flex;align-items:center;justify-content:center;position:relative">
+                <div style="position:absolute;left:7.25px;top:50%;bottom:-8px;width:1.5px;background:#DDDEE3"></div>
+                <div style="width:16px;height:16px;border-radius:5px;background:#E0E1E5;display:flex;align-items:center;justify-content:center;position:relative;z-index:1"><div style="width:6px;height:2px;border-radius:2px;background:#8A8F98"></div></div>
+              </div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:500;color:#57606A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Backfill legacy invoices</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:11px;color:#8A8F98;font-variant-numeric:tabular-nums"><span style="color:#5E6AD2">BIL-318</span><span>#4131</span><span>waiting on #4127</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;flex:none">
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#9A6700;animation:pulseBar 1.4s ease-in-out infinite"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 8px;margin:0 6px;border-radius:7px;background:#FBE9E8">
+              <div style="width:5px;height:5px;border-radius:999px;background:#5E6AD2;flex:none"></div>
+              <div style="width:16px;flex:none;align-self:stretch;display:flex;align-items:center;justify-content:center;position:relative">
+                <div style="position:absolute;left:7.25px;top:-8px;bottom:-8px;width:1.5px;background:#DDDEE3"></div>
+                <div style="width:16px;height:16px;border-radius:5px;background:#FFD5D1;display:flex;align-items:center;justify-content:center;position:relative;z-index:1;box-shadow:0 0 0 3px #FBE9E8"><div style="width:6px;height:6px;border-radius:999px;background:#CF222E"></div></div>
+              </div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:560;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Wire proration into checkout</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:11px;font-variant-numeric:tabular-nums"><span style="color:#5E6AD2">BIL-313</span><span style="color:#8A8F98">#4127</span><span style="color:#CF222E;font-weight:600">changes requested</span><span style="color:#8A8F98">18m</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;flex:none">
+                <div style="width:18px;height:18px;border-radius:999px;background:#B45309;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px #FBE9E8,0 0 0 3px #E8949A">AR</div>
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 8px;margin:0 6px;border-radius:7px">
+              <div style="width:5px;flex:none"></div>
+              <div style="width:16px;flex:none;align-self:stretch;display:flex;align-items:center;justify-content:center;position:relative">
+                <div style="position:absolute;left:7.25px;top:-8px;bottom:-8px;width:1.5px;background:#DDDEE3"></div>
+                <div style="width:16px;height:16px;border-radius:5px;background:#BCECC9;display:flex;align-items:center;justify-content:center;position:relative;z-index:1;box-shadow:0 0 0 3px #F5F5F6"><div style="width:6px;height:6px;border-radius:999px;background:#1A7F37"></div></div>
+              </div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:520;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Add proration engine</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:11px;font-variant-numeric:tabular-nums"><span style="color:#5E6AD2">BIL-312</span><span style="color:#8A8F98">#4112</span><span style="color:#1A7F37;font-weight:600">approved</span><span style="color:#8A8F98">3h</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;flex:none">
+                <div style="display:flex"><div style="width:18px;height:18px;border-radius:999px;background:#4A6FA5;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px #F5F5F6,0 0 0 3px #7CC998">JD</div><div style="width:18px;height:18px;border-radius:999px;background:#8250DF;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px #F5F5F6,0 0 0 3px #7CC998;margin-left:-2px">MK</div></div>
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 8px;margin:0 6px;border-radius:7px">
+              <div style="width:5px;flex:none"></div>
+              <div style="width:16px;flex:none;align-self:stretch;display:flex;align-items:center;justify-content:center;position:relative">
+                <div style="position:absolute;left:7.25px;top:-8px;bottom:50%;width:1.5px;background:#DDDEE3"></div>
+                <div style="width:16px;height:16px;border-radius:5px;background:#E6D4FA;display:flex;align-items:center;justify-content:center;position:relative;z-index:1;box-shadow:0 0 0 3px #F5F5F6"><div style="width:6px;height:6px;border-radius:999px;background:#8250DF"></div></div>
+              </div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:500;color:#6E6E73;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Extract invoice line-item model</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:11px;font-variant-numeric:tabular-nums"><span style="color:#5E6AD2">BIL-311</span><span style="color:#8A8F98">#4098</span><span style="color:#9A6700;font-weight:600">deploying to production</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;flex:none">
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#9A6700;animation:pulseBar 1.2s ease-in-out infinite"></div></div>
+              </div>
+            </div>
+
+            <!-- ============ Search v2 ============ -->
+            <div style="display:flex;align-items:baseline;gap:8px;padding:16px 12px 6px">
+              <div style="font-size:11.5px;font-weight:640;color:#3C4149;letter-spacing:-0.003em">Search v2</div>
+              <div style="font-size:11px;color:#A2A6AE;font-variant-numeric:tabular-nums">4</div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 8px;margin:0 6px;border-radius:7px">
+              <div style="width:5px;flex:none"></div>
+              <div style="width:16px;flex:none;align-self:stretch;display:flex;align-items:center;justify-content:center;position:relative">
+                <div style="position:absolute;left:7.25px;top:50%;bottom:-8px;width:1.5px;background:#DDDEE3"></div>
+                <div style="width:16px;height:16px;border-radius:5px;background:#E0E1E5;display:flex;align-items:center;justify-content:center;position:relative;z-index:1"><div style="width:6px;height:2px;border-radius:2px;background:#8A8F98"></div></div>
+              </div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:500;color:#57606A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Switch query path to segmenter</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:11px;color:#8A8F98;font-variant-numeric:tabular-nums"><span style="color:#5E6AD2">SRC-99</span><span>#4129</span><span>waiting on #4120</span></div>
+              </div>
+              <div style="display:flex;gap:2px;align-items:center;flex:none"><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 8px;margin:0 6px;border-radius:7px;background:#FBE9E8">
+              <div style="width:5px;height:5px;border-radius:999px;background:#5E6AD2;flex:none"></div>
+              <div style="width:16px;flex:none;align-self:stretch;display:flex;align-items:center;justify-content:center;position:relative">
+                <div style="position:absolute;left:7.25px;top:-8px;bottom:-8px;width:1.5px;background:#DDDEE3"></div>
+                <div style="width:16px;height:16px;border-radius:5px;background:#FFD5D1;display:flex;align-items:center;justify-content:center;position:relative;z-index:1;box-shadow:0 0 0 3px #FBE9E8"><div style="width:6px;height:6px;border-radius:999px;background:#CF222E"></div></div>
+              </div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:560;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Replace tokenizer with ICU segmenter</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:11px;font-variant-numeric:tabular-nums"><span style="color:#5E6AD2">SRC-97</span><span style="color:#8A8F98">#4120</span><span style="color:#CF222E;font-weight:600">2 checks failed</span><span style="color:#8A8F98">41m</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;flex:none">
+                <div style="width:18px;height:18px;border-radius:999px;background:#0969DA;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px #FBE9E8,0 0 0 3px #C6C9CF">TS</div>
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#CF222E"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 8px;margin:0 6px;border-radius:7px">
+              <div style="width:5px;flex:none"></div>
+              <div style="width:16px;flex:none;align-self:stretch;display:flex;align-items:center;justify-content:center;position:relative">
+                <div style="position:absolute;left:7.25px;top:-8px;bottom:50%;width:1.5px;background:#DDDEE3"></div>
+                <div style="width:16px;height:16px;border-radius:5px;background:#BCECC9;display:flex;align-items:center;justify-content:center;position:relative;z-index:1;box-shadow:0 0 0 3px #F5F5F6"><div style="width:6px;height:6px;border-radius:999px;background:#1A7F37"></div></div>
+              </div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:520;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Vendor ICU tables</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:11px;font-variant-numeric:tabular-nums"><span style="color:#5E6AD2">SRC-95</span><span style="color:#8A8F98">#4118</span><span style="color:#1A7F37;font-weight:600">approved</span><span style="color:#8A8F98">1d</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;flex:none">
+                <div style="width:18px;height:18px;border-radius:999px;background:#0969DA;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px #F5F5F6,0 0 0 3px #7CC998">TS</div>
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 8px;margin:4px 6px 0;border-radius:7px">
+              <div style="width:5px;flex:none"></div>
+              <div style="width:16px;flex:none;display:flex;align-items:center;justify-content:center">
+                <div style="width:16px;height:16px;border-radius:5px;background:#BCECC9;display:flex;align-items:center;justify-content:center"><div style="width:6px;height:6px;border-radius:999px;background:#1A7F37"></div></div>
+              </div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:520;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Index shard rebalancing</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:11px;font-variant-numeric:tabular-nums"><span style="color:#5E6AD2">SRC-88</span><span style="color:#8A8F98">#4076</span><span style="color:#1A7F37;font-weight:600">ready to merge</span><span style="color:#8A8F98">1d</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;flex:none">
+                <div style="display:flex"><div style="width:18px;height:18px;border-radius:999px;background:#4A6FA5;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px #F5F5F6,0 0 0 3px #7CC998">JD</div><div style="width:18px;height:18px;border-radius:999px;background:#1A7F37;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px #F5F5F6,0 0 0 3px #7CC998;margin-left:-2px">PL</div></div>
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+              </div>
+            </div>
+
+            <!-- ============ Mobile Onboarding ============ -->
+            <div style="display:flex;align-items:baseline;gap:8px;padding:16px 12px 6px">
+              <div style="font-size:11.5px;font-weight:640;color:#3C4149;letter-spacing:-0.003em">Mobile Onboarding</div>
+              <div style="font-size:11px;color:#A2A6AE;font-variant-numeric:tabular-nums">1</div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 8px;margin:0 6px;border-radius:7px;background:#ECECF8">
+              <div style="width:5px;height:5px;border-radius:999px;background:#5E6AD2;flex:none"></div>
+              <div style="width:16px;flex:none;display:flex;align-items:center;justify-content:center">
+                <div style="width:16px;height:16px;border-radius:5px;background:#BCECC9;display:flex;align-items:center;justify-content:center"><div style="width:6px;height:6px;border-radius:999px;background:#1A7F37"></div></div>
+              </div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:540;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Passkey enrollment screen</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:11px;font-variant-numeric:tabular-nums"><span style="color:#5E6AD2">MOB-42</span><span style="color:#8A8F98">#4133</span><span style="color:#5E6AD2;font-weight:600">3 new comments</span><span style="color:#8A8F98">7m</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;flex:none">
+                <div style="width:18px;height:18px;border-radius:999px;background:#BF3989;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px #ECECF8,0 0 0 3px #C6C9CF">SV</div>
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#9A6700;animation:pulseBar 1.4s ease-in-out infinite"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+              </div>
+            </div>
+
+            <!-- ============ Other ============ -->
+            <div style="display:flex;align-items:baseline;gap:8px;padding:16px 12px 6px">
+              <div style="font-size:11.5px;font-weight:640;color:#3C4149;letter-spacing:-0.003em">Other</div>
+              <div style="font-size:11px;color:#A2A6AE;font-variant-numeric:tabular-nums">1</div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 8px;margin:0 6px;border-radius:7px;background:#FBE9E8">
+              <div style="width:5px;height:5px;border-radius:999px;background:#5E6AD2;flex:none"></div>
+              <div style="width:16px;flex:none;display:flex;align-items:center;justify-content:center">
+                <div style="width:16px;height:16px;border-radius:5px;background:#FFD5D1;display:flex;align-items:center;justify-content:center"><div style="width:7px;height:2px;border-radius:2px;background:#CF222E;transform:rotate(45deg)"></div></div>
+              </div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:560;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Bump ruby to 3.4</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:11px;font-variant-numeric:tabular-nums"><span style="color:#8A8F98">#4051</span><span style="color:#CF222E;font-weight:600">merge conflict</span><span style="color:#8A8F98">2d</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;flex:none">
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+              </div>
+            </div>
+
+            <!-- ============ Shipped / closed — dismissible ============ -->
+            <div style="display:flex;align-items:baseline;gap:8px;padding:18px 12px 6px">
+              <div style="font-size:11.5px;font-weight:640;color:#8A8F98;letter-spacing:-0.003em">Done</div>
+              <div style="font-size:11px;color:#A2A6AE;font-variant-numeric:tabular-nums">3</div>
+              <div style="flex:1"></div>
+              <div style="font-size:11px;font-weight:540;color:#5E6AD2">Clear all</div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 8px;margin:0 6px;border-radius:7px;background:#E8F6EB">
+              <div style="width:5px;height:5px;border-radius:999px;background:#5E6AD2;flex:none"></div>
+              <div style="width:16px;flex:none;display:flex;align-items:center;justify-content:center">
+                <div style="width:16px;height:16px;border-radius:5px;background:#BCECC9;display:flex;align-items:center;justify-content:center"><div style="width:6px;height:6px;border-radius:999px;background:#1A7F37"></div></div>
+              </div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:520;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Fix flaky spec in webhooks</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:11px;font-variant-numeric:tabular-nums"><span style="color:#8A8F98">#4044</span><span style="color:#1A7F37;font-weight:600">live in production</span><span style="color:#8A8F98">22m ago</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;flex:none">
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div></div>
+                <div style="width:16px;height:16px;border-radius:4px;background:rgba(0,0,0,0.05);color:#57606A;font-size:10px;display:flex;align-items:center;justify-content:center">✕</div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 8px;margin:2px 6px 0;border-radius:7px">
+              <div style="width:5px;flex:none"></div>
+              <div style="width:16px;flex:none;display:flex;align-items:center;justify-content:center">
+                <div style="width:16px;height:16px;border-radius:5px;background:#E6D4FA;display:flex;align-items:center;justify-content:center"><div style="width:6px;height:6px;border-radius:999px;background:#8250DF"></div></div>
+              </div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:500;color:#6E6E73;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Retry webhook delivery queue</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:11px;color:#8A8F98;font-variant-numeric:tabular-nums"><span>#4031</span><span>live in production</span><span>yesterday</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;flex:none">
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div></div>
+                <div style="width:16px;height:16px;border-radius:4px;color:#A2A6AE;font-size:10px;display:flex;align-items:center;justify-content:center">✕</div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 8px;margin:2px 6px 0;border-radius:7px">
+              <div style="width:5px;flex:none"></div>
+              <div style="width:16px;flex:none;display:flex;align-items:center;justify-content:center">
+                <div style="width:16px;height:16px;border-radius:5px;background:#E0E1E5;display:flex;align-items:center;justify-content:center"><div style="width:7px;height:1.5px;border-radius:2px;background:#8A8F98"></div></div>
+              </div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:500;color:#6E6E73;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Spike: alternate pricing model</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:11px;color:#8A8F98;font-variant-numeric:tabular-nums"><span>#3961</span><span>closed without merging</span><span>2d ago</span></div>
+              </div>
+              <div style="width:16px;height:16px;border-radius:4px;color:#A2A6AE;font-size:10px;display:flex;align-items:center;justify-content:center;flex:none">✕</div>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid rgba(0,0,0,0.06);background:#F0F0F1;padding:7px 12px;display:flex;align-items:center;gap:8px">
+            <div style="width:5px;height:5px;border-radius:999px;background:#1A7F37"></div>
+            <div style="font-size:11px;color:#8A8F98;font-variant-numeric:tabular-nums">synced 34s ago</div>
+            <div style="flex:1"></div>
+            <div style="font-size:11.5px;color:#57606A">Mark all read</div>
+            <div style="width:1px;height:11px;background:rgba(0,0,0,0.10)"></div>
+            <div style="font-size:11.5px;color:#57606A">Settings</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:5px;margin-top:2px;max-width:430px">
+        <div style="font-size:11.5px;line-height:1.5;color:#6E6E73">The spine runs through the status icons only — no box, no indent, so stacked and unstacked PRs share one left edge. Rows needing attention are marked only by a warm tint; the indigo dot on the far left is “unread since you last looked”.</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section style="padding:0 56px 96px;display:flex;flex-direction:column;gap:36px">
+
+  <div style="display:flex;flex-direction:column;gap:8px;max-width:760px">
+    <div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">Turn 1 — PR &amp; Deploy tray</div>
+    <div style="font-size:26px;font-weight:640;letter-spacing:-0.022em;color:#1D1D1F">Five states of the menu bar panel</div>
+    <div style="font-size:14px;line-height:1.55;color:#57606A;text-wrap:pretty">Grouped by Linear project (+ Other), drafts hidden. Each row carries reviewer state, CI, and a three-segment deploy track: <strong style="font-weight:600">preview → staging → production</strong>. Stack treatments are explored separately in <a href="#1f">1f</a>.</div>
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start">
+
+    <!-- ============================= 1a ============================= -->
+    <div id="1a" style="display:flex;flex-direction:column;gap:12px;width:452px">
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <div style="font-size:11px;font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#fff;background:#1D1D1F;border-radius:4px;padding:3px 6px">1a</div>
+        <div style="font-size:13px;font-weight:600;color:#1D1D1F">Needs attention · tall (440×720)</div>
+      </div>
+      <div style="font-size:12px;line-height:1.5;color:#6E6E73;max-width:420px">The default open state. Attention items float to a pinned strip; everything else stays in project order.</div>
+
+      <div style="display:flex;flex-direction:column;align-items:stretch;width:452px">
+        <!-- menu bar -->
+        <div style="height:26px;border-radius:7px 7px 0 0;background:linear-gradient(#FAFAFB,#F1F1F3);border:1px solid rgba(0,0,0,0.10);border-bottom:none;display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:0 12px">
+          <div style="width:13px;height:13px;border-radius:4px;border:1.5px solid #3C3C43;opacity:.55"></div>
+          <div style="width:13px;height:13px;border-radius:999px;border:1.5px solid #3C3C43;opacity:.55"></div>
+          <div style="position:relative;display:flex;align-items:center">
+            <div style="width:14px;height:14px;border-radius:4px;border:1.6px solid #1D1D1F;display:flex;align-items:center;justify-content:center"><div style="width:4px;height:4px;border-radius:999px;background:#1D1D1F"></div></div>
+            <div style="position:absolute;top:-2px;right:-3px;width:7px;height:7px;border-radius:999px;background:#CF222E;box-shadow:0 0 0 1.5px #F4F4F6"></div>
+          </div>
+          <div style="font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#3C3C43;opacity:.6">Sat 14:32</div>
+        </div>
+
+        <!-- panel -->
+        <div style="width:450px;height:720px;background:#FFFFFF;border:1px solid rgba(0,0,0,0.10);border-radius:0 0 12px 12px;box-shadow:0 18px 44px rgba(0,0,0,0.18),0 2px 6px rgba(0,0,0,0.06);display:flex;flex-direction:column;overflow:hidden">
+
+          <!-- header -->
+          <div style="padding:11px 12px 9px;border-bottom:1px solid rgba(0,0,0,0.06);display:flex;flex-direction:column;gap:9px;background:#FCFCFD">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="font-size:13px;font-weight:640;color:#1D1D1F;letter-spacing:-0.01em">My pull requests</div>
+              <div style="font-size:11px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">14 open</div>
+              <div style="flex:1"></div>
+              <div style="width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;background:#F1F1F3"><div style="width:11px;height:11px;border:1.5px solid #57606A;border-radius:999px;border-top-color:transparent"></div></div>
+              <div style="width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;gap:2px"><div style="width:3px;height:3px;border-radius:999px;background:#57606A"></div><div style="width:3px;height:3px;border-radius:999px;background:#57606A"></div><div style="width:3px;height:3px;border-radius:999px;background:#57606A"></div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:2px;background:#EDEDF0;border-radius:7px;padding:2px">
+              <div style="flex:1;text-align:center;font-size:11.5px;font-weight:590;color:#1D1D1F;background:#fff;border-radius:5px;padding:4px 0;box-shadow:0 1px 2px rgba(0,0,0,0.10)">In review</div>
+              <div style="flex:1;text-align:center;font-size:11.5px;font-weight:500;color:#6E6E73;padding:4px 0">Merged</div>
+              <div style="flex:1;text-align:center;font-size:11.5px;font-weight:500;color:#6E6E73;padding:4px 0">All</div>
+            </div>
+          </div>
+
+          <!-- attention strip -->
+          <div style="padding:9px 12px;background:#FFF8F7;border-bottom:1px solid rgba(207,34,46,0.14);display:flex;align-items:center;gap:8px">
+            <div style="width:6px;height:6px;border-radius:999px;background:#CF222E"></div>
+            <div style="font-size:11.5px;font-weight:590;color:#8B1A22">3 need you</div>
+            <div style="font-size:11.5px;color:#A55">·</div>
+            <div style="font-size:11.5px;color:#9A5B5B">changes requested, CI failure, conflict</div>
+            <div style="flex:1"></div>
+            <div style="font-size:11px;font-weight:560;color:#CF222E">Review</div>
+          </div>
+
+          <div style="flex:1;overflow:hidden;padding-bottom:6px">
+
+            <!-- ---------- Billing Revamp ---------- -->
+            <div style="display:flex;align-items:center;gap:7px;padding:13px 12px 5px">
+              <div style="width:7px;height:7px;border-radius:2px;background:#E8618C;flex:none"></div>
+              <div style="font-size:11px;font-weight:640;color:#3C4149;letter-spacing:0.005em">Billing Revamp</div>
+              <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">4</div>
+              <div style="flex:1"></div>
+              <div style="font-size:9.5px;font-weight:600;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:0.04em">STACK</div>
+            </div>
+
+            <!-- stack container -->
+            <div style="margin:0 8px;border:1px solid rgba(0,0,0,0.07);border-radius:8px;overflow:hidden;background:#FCFCFD">
+              <!-- s1 -->
+              <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;background:#fff">
+                <div style="width:5px;flex:none"></div>
+                <div style="width:16px;height:16px;border-radius:5px;background:#F3E8FF;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#8250DF"></div></div>
+                <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                  <div style="font-size:12.5px;font-weight:500;color:#6E6E73;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em;text-decoration:line-through;text-decoration-color:rgba(0,0,0,0.18)">Extract invoice line-item model</div>
+                  <div style="display:flex;align-items:center;gap:7px;font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#5E6AD2">BIL-311</span><span>#4098</span><span>merged 6h</span></div>
+                </div>
+                <div style="display:flex;align-items:center;gap:9px;flex:none">
+                  <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div></div>
+                </div>
+              </div>
+              <!-- s2 -->
+              <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;border-top:1px solid rgba(0,0,0,0.055);background:#fff">
+                <div style="width:5px;flex:none"></div>
+                <div style="width:16px;height:16px;border-radius:5px;background:#DAFBE1;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#1A7F37"></div></div>
+                <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                  <div style="font-size:12.5px;font-weight:520;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Add proration engine</div>
+                  <div style="display:flex;align-items:center;gap:7px;font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#5E6AD2">BIL-312</span><span>#4112</span><span>3h</span></div>
+                </div>
+                <div style="display:flex;align-items:center;gap:9px;flex:none">
+                  <div style="display:flex"><div style="width:18px;height:18px;border-radius:999px;background:#4A6FA5;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-shadow:0 0 0 1.5px #1A7F37">JD</div><div style="width:18px;height:18px;border-radius:999px;background:#8250DF;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-shadow:0 0 0 1.5px #1A7F37;margin-left:-5px">MK</div></div>
+                  <div style="width:15px;height:15px;border-radius:999px;background:#DAFBE1;color:#1A7F37;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">✓</div>
+                  <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+                </div>
+              </div>
+              <!-- s3 : attention -->
+              <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;border-top:1px solid rgba(0,0,0,0.055);background:#FFFBFB;box-shadow:inset 2px 0 0 #CF222E">
+                <div style="width:5px;height:5px;border-radius:999px;background:#5E6AD2;flex:none"></div>
+                <div style="width:16px;height:16px;border-radius:5px;background:#FFEBE9;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#CF222E"></div></div>
+                <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                  <div style="font-size:12.5px;font-weight:560;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Wire proration into checkout</div>
+                  <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#5E6AD2">BIL-313</span><span style="color:#8A8F98">#4127</span><span style="color:#CF222E;font-weight:600">changes requested</span><span style="color:#8A8F98">18m</span></div>
+                </div>
+                <div style="display:flex;align-items:center;gap:9px;flex:none">
+                  <div style="display:flex"><div style="width:18px;height:18px;border-radius:999px;background:#B45309;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-shadow:0 0 0 1.5px #CF222E">AR</div></div>
+                  <div style="width:15px;height:15px;border-radius:999px;background:#DAFBE1;color:#1A7F37;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">✓</div>
+                  <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+                </div>
+              </div>
+              <!-- s4 blocked -->
+              <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;border-top:1px solid rgba(0,0,0,0.055);background:#fff">
+                <div style="width:5px;flex:none"></div>
+                <div style="width:16px;height:16px;border-radius:5px;background:#F1F1F3;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:2px;border-radius:2px;background:#8A8F98"></div></div>
+                <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                  <div style="font-size:12.5px;font-weight:500;color:#57606A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Backfill legacy invoices</div>
+                  <div style="display:flex;align-items:center;gap:7px;font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#5E6AD2">BIL-318</span><span>#4131</span><span>blocked by #4127</span></div>
+                </div>
+                <div style="display:flex;align-items:center;gap:9px;flex:none">
+                  <div style="width:15px;height:15px;border-radius:999px;background:#FFF8C5;display:flex;align-items:center;justify-content:center"><div style="width:6px;height:6px;border:1.4px solid #9A6700;border-radius:999px;border-top-color:transparent;animation:spin 1.1s linear infinite"></div></div>
+                  <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+                </div>
+              </div>
+              <div style="padding:5px 10px 6px 40px;border-top:1px solid rgba(0,0,0,0.055);background:#FAFAFB;font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">stack of 4 · 1 merged · rebase needed after #4127</div>
+            </div>
+
+            <!-- ---------- Search v2 ---------- -->
+            <div style="display:flex;align-items:center;gap:7px;padding:15px 12px 5px">
+              <div style="width:7px;height:7px;border-radius:2px;background:#4EA7FC;flex:none"></div>
+              <div style="font-size:11px;font-weight:640;color:#3C4149">Search v2</div>
+              <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">2</div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;margin:0 8px;border-radius:7px;background:#FFFBFB;box-shadow:inset 2px 0 0 #CF222E">
+              <div style="width:5px;height:5px;border-radius:999px;background:#5E6AD2;flex:none"></div>
+              <div style="width:16px;height:16px;border-radius:5px;background:#DAFBE1;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#1A7F37"></div></div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:560;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Replace tokenizer with ICU segmenter</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#5E6AD2">SRC-97</span><span style="color:#8A8F98">#4120</span><span style="color:#CF222E;font-weight:600">2 checks failed</span><span style="color:#8A8F98">41m</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;flex:none">
+                <div style="display:flex"><div style="width:18px;height:18px;border-radius:999px;background:#0969DA;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-shadow:0 0 0 1.5px #D0D7DE">TS</div></div>
+                <div style="width:15px;height:15px;border-radius:999px;background:#FFEBE9;color:#CF222E;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">✕</div>
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#CF222E"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;margin:2px 8px 0;border-radius:7px">
+              <div style="width:5px;flex:none"></div>
+              <div style="width:16px;height:16px;border-radius:5px;background:#DAFBE1;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#1A7F37"></div></div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:520;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Index shard rebalancing</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#5E6AD2">SRC-88</span><span style="color:#8A8F98">#4076</span><span style="color:#1A7F37;font-weight:600">ready to merge</span><span style="color:#8A8F98">1d</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;flex:none">
+                <div style="display:flex"><div style="width:18px;height:18px;border-radius:999px;background:#4A6FA5;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-shadow:0 0 0 1.5px #1A7F37">JD</div><div style="width:18px;height:18px;border-radius:999px;background:#1A7F37;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-shadow:0 0 0 1.5px #1A7F37;margin-left:-5px">PL</div></div>
+                <div style="width:15px;height:15px;border-radius:999px;background:#DAFBE1;color:#1A7F37;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">✓</div>
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+              </div>
+            </div>
+
+            <!-- ---------- Mobile Onboarding ---------- -->
+            <div style="display:flex;align-items:center;gap:7px;padding:15px 12px 5px">
+              <div style="width:7px;height:7px;border-radius:2px;background:#F2C94C;flex:none"></div>
+              <div style="font-size:11px;font-weight:640;color:#3C4149">Mobile Onboarding</div>
+              <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">1</div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;margin:0 8px;border-radius:7px;background:#F7F7FE">
+              <div style="width:5px;height:5px;border-radius:999px;background:#5E6AD2;flex:none"></div>
+              <div style="width:16px;height:16px;border-radius:5px;background:#DAFBE1;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#1A7F37"></div></div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:540;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Passkey enrollment screen</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#5E6AD2">MOB-42</span><span style="color:#8A8F98">#4133</span><span style="color:#5E6AD2;font-weight:600">3 new comments</span><span style="color:#8A8F98">7m</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;flex:none">
+                <div style="display:flex"><div style="width:18px;height:18px;border-radius:999px;background:#BF3989;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-shadow:0 0 0 1.5px #D0D7DE">SV</div></div>
+                <div style="width:15px;height:15px;border-radius:999px;background:#FFF8C5;display:flex;align-items:center;justify-content:center"><div style="width:6px;height:6px;border:1.4px solid #9A6700;border-radius:999px;border-top-color:transparent;animation:spin 1.1s linear infinite"></div></div>
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#9A6700;animation:pulseBar 1.4s ease-in-out infinite"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+              </div>
+            </div>
+
+            <!-- ---------- Other ---------- -->
+            <div style="display:flex;align-items:center;gap:7px;padding:15px 12px 5px">
+              <div style="width:7px;height:7px;border-radius:2px;background:#C3C6CC;flex:none"></div>
+              <div style="font-size:11px;font-weight:640;color:#3C4149">Other</div>
+              <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">2</div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;margin:0 8px;border-radius:7px;background:#FFFBFB;box-shadow:inset 2px 0 0 #CF222E">
+              <div style="width:5px;height:5px;border-radius:999px;background:#5E6AD2;flex:none"></div>
+              <div style="width:16px;height:16px;border-radius:5px;background:#FFEBE9;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:7px;height:2px;border-radius:2px;background:#CF222E;transform:rotate(45deg)"></div></div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:560;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Bump ruby to 3.4</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#8A8F98">#4051</span><span style="color:#CF222E;font-weight:600">merge conflict</span><span style="color:#8A8F98">2d</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;flex:none">
+                <div style="width:15px;height:15px;border-radius:999px;background:#DAFBE1;color:#1A7F37;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">✓</div>
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;margin:2px 8px 0;border-radius:7px">
+              <div style="width:5px;flex:none"></div>
+              <div style="width:16px;height:16px;border-radius:5px;background:#F3E8FF;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#8250DF"></div></div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:500;color:#6E6E73;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em;text-decoration:line-through;text-decoration-color:rgba(0,0,0,0.18)">Fix flaky spec in webhooks</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#8A8F98">#4044</span><span style="color:#1A7F37;font-weight:600">live in production</span><span style="color:#8A8F98">22m ago</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;flex:none">
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div></div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- footer -->
+          <div style="border-top:1px solid rgba(0,0,0,0.06);background:#FCFCFD;padding:7px 12px;display:flex;align-items:center;gap:8px">
+            <div style="width:5px;height:5px;border-radius:999px;background:#1A7F37"></div>
+            <div style="font-size:10.5px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">synced 34s ago</div>
+            <div style="flex:1"></div>
+            <div style="font-size:11px;color:#57606A">Mark all read</div>
+            <div style="width:1px;height:11px;background:rgba(0,0,0,0.10)"></div>
+            <div style="font-size:11px;color:#57606A">Settings</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================= 1b + 1e column ============================= -->
+    <div style="display:flex;flex-direction:column;gap:40px">
+
+      <div id="1b" style="display:flex;flex-direction:column;gap:12px;width:392px">
+        <div style="display:flex;align-items:baseline;gap:10px">
+          <div style="font-size:11px;font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#fff;background:#1D1D1F;border-radius:4px;padding:3px 6px">1b</div>
+          <div style="font-size:13px;font-weight:600;color:#1D1D1F">All clear · compact (380×440)</div>
+        </div>
+        <div style="font-size:12px;line-height:1.5;color:#6E6E73;max-width:380px">Nothing needs you. The attention strip collapses, rows lose their unread dots, and the tray icon goes plain.</div>
+
+        <div style="width:380px;height:440px;background:#FFFFFF;border:1px solid rgba(0,0,0,0.10);border-radius:11px;box-shadow:0 18px 44px rgba(0,0,0,0.16),0 2px 6px rgba(0,0,0,0.05);display:flex;flex-direction:column;overflow:hidden">
+          <div style="padding:11px 12px 9px;border-bottom:1px solid rgba(0,0,0,0.06);display:flex;align-items:center;gap:8px;background:#FCFCFD">
+            <div style="font-size:13px;font-weight:640;color:#1D1D1F;letter-spacing:-0.01em">My pull requests</div>
+            <div style="font-size:11px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">5 open</div>
+            <div style="flex:1"></div>
+            <div style="display:flex;align-items:center;gap:5px;background:#DAFBE1;border-radius:999px;padding:2.5px 8px"><div style="width:5px;height:5px;border-radius:999px;background:#1A7F37"></div><div style="font-size:10.5px;font-weight:600;color:#1A7F37">All clear</div></div>
+          </div>
+
+          <div style="flex:1;padding-bottom:6px">
+            <div style="display:flex;align-items:center;gap:7px;padding:12px 12px 4px">
+              <div style="width:7px;height:7px;border-radius:2px;background:#E8618C;flex:none"></div>
+              <div style="font-size:11px;font-weight:640;color:#3C4149">Billing Revamp</div>
+              <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">2</div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 9px;margin:0 8px;border-radius:7px">
+              <div style="width:16px;height:16px;border-radius:5px;background:#DAFBE1;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#1A7F37"></div></div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:520;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Add proration engine</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#5E6AD2">BIL-312</span><span style="color:#8A8F98">#4112</span><span style="color:#1A7F37;font-weight:600">approved</span><span style="color:#8A8F98">3h</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;flex:none">
+                <div style="display:flex"><div style="width:18px;height:18px;border-radius:999px;background:#4A6FA5;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-shadow:0 0 0 1.5px #1A7F37">JD</div></div>
+                <div style="width:15px;height:15px;border-radius:999px;background:#DAFBE1;color:#1A7F37;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">✓</div>
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 9px;margin:2px 8px 0;border-radius:7px">
+              <div style="width:16px;height:16px;border-radius:5px;background:#F3E8FF;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#8250DF"></div></div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:500;color:#6E6E73;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em;text-decoration:line-through;text-decoration-color:rgba(0,0,0,0.18)">Extract invoice line-item model</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#5E6AD2">BIL-311</span><span style="color:#8A8F98">#4098</span><span style="color:#1A7F37;font-weight:600">live</span></div>
+              </div>
+              <div style="display:flex;gap:2px;align-items:center;flex:none"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div></div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:7px;padding:14px 12px 4px">
+              <div style="width:7px;height:7px;border-radius:2px;background:#4EA7FC;flex:none"></div>
+              <div style="font-size:11px;font-weight:640;color:#3C4149">Search v2</div>
+              <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">2</div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 9px;margin:0 8px;border-radius:7px">
+              <div style="width:16px;height:16px;border-radius:5px;background:#DAFBE1;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#1A7F37"></div></div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:520;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Index shard rebalancing</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#5E6AD2">SRC-88</span><span style="color:#8A8F98">#4076</span><span style="color:#8A8F98">1d</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;flex:none">
+                <div style="display:flex"><div style="width:18px;height:18px;border-radius:999px;background:#1A7F37;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-shadow:0 0 0 1.5px #1A7F37">PL</div></div>
+                <div style="width:15px;height:15px;border-radius:999px;background:#DAFBE1;color:#1A7F37;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">✓</div>
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 9px;margin:2px 8px 0;border-radius:7px">
+              <div style="width:16px;height:16px;border-radius:5px;background:#DAFBE1;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#1A7F37"></div></div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:520;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Query planner tracing</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#5E6AD2">SRC-101</span><span style="color:#8A8F98">#4139</span><span style="color:#8A8F98">awaiting review · 5h</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;flex:none">
+                <div style="display:flex"><div style="width:18px;height:18px;border-radius:999px;background:#0969DA;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-shadow:0 0 0 1.5px #D0D7DE">TS</div></div>
+                <div style="width:15px;height:15px;border-radius:999px;background:#DAFBE1;color:#1A7F37;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">✓</div>
+                <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div><div style="width:9px;height:3px;border-radius:2px;background:#E4E4E7"></div></div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:7px;padding:14px 12px 4px">
+              <div style="width:7px;height:7px;border-radius:2px;background:#C3C6CC;flex:none"></div>
+              <div style="font-size:11px;font-weight:640;color:#3C4149">Other</div>
+              <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">1</div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px 6px 9px;margin:0 8px;border-radius:7px">
+              <div style="width:16px;height:16px;border-radius:5px;background:#F3E8FF;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#8250DF"></div></div>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:12.5px;font-weight:500;color:#6E6E73;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em;text-decoration:line-through;text-decoration-color:rgba(0,0,0,0.18)">Fix flaky spec in webhooks</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#8A8F98">#4044</span><span style="color:#1A7F37;font-weight:600">live</span></div>
+              </div>
+              <div style="display:flex;gap:2px;align-items:center;flex:none"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div></div>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid rgba(0,0,0,0.06);background:#FCFCFD;padding:7px 12px;display:flex;align-items:center;gap:8px">
+            <div style="width:5px;height:5px;border-radius:999px;background:#1A7F37"></div>
+            <div style="font-size:10.5px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">synced 12s ago</div>
+            <div style="flex:1"></div>
+            <div style="font-size:11px;color:#57606A">Settings</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="1e" style="display:flex;flex-direction:column;gap:12px;width:392px">
+        <div style="display:flex;align-items:baseline;gap:10px">
+          <div style="font-size:11px;font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#fff;background:#1D1D1F;border-radius:4px;padding:3px 6px">1e</div>
+          <div style="font-size:13px;font-weight:600;color:#1D1D1F">First run / disconnected</div>
+        </div>
+        <div style="font-size:12px;line-height:1.5;color:#6E6E73;max-width:380px">Same shell, two failure modes: nothing connected yet, and a token that went stale mid-session (shown as a banner over cached data).</div>
+
+        <div style="width:380px;height:300px;background:#FFFFFF;border:1px solid rgba(0,0,0,0.10);border-radius:11px;box-shadow:0 18px 44px rgba(0,0,0,0.16);display:flex;flex-direction:column;overflow:hidden">
+          <div style="padding:11px 12px 9px;border-bottom:1px solid rgba(0,0,0,0.06);display:flex;align-items:center;gap:8px;background:#FCFCFD">
+            <div style="font-size:13px;font-weight:640;color:#1D1D1F;letter-spacing:-0.01em">My pull requests</div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:0 40px;text-align:center">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="width:34px;height:34px;border-radius:9px;background:#F1F1F3;border:1px solid rgba(0,0,0,0.06);display:flex;align-items:center;justify-content:center"><div style="width:13px;height:13px;border-radius:4px;border:1.6px solid #57606A"></div></div>
+              <div style="width:14px;height:1.5px;background:#D8D8DC"></div>
+              <div style="width:34px;height:34px;border-radius:9px;background:#F1F1F3;border:1px solid rgba(0,0,0,0.06);display:flex;align-items:center;justify-content:center"><div style="width:13px;height:13px;border-radius:999px;border:1.6px solid #5E6AD2"></div></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <div style="font-size:13.5px;font-weight:600;color:#1D1D1F">Connect your accounts</div>
+              <div style="font-size:11.5px;line-height:1.5;color:#6E6E73;text-wrap:pretty">GitHub for pull requests and deploy tags, Linear to group them by project.</div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <div style="font-size:11.5px;font-weight:560;color:#fff;background:#1D1D1F;border-radius:6px;padding:6px 13px">Connect GitHub</div>
+              <div style="font-size:11.5px;font-weight:560;color:#fff;background:#5E6AD2;border-radius:6px;padding:6px 13px">Connect Linear</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="width:380px;background:#FFFFFF;border:1px solid rgba(0,0,0,0.10);border-radius:11px;box-shadow:0 18px 44px rgba(0,0,0,0.16);overflow:hidden">
+          <div style="padding:9px 12px;background:#FFF8C5;border-bottom:1px solid rgba(154,103,0,0.18);display:flex;align-items:center;gap:8px">
+            <div style="width:6px;height:6px;border-radius:999px;background:#9A6700"></div>
+            <div style="font-size:11.5px;font-weight:590;color:#7A5200">GitHub token expired</div>
+            <div style="flex:1"></div>
+            <div style="font-size:11px;font-weight:600;color:#9A6700">Reconnect</div>
+          </div>
+          <div style="padding:10px 12px 12px;display:flex;flex-direction:column;gap:9px;opacity:.5">
+            <div style="display:flex;align-items:center;gap:9px"><div style="width:16px;height:16px;border-radius:5px;background:#EDEDF0"></div><div style="height:8px;border-radius:3px;background:#EDEDF0;flex:1"></div><div style="width:52px;height:8px;border-radius:3px;background:#EDEDF0"></div></div>
+            <div style="display:flex;align-items:center;gap:9px"><div style="width:16px;height:16px;border-radius:5px;background:#EDEDF0"></div><div style="height:8px;border-radius:3px;background:#EDEDF0;flex:1"></div><div style="width:52px;height:8px;border-radius:3px;background:#EDEDF0"></div></div>
+            <div style="display:flex;align-items:center;gap:9px"><div style="width:16px;height:16px;border-radius:5px;background:#EDEDF0"></div><div style="height:8px;border-radius:3px;background:#EDEDF0;flex:1"></div><div style="width:52px;height:8px;border-radius:3px;background:#EDEDF0"></div></div>
+          </div>
+          <div style="border-top:1px solid rgba(0,0,0,0.06);background:#FCFCFD;padding:7px 12px;display:flex;align-items:center;gap:8px">
+            <div style="width:5px;height:5px;border-radius:999px;background:#C3C6CC"></div>
+            <div style="font-size:10.5px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">stale · last synced 41m ago</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================= 1c ============================= -->
+    <div id="1c" style="display:flex;flex-direction:column;gap:12px;width:452px">
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <div style="font-size:11px;font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#fff;background:#1D1D1F;border-radius:4px;padding:3px 6px">1c</div>
+        <div style="font-size:13px;font-weight:600;color:#1D1D1F">Deploy in flight · Merged tab</div>
+      </div>
+      <div style="font-size:12px;line-height:1.5;color:#6E6E73;max-width:420px">Merged PRs tracked by the tag that carries their squash commit. A release header groups everything riding the same tag; per-row it's the same three-segment track, plus the badge variant on the right for comparison.</div>
+
+      <div style="width:450px;height:600px;background:#FFFFFF;border:1px solid rgba(0,0,0,0.10);border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,0.18);display:flex;flex-direction:column;overflow:hidden">
+        <div style="padding:11px 12px 9px;border-bottom:1px solid rgba(0,0,0,0.06);display:flex;flex-direction:column;gap:9px;background:#FCFCFD">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="font-size:13px;font-weight:640;color:#1D1D1F;letter-spacing:-0.01em">My pull requests</div>
+            <div style="font-size:11px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">6 merged</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:2px;background:#EDEDF0;border-radius:7px;padding:2px">
+            <div style="flex:1;text-align:center;font-size:11.5px;font-weight:500;color:#6E6E73;padding:4px 0">In review</div>
+            <div style="flex:1;text-align:center;font-size:11.5px;font-weight:590;color:#1D1D1F;background:#fff;border-radius:5px;padding:4px 0;box-shadow:0 1px 2px rgba(0,0,0,0.10)">Merged</div>
+            <div style="flex:1;text-align:center;font-size:11.5px;font-weight:500;color:#6E6E73;padding:4px 0">All</div>
+          </div>
+        </div>
+
+        <div style="flex:1">
+          <!-- release: rolling out -->
+          <div style="display:flex;align-items:center;gap:8px;padding:12px 12px 8px">
+            <div style="font-size:11.5px;font-weight:640;color:#1D1D1F;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">v2.41.0</div>
+            <div style="display:flex;align-items:center;gap:5px;background:#FFF8C5;border-radius:999px;padding:2px 7px"><div style="width:5px;height:5px;border-radius:999px;background:#9A6700;animation:pulseBar 1.2s ease-in-out infinite"></div><div style="font-size:10px;font-weight:600;color:#7A5200">rolling out to production</div></div>
+            <div style="flex:1"></div>
+            <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">4m</div>
+          </div>
+          <div style="margin:0 12px 4px;height:3px;border-radius:2px;background:#EDEDF0;overflow:hidden"><div style="width:62%;height:3px;border-radius:2px;background:#9A6700"></div></div>
+
+          <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;margin:4px 8px 0;border-radius:7px">
+            <div style="width:16px;height:16px;border-radius:5px;background:#F3E8FF;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#8250DF"></div></div>
+            <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+              <div style="font-size:12.5px;font-weight:520;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Extract invoice line-item model</div>
+              <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#E8618C">Billing Revamp</span><span style="color:#8A8F98">#4098</span><span style="color:#8A8F98">a3f19c2</span></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex:none">
+              <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#9A6700;animation:pulseBar 1.2s ease-in-out infinite"></div></div>
+              <div style="font-size:9.5px;font-weight:600;color:#7A5200;background:#FFF8C5;border-radius:4px;padding:2px 5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;width:58px;text-align:center">deploying</div>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;margin:2px 8px 0;border-radius:7px">
+            <div style="width:16px;height:16px;border-radius:5px;background:#F3E8FF;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#8250DF"></div></div>
+            <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+              <div style="font-size:12.5px;font-weight:520;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Tokenizer bench harness</div>
+              <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#4EA7FC">Search v2</span><span style="color:#8A8F98">#4090</span><span style="color:#8A8F98">7be0114</span></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex:none">
+              <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#9A6700;animation:pulseBar 1.2s ease-in-out infinite"></div></div>
+              <div style="font-size:9.5px;font-weight:600;color:#7A5200;background:#FFF8C5;border-radius:4px;padding:2px 5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;width:58px;text-align:center">deploying</div>
+            </div>
+          </div>
+
+          <!-- release: blocked -->
+          <div style="display:flex;align-items:center;gap:8px;padding:18px 12px 8px">
+            <div style="font-size:11.5px;font-weight:640;color:#1D1D1F;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">v2.40.2</div>
+            <div style="display:flex;align-items:center;gap:5px;background:#FFEBE9;border-radius:999px;padding:2px 7px"><div style="width:5px;height:5px;border-radius:999px;background:#CF222E"></div><div style="font-size:10px;font-weight:600;color:#8B1A22">deploy failed · held at staging</div></div>
+            <div style="flex:1"></div>
+            <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">1h</div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;margin:0 8px;border-radius:7px;background:#FFFBFB;box-shadow:inset 2px 0 0 #CF222E">
+            <div style="width:16px;height:16px;border-radius:5px;background:#FFEBE9;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#CF222E"></div></div>
+            <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+              <div style="font-size:12.5px;font-weight:560;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Passkey enrollment screen</div>
+              <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#F2C94C">Mobile Onboarding</span><span style="color:#8A8F98">#4133</span><span style="color:#CF222E;font-weight:600">migration step failed</span></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex:none">
+              <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#CF222E"></div></div>
+              <div style="font-size:9.5px;font-weight:600;color:#8B1A22;background:#FFEBE9;border-radius:4px;padding:2px 5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;width:58px;text-align:center">failed</div>
+            </div>
+          </div>
+
+          <!-- release: live -->
+          <div style="display:flex;align-items:center;gap:8px;padding:18px 12px 8px">
+            <div style="font-size:11.5px;font-weight:640;color:#1D1D1F;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">v2.40.1</div>
+            <div style="display:flex;align-items:center;gap:5px;background:#DAFBE1;border-radius:999px;padding:2px 7px"><div style="width:5px;height:5px;border-radius:999px;background:#1A7F37"></div><div style="font-size:10px;font-weight:600;color:#14682D">live in production</div></div>
+            <div style="flex:1"></div>
+            <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">22m</div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;margin:0 8px;border-radius:7px;background:#F7FEF8">
+            <div style="width:5px;height:5px;border-radius:999px;background:#5E6AD2;flex:none;margin-left:-4px"></div>
+            <div style="width:16px;height:16px;border-radius:5px;background:#F3E8FF;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#8250DF"></div></div>
+            <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+              <div style="font-size:12.5px;font-weight:520;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Fix flaky spec in webhooks</div>
+              <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#8A8F98">Other</span><span style="color:#8A8F98">#4044</span><span style="color:#8A8F98">c81de55</span></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex:none">
+              <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div></div>
+              <div style="font-size:9.5px;font-weight:600;color:#14682D;background:#DAFBE1;border-radius:4px;padding:2px 5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;width:58px;text-align:center">live</div>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;margin:2px 8px 0;border-radius:7px">
+            <div style="width:5px;flex:none"></div>
+            <div style="width:16px;height:16px;border-radius:5px;background:#F3E8FF;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#8250DF"></div></div>
+            <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+              <div style="font-size:12.5px;font-weight:520;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Retry webhook delivery queue</div>
+              <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#8A8F98">Other</span><span style="color:#8A8F98">#4031</span><span style="color:#8A8F98">9ff2a10</span></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex:none">
+              <div style="display:flex;gap:2px;align-items:center"><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:9px;height:3px;border-radius:2px;background:#1A7F37"></div></div>
+              <div style="font-size:9.5px;font-weight:600;color:#14682D;background:#DAFBE1;border-radius:4px;padding:2px 5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;width:58px;text-align:center">live</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="border-top:1px solid rgba(0,0,0,0.06);background:#FCFCFD;padding:7px 12px;display:flex;align-items:center;gap:8px">
+          <div style="width:5px;height:5px;border-radius:999px;background:#9A6700"></div>
+          <div style="font-size:10.5px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">watching v2.41.0</div>
+          <div style="flex:1"></div>
+          <div style="font-size:11px;color:#57606A">Settings</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================= 1d ============================= -->
+    <div id="1d" style="display:flex;flex-direction:column;gap:12px;width:452px">
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <div style="font-size:11px;font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#fff;background:#1D1D1F;border-radius:4px;padding:3px 6px">1d</div>
+        <div style="font-size:13px;font-weight:600;color:#1D1D1F">Heavy load · 14 PRs, collapsed stacks</div>
+      </div>
+      <div style="font-size:12px;line-height:1.5;color:#6E6E73;max-width:420px">What a busy day looks like: stacks collapse to a single summary row with a segment bar for member states; projects can be collapsed too. One stack is expanded to show the drill-down.</div>
+
+      <div style="width:450px;height:660px;background:#FFFFFF;border:1px solid rgba(0,0,0,0.10);border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,0.18);display:flex;flex-direction:column;overflow:hidden">
+        <div style="padding:11px 12px 9px;border-bottom:1px solid rgba(0,0,0,0.06);display:flex;align-items:center;gap:8px;background:#FCFCFD">
+          <div style="font-size:13px;font-weight:640;color:#1D1D1F;letter-spacing:-0.01em">My pull requests</div>
+          <div style="font-size:11px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">14 in review · 4 stacks</div>
+          <div style="flex:1"></div>
+          <div style="font-size:10.5px;font-weight:560;color:#57606A;background:#F1F1F3;border-radius:5px;padding:3px 7px">Collapse all</div>
+        </div>
+
+        <div style="padding:8px 12px;border-bottom:1px solid rgba(0,0,0,0.06);display:flex;align-items:center;gap:14px;background:#FDFDFE">
+          <div style="display:flex;align-items:center;gap:5px"><div style="width:7px;height:7px;border-radius:999px;background:#CF222E"></div><div style="font-size:10.5px;color:#3C4149;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">4 blocked</div></div>
+          <div style="display:flex;align-items:center;gap:5px"><div style="width:7px;height:7px;border-radius:999px;background:#1A7F37"></div><div style="font-size:10.5px;color:#3C4149;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">3 mergeable</div></div>
+          <div style="display:flex;align-items:center;gap:5px"><div style="width:7px;height:7px;border-radius:999px;background:#8A8F98"></div><div style="font-size:10.5px;color:#3C4149;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">7 waiting</div></div>
+        </div>
+
+        <div style="flex:1;padding-bottom:8px">
+          <div style="display:flex;align-items:center;gap:7px;padding:12px 12px 5px">
+            <div style="width:7px;height:7px;border-radius:2px;background:#E8618C;flex:none"></div>
+            <div style="font-size:11px;font-weight:640;color:#3C4149">Billing Revamp</div>
+            <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">6</div>
+          </div>
+
+          <!-- collapsed stack A -->
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;margin:0 8px;border-radius:7px;border:1px solid rgba(0,0,0,0.07);background:#FCFCFD">
+            <div style="font-size:10px;color:#8A8F98;width:8px;text-align:center">›</div>
+            <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:3px">
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="font-size:12.5px;font-weight:560;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Proration engine</div>
+                <div style="font-size:9.5px;font-weight:600;color:#57606A;background:#EDEDF0;border-radius:4px;padding:1px 5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;flex:none">4 PRs</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:3px">
+                <div style="width:34px;height:3px;border-radius:2px;background:#8250DF"></div>
+                <div style="width:34px;height:3px;border-radius:2px;background:#1A7F37"></div>
+                <div style="width:34px;height:3px;border-radius:2px;background:#CF222E"></div>
+                <div style="width:34px;height:3px;border-radius:2px;background:#D8D8DC"></div>
+                <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-left:5px">blocked at 3/4</div>
+              </div>
+            </div>
+            <div style="width:5px;height:5px;border-radius:999px;background:#5E6AD2;flex:none"></div>
+            <div style="width:15px;height:15px;border-radius:999px;background:#FFEBE9;color:#CF222E;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none">✕</div>
+          </div>
+
+          <!-- collapsed stack B -->
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;margin:6px 8px 0;border-radius:7px;border:1px solid rgba(0,0,0,0.07);background:#FCFCFD">
+            <div style="font-size:10px;color:#8A8F98;width:8px;text-align:center">›</div>
+            <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:3px">
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="font-size:12.5px;font-weight:520;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Dunning emails</div>
+                <div style="font-size:9.5px;font-weight:600;color:#57606A;background:#EDEDF0;border-radius:4px;padding:1px 5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;flex:none">2 PRs</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:3px">
+                <div style="width:34px;height:3px;border-radius:2px;background:#1A7F37"></div>
+                <div style="width:34px;height:3px;border-radius:2px;background:#1A7F37"></div>
+                <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-left:5px">all approved · ready</div>
+              </div>
+            </div>
+            <div style="width:15px;height:15px;border-radius:999px;background:#DAFBE1;color:#1A7F37;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none">✓</div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:7px;padding:15px 12px 5px">
+            <div style="width:7px;height:7px;border-radius:2px;background:#4EA7FC;flex:none"></div>
+            <div style="font-size:11px;font-weight:640;color:#3C4149">Search v2</div>
+            <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">5</div>
+          </div>
+
+          <!-- expanded stack -->
+          <div style="margin:0 8px;border:1px solid rgba(94,106,210,0.28);border-radius:8px;overflow:hidden;background:#fff;box-shadow:0 0 0 3px rgba(94,106,210,0.07)">
+            <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;background:#F7F7FE;border-bottom:1px solid rgba(0,0,0,0.06)">
+              <div style="font-size:10px;color:#5E6AD2;width:8px;text-align:center">⌄</div>
+              <div style="font-size:12.5px;font-weight:600;color:#1D1D1F;letter-spacing:-0.008em">Segmenter rollout</div>
+              <div style="font-size:9.5px;font-weight:600;color:#4C58BF;background:#E7E8FB;border-radius:4px;padding:1px 5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">3 PRs</div>
+              <div style="flex:1"></div>
+              <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">base: main</div>
+            </div>
+
+            <div style="display:flex;align-items:stretch">
+              <div style="width:26px;flex:none;display:flex;justify-content:center;padding:8px 0"><div style="width:1.5px;background:#E4E4E7;border-radius:2px"></div></div>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 0;position:relative">
+                  <div style="position:absolute;left:-13px;width:11px;height:1.5px;background:#E4E4E7"></div>
+                  <div style="width:9px;height:9px;border-radius:999px;background:#fff;border:2px solid #1A7F37;flex:none;margin-left:-4.5px"></div>
+                  <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                    <div style="font-size:12.5px;font-weight:520;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Vendor ICU tables</div>
+                    <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#5E6AD2">SRC-95</span><span style="color:#8A8F98">#4118</span><span style="color:#1A7F37;font-weight:600">approved</span></div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px;flex:none;padding-right:10px">
+                    <div style="width:18px;height:18px;border-radius:999px;background:#0969DA;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-shadow:0 0 0 1.5px #1A7F37">TS</div>
+                    <div style="width:15px;height:15px;border-radius:999px;background:#DAFBE1;color:#1A7F37;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">✓</div>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 0;position:relative;background:#FFFBFB">
+                  <div style="position:absolute;left:-13px;width:11px;height:1.5px;background:#E4E4E7"></div>
+                  <div style="width:9px;height:9px;border-radius:999px;background:#fff;border:2px solid #CF222E;flex:none;margin-left:-4.5px"></div>
+                  <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                    <div style="font-size:12.5px;font-weight:560;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Replace tokenizer with ICU segmenter</div>
+                    <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#5E6AD2">SRC-97</span><span style="color:#8A8F98">#4120</span><span style="color:#CF222E;font-weight:600">2 checks failed</span></div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px;flex:none;padding-right:10px">
+                    <div style="width:18px;height:18px;border-radius:999px;background:#0969DA;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-shadow:0 0 0 1.5px #D0D7DE">TS</div>
+                    <div style="width:15px;height:15px;border-radius:999px;background:#FFEBE9;color:#CF222E;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">✕</div>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 0;position:relative">
+                  <div style="position:absolute;left:-13px;width:11px;height:1.5px;background:#E4E4E7"></div>
+                  <div style="width:9px;height:9px;border-radius:999px;background:#fff;border:2px solid #D0D7DE;flex:none;margin-left:-4.5px"></div>
+                  <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+                    <div style="font-size:12.5px;font-weight:500;color:#57606A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Switch query path to segmenter</div>
+                    <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#5E6AD2">SRC-99</span><span style="color:#8A8F98">#4129</span><span style="color:#8A8F98">blocked by #4120</span></div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px;flex:none;padding-right:10px">
+                    <div style="width:15px;height:15px;border-radius:999px;background:#F1F1F3;display:flex;align-items:center;justify-content:center"><div style="width:5px;height:1.5px;background:#8A8F98;border-radius:2px"></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;margin:6px 8px 0;border-radius:7px">
+            <div style="width:16px;height:16px;border-radius:5px;background:#DAFBE1;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#1A7F37"></div></div>
+            <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+              <div style="font-size:12.5px;font-weight:520;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Index shard rebalancing</div>
+              <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#5E6AD2">SRC-88</span><span style="color:#8A8F98">#4076</span><span style="color:#1A7F37;font-weight:600">ready to merge</span><span style="color:#8A8F98">1d</span></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex:none">
+              <div style="width:18px;height:18px;border-radius:999px;background:#1A7F37;color:#fff;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-shadow:0 0 0 1.5px #1A7F37">PL</div>
+              <div style="width:15px;height:15px;border-radius:999px;background:#DAFBE1;color:#1A7F37;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">✓</div>
+            </div>
+          </div>
+
+          <!-- collapsed project -->
+          <div style="display:flex;align-items:center;gap:7px;padding:15px 12px 5px">
+            <div style="width:7px;height:7px;border-radius:2px;background:#F2C94C;flex:none"></div>
+            <div style="font-size:11px;font-weight:640;color:#3C4149">Mobile Onboarding</div>
+            <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">2</div>
+            <div style="flex:1"></div>
+            <div style="font-size:10px;color:#8A8F98">›</div>
+          </div>
+          <div style="margin:0 12px;height:1px;background:rgba(0,0,0,0.05)"></div>
+
+          <div style="display:flex;align-items:center;gap:7px;padding:15px 12px 5px">
+            <div style="width:7px;height:7px;border-radius:2px;background:#C3C6CC;flex:none"></div>
+            <div style="font-size:11px;font-weight:640;color:#3C4149">Other</div>
+            <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">3</div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;margin:0 8px;border-radius:7px;background:#FFFBFB;box-shadow:inset 2px 0 0 #CF222E">
+            <div style="width:16px;height:16px;border-radius:5px;background:#FFEBE9;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:7px;height:2px;border-radius:2px;background:#CF222E;transform:rotate(45deg)"></div></div>
+            <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+              <div style="font-size:12.5px;font-weight:560;color:#1D1D1F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Bump ruby to 3.4</div>
+              <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#8A8F98">#4051</span><span style="color:#CF222E;font-weight:600">merge conflict</span><span style="color:#8A8F98">2d</span></div>
+            </div>
+            <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;flex:none">snooze</div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;margin:2px 8px 0;border-radius:7px;opacity:.55">
+            <div style="width:16px;height:16px;border-radius:5px;background:#F1F1F3;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:2px;border-radius:2px;background:#8A8F98"></div></div>
+            <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+              <div style="font-size:12.5px;font-weight:500;color:#57606A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.008em">Docs: deploy runbook</div>
+              <div style="display:flex;align-items:center;gap:7px;font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"><span style="color:#8A8F98">#3998</span><span style="color:#8A8F98">snoozed until Mon</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="border-top:1px solid rgba(0,0,0,0.06);background:#FCFCFD;padding:7px 12px;display:flex;align-items:center;gap:8px">
+          <div style="width:5px;height:5px;border-radius:999px;background:#CF222E"></div>
+          <div style="font-size:10.5px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">4 need attention</div>
+          <div style="flex:1"></div>
+          <div style="font-size:11px;color:#57606A">Mark all read</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================= 1f ============================= -->
+    <div id="1f" style="display:flex;flex-direction:column;gap:12px;width:452px">
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <div style="font-size:11px;font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#fff;background:#1D1D1F;border-radius:4px;padding:3px 6px">1f</div>
+        <div style="font-size:13px;font-weight:600;color:#1D1D1F">Stack treatments &amp; tray states</div>
+      </div>
+      <div style="font-size:12px;line-height:1.5;color:#6E6E73;max-width:420px">Three ways to render a stack, at the same width as the panel. Pick one and I'll apply it across all states.</div>
+
+      <div style="display:flex;flex-direction:column;gap:16px">
+
+        <div style="display:flex;flex-direction:column;gap:7px">
+          <div style="font-size:10.5px;font-weight:600;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:0.03em">A · GROUPED CARD (used in 1a)</div>
+          <div style="width:434px;background:#fff;border:1px solid rgba(0,0,0,0.09);border-radius:9px;box-shadow:0 2px 8px rgba(0,0,0,0.05);overflow:hidden">
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 10px;background:#fff">
+              <div style="width:16px;height:16px;border-radius:5px;background:#DAFBE1;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#1A7F37"></div></div>
+              <div style="font-size:12.5px;font-weight:520;color:#1D1D1F;flex:1;letter-spacing:-0.008em">Add proration engine</div>
+              <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">1/3</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 10px;border-top:1px solid rgba(0,0,0,0.055)">
+              <div style="width:16px;height:16px;border-radius:5px;background:#FFEBE9;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:#CF222E"></div></div>
+              <div style="font-size:12.5px;font-weight:560;color:#1D1D1F;flex:1;letter-spacing:-0.008em">Wire proration into checkout</div>
+              <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">2/3</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 10px;border-top:1px solid rgba(0,0,0,0.055)">
+              <div style="width:16px;height:16px;border-radius:5px;background:#F1F1F3;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:2px;border-radius:2px;background:#8A8F98"></div></div>
+              <div style="font-size:12.5px;font-weight:500;color:#57606A;flex:1;letter-spacing:-0.008em">Backfill legacy invoices</div>
+              <div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">3/3</div>
+            </div>
+          </div>
+          <div style="font-size:11px;color:#6E6E73;line-height:1.45">Quietest. Reads as one unit; order is implicit top-to-bottom.</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:7px">
+          <div style="font-size:10.5px;font-weight:600;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:0.03em">B · TREE WITH CONNECTORS (used in 1d)</div>
+          <div style="width:434px;background:#fff;border:1px solid rgba(0,0,0,0.09);border-radius:9px;padding:8px 10px;box-shadow:0 2px 8px rgba(0,0,0,0.05)">
+            <div style="display:flex;align-items:center;gap:8px;padding-bottom:6px">
+              <div style="width:9px;height:9px;border-radius:2px;background:#8A8F98"></div>
+              <div style="font-size:11px;font-weight:600;color:#3C4149;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">main</div>
+            </div>
+            <div style="display:flex">
+              <div style="width:22px;display:flex;justify-content:center"><div style="width:1.5px;background:#E4E4E7;border-radius:2px"></div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="display:flex;align-items:center;gap:9px;position:relative;padding:4px 0"><div style="position:absolute;left:-11px;width:9px;height:1.5px;background:#E4E4E7"></div><div style="width:9px;height:9px;border-radius:999px;background:#fff;border:2px solid #1A7F37;margin-left:-4.5px"></div><div style="font-size:12.5px;font-weight:520;color:#1D1D1F;flex:1">Add proration engine</div></div>
+                <div style="display:flex;align-items:center;gap:9px;position:relative;padding:4px 0"><div style="position:absolute;left:-11px;width:9px;height:1.5px;background:#E4E4E7"></div><div style="width:9px;height:9px;border-radius:999px;background:#fff;border:2px solid #CF222E;margin-left:-4.5px"></div><div style="font-size:12.5px;font-weight:560;color:#1D1D1F;flex:1">Wire proration into checkout</div></div>
+                <div style="display:flex;align-items:center;gap:9px;position:relative;padding:4px 0"><div style="position:absolute;left:-11px;width:9px;height:1.5px;background:#E4E4E7"></div><div style="width:9px;height:9px;border-radius:999px;background:#fff;border:2px solid #D0D7DE;margin-left:-4.5px"></div><div style="font-size:12.5px;font-weight:500;color:#57606A;flex:1">Backfill legacy invoices</div></div>
+              </div>
+            </div>
+          </div>
+          <div style="font-size:11px;color:#6E6E73;line-height:1.45">Most literal about base branches, costs ~22px of horizontal room per level.</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:7px">
+          <div style="font-size:10.5px;font-weight:600;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:0.03em">C · COLLAPSED SUMMARY (used in 1d)</div>
+          <div style="width:434px;background:#FCFCFD;border:1px solid rgba(0,0,0,0.09);border-radius:9px;padding:8px 10px;display:flex;align-items:center;gap:10px;box-shadow:0 2px 8px rgba(0,0,0,0.05)">
+            <div style="font-size:10px;color:#8A8F98;width:8px;text-align:center">›</div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:3px">
+              <div style="display:flex;align-items:center;gap:6px"><div style="font-size:12.5px;font-weight:560;color:#1D1D1F">Proration engine</div><div style="font-size:9.5px;font-weight:600;color:#57606A;background:#EDEDF0;border-radius:4px;padding:1px 5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">3 PRs</div></div>
+              <div style="display:flex;align-items:center;gap:3px"><div style="width:44px;height:3px;border-radius:2px;background:#1A7F37"></div><div style="width:44px;height:3px;border-radius:2px;background:#CF222E"></div><div style="width:44px;height:3px;border-radius:2px;background:#D8D8DC"></div><div style="font-size:10px;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-left:5px">blocked at 2/3</div></div>
+            </div>
+            <div style="width:15px;height:15px;border-radius:999px;background:#FFEBE9;color:#CF222E;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">✕</div>
+          </div>
+          <div style="font-size:11px;color:#6E6E73;line-height:1.45">One row per stack — the only option that survives 14 open PRs. Expands to A or B.</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px;margin-top:6px">
+          <div style="font-size:10.5px;font-weight:600;color:#8A8F98;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:0.03em">TRAY ICON STATES</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:14px">
+              <div style="width:82px;height:30px;border-radius:7px;background:linear-gradient(#FAFAFB,#F1F1F3);border:1px solid rgba(0,0,0,0.10);display:flex;align-items:center;justify-content:center"><div style="width:15px;height:15px;border-radius:4px;border:1.6px solid #1D1D1F;display:flex;align-items:center;justify-content:center"><div style="width:4px;height:4px;border-radius:999px;background:#1D1D1F"></div></div></div>
+              <div style="font-size:11.5px;color:#3C4149">Idle — nothing new</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px">
+              <div style="width:82px;height:30px;border-radius:7px;background:linear-gradient(#FAFAFB,#F1F1F3);border:1px solid rgba(0,0,0,0.10);display:flex;align-items:center;justify-content:center"><div style="position:relative"><div style="width:15px;height:15px;border-radius:4px;border:1.6px solid #1D1D1F;display:flex;align-items:center;justify-content:center"><div style="width:4px;height:4px;border-radius:999px;background:#1D1D1F"></div></div><div style="position:absolute;top:-2px;right:-3px;width:7px;height:7px;border-radius:999px;background:#5E6AD2;box-shadow:0 0 0 1.5px #F4F4F6"></div></div></div>
+              <div style="font-size:11.5px;color:#3C4149">Unread activity — new comments or reviews</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px">
+              <div style="width:82px;height:30px;border-radius:7px;background:linear-gradient(#FAFAFB,#F1F1F3);border:1px solid rgba(0,0,0,0.10);display:flex;align-items:center;justify-content:center"><div style="position:relative"><div style="width:15px;height:15px;border-radius:4px;border:1.6px solid #1D1D1F;display:flex;align-items:center;justify-content:center"><div style="width:4px;height:4px;border-radius:999px;background:#1D1D1F"></div></div><div style="position:absolute;top:-3px;right:-6px;min-width:13px;height:13px;border-radius:999px;background:#CF222E;color:#fff;font-size:8.5px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;box-shadow:0 0 0 1.5px #F4F4F6">3</div></div></div>
+              <div style="font-size:11.5px;color:#3C4149">Action needed — count of blocked / changes-requested</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px">
+              <div style="width:82px;height:30px;border-radius:7px;background:linear-gradient(#FAFAFB,#F1F1F3);border:1px solid rgba(0,0,0,0.10);display:flex;align-items:center;justify-content:center"><div style="position:relative"><div style="width:15px;height:15px;border-radius:4px;border:1.6px solid #1D1D1F;display:flex;align-items:center;justify-content:center"><div style="width:4px;height:4px;border-radius:999px;background:#1D1D1F"></div></div><div style="position:absolute;top:-2px;right:-3px;width:7px;height:7px;border-radius:999px;background:#9A6700;box-shadow:0 0 0 1.5px #F4F4F6;animation:pulseBar 1.2s ease-in-out infinite"></div></div></div>
+              <div style="font-size:11.5px;color:#3C4149">Deploy in flight — pulses until the tag lands</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px">
+              <div style="width:82px;height:30px;border-radius:7px;background:linear-gradient(#FAFAFB,#F1F1F3);border:1px solid rgba(0,0,0,0.10);display:flex;align-items:center;justify-content:center;opacity:.45"><div style="width:15px;height:15px;border-radius:4px;border:1.6px dashed #1D1D1F"></div></div>
+              <div style="font-size:11.5px;color:#3C4149">Disconnected / offline</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+</x-dc>
+</body>
+</html>
