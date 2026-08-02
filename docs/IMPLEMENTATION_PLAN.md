@@ -280,6 +280,14 @@ No identifiers at all, or no linked issue that has a project → **Other**.
 
 #### One row, one section — the primary issue
 
+`LinearKit.resolve(ids)` must **preserve that order on the way out.** It answers from two places — the
+on-disk cache and the aliased GraphQL response — so it collects both into an `[Identifier: IssueRef]` map and
+then rebuilds the array by walking the *original ordered identifier list*, never by appending cache hits and
+response fields in the order they arrived. Otherwise a PR linking `BIL-312` and `SRC-97` yields
+`[BIL-312, SRC-97]` on the poll where both are cached and `[SRC-97, BIL-312]` on the poll where one is
+freshly fetched — and the row silently migrates from Billing to Source. Fixture:
+`linear-resolve-order-cache-vs-fresh`.
+
 The **primary issue** is the first identifier in that order whose issue has a project, falling back to the
 first identifier overall. The row is grouped under the primary's project and nothing else. Because the order
 derives from PR fields rather than API response order, the primary is stable across polls, which is what
@@ -475,9 +483,23 @@ default greyed out until overridden.
 4. A tag carries several of the user's PRs, so they flip to shipped together — the `1c` release grouping,
    for free.
 
-Cost is one cheap `compare` per (merged PR × new candidate tag) until bound, and zero afterwards. A fixture
-with 25+ matching tags and the containing tag on the second page (`release-tag-on-later-page`) pins the
-pagination requirement.
+#### Bounding the comparisons
+
+A negative result must be **as durable as a positive one**. Each unbound merged PR persists
+`comparedTags: Set<TagName>`; a tag already in that set is never compared again for that PR. Without it, an
+unbound PR re-tests every candidate tag on every poll — N unbound PRs × K candidate tags *per poll*, forever,
+which for 10 stranded merges in a repo with 25 matching tags is 250 requests every 60 seconds. The set is
+bounded by tags cut since that PR merged and is discarded the moment the PR binds; a PR unbound for months in
+a busy repo costs a few hundred short strings, which is acceptable and self-limiting.
+
+On top of that, a hard **per-poll comparison budget** (default 20, oldest candidates first). Exceeding it
+defers the remainder to the next poll rather than blocking the sync — a PR shipping is not urgent enough to
+spend a rate limit on, and the persisted set means the work already done is never repeated. Steady state
+after the first poll following a release cut is near zero comparisons, since only genuinely new tags are
+untested.
+
+A fixture with 25+ matching tags and the containing tag on the second page (`release-tag-on-later-page`) pins
+the pagination requirement; `release-compare-not-repeated-across-polls` pins the durability of negatives.
 
 **What this model gives up**, relative to PRD §4/§7 — worth stating plainly, since it removes states the
 design draws:
@@ -506,13 +528,15 @@ Budget: GraphQL 5,000 points/hr, REST 5,000 req/hr. Per poll, now that the searc
 | PR search | 1 per 50 open PRs (1 typical, capped at 10) |
 | Merged-PR query | 1, plus a page per 50 unbound merges (1 typical) |
 | Tag refs | 1 per repo with an unbound merged PR, plus a page per 100 matching tags |
-| `compare` (REST) | 1 per (unbound merged PR × new candidate tag), zero once bound |
+| `compare` (REST) | 1 per (unbound merged PR × **untested** candidate tag), hard-capped at 20 per poll |
 
-Worst realistic case — panel held open an entire hour at 30 s, 3 repos mid-release — is roughly 120 polls ×
-5 requests ≈ 600/hr, still an order of magnitude inside both limits. Idle (5 min) is ~12 polls/hr. The
-pathological case is a repo that tags constantly *and* has long-unbound merges, since compare calls multiply;
-the permanent binding cache is what keeps that from compounding poll over poll. Honour
-`X-RateLimit-Remaining`; below 10% fall back to the idle interval and mark the footer.
+Worst realistic case — panel held open an entire hour at 30 s, 3 repos mid-release — is 120 polls × (3 GraphQL
++ up to 20 REST) ≈ 360 GraphQL and up to 2,400 REST per hour. The REST figure is the *cap*, not the
+expectation: it is only approached in the first polls after a release cut, because `comparedTags` makes every
+negative durable, so subsequent polls test only genuinely new tags and settle near zero. Without both the cap
+and the persisted negatives this number is unbounded. Idle (5 min) is ~12 polls/hr. Honour
+`X-RateLimit-Remaining`; below 10% fall back to the idle interval, drop the comparison budget to zero, and
+mark the footer.
 
 ### Linear
 
@@ -625,7 +649,11 @@ dot, `synced 34s ago`, `Mark all read`, `Settings`).
 - Title, 12.5 pt, single line, ellipsis; weight 500 → 560 as the row gains urgency.
 - Meta line, 11 pt: Linear identifier (indigo, clickable) with a `+N` affix when the PR resolves more than
   one ticket — `BIL-312 +2`, the affix in tertiary grey so it reads as a count, not a second link — repo name
-  **only when the list spans more than one repo**, `#number`, **one** status phrase, age. Clicking the
+  **only when the list spans more than one repo**, `#number`, **one** status phrase, age. When
+  `primaryIssue` is nil the identifier token is **omitted entirely** — no placeholder, no `Other` label — and
+  the line simply starts at the repo name or `#number`. This matches design 2a, where the Other-section row
+  reads `#4051 · merge conflict · 2d`. The section heading already says `Other`; repeating it per row would
+  spend the meta line's scarcest asset on the absence of information. Clicking the
   identifier opens the primary issue; clicking `+N` opens a small menu listing every linked ticket with its
   project, each opening in the browser. The status phrase is the only coloured *status* token —
   the identifier's indigo is a link affordance, not a state signal, which is why it's the one other colour
@@ -649,7 +677,7 @@ No global hotkey for opening the panel. Once it's open, the row under the pointe
 | `X` | Dismiss (Done rows only) |
 | `S` | Snooze — opens the duration menu inline |
 | `↩` | Open the PR in the browser (same as click) |
-| `L` | Open the Linear issue — the primary one; repeat presses cycle through the rest when a PR links several |
+| `L` | Open the Linear issue — the primary one; repeat presses cycle through the rest when a PR links several. No-op when the row has none |
 
 Implementation notes, because this is fiddlier than it looks:
 
@@ -658,6 +686,12 @@ Implementation notes, because this is fiddlier than it looks:
   the standard arrangement and doesn't change dismissal feel.
 - Track hover with `.onContinuousHover` on the row, holding the hovered `PRID` in the panel's view model.
   Intercept keys with a local `NSEvent` monitor scoped to the popover's window, not a global monitor.
+- **`L` cycling state is `(PRID, index)`, stored as one optional pair, not a bare index.** Each press opens
+  `linearIssues[index]` and advances; cycling **wraps** back to the primary after the last. The pair resets to
+  nil whenever the hovered row changes and whenever the popover closes, so a press on a freshly hovered row
+  always opens *its* primary. Storing the index alone would carry position across rows — hover a PR with three
+  tickets, press `L` twice, hover a different PR, and the next press opens that row's third ticket, or nothing
+  if it has fewer.
 - **Own the monitor's lifecycle explicitly.** `addLocalMonitorForEvents(matching:handler:)` returns a token
   that stays live until removed. Store it in a single optional property; before registering, remove and nil
   any existing token; tear it down on popover close and on resign. Skipping this leaks a monitor per open,
@@ -721,8 +755,9 @@ added without disturbing anything else.
   release, empty state, multi-repo list (repo name appears) and single-repo list (it doesn't), plus the stack
   cases named in §2 and `release-tag-on-later-page`, `linear-cross-team-number-collision`,
   `pr-multiple-issues-same-project`, `pr-multiple-issues-cross-project`, `stack-spanning-projects`,
-  `snooze-status-changed-while-asleep`, `snooze-expiry-no-underlying-change`, and the two closed PR variants
-  from the precedence table. Rollback-after-Done is not fixtured — it's undetectable under
+  `snooze-status-changed-while-asleep`, `snooze-expiry-no-underlying-change`,
+  `linear-resolve-order-cache-vs-fresh`, `release-compare-not-repeated-across-polls`, and the two closed PR
+  variants from the precedence table. Rollback-after-Done is not fixtured — it's undetectable under
   tags-only tracking (§3).
 - **Golden panel models.** Assert the full derived `PanelModel` against a checked-in snapshot — catches
   ordering regressions, which are the ones a human reviewer will miss.
@@ -750,7 +785,7 @@ Each is independently demoable. Estimates assume one engineer working in focused
 | **M3** | Panel UI | Tokens, `PRRow`, spine, sections, header/footer, needs-attention + all-clear states | Panel is pixel-comparable to 2a against real data |
 | **M4** | Icon + unread + events | Status item drawing (4 states, disconnected outranking), effective-state event diffing against `previous`, `EventSink` bus, digest-based unread, open/mark-all-read | Icon tracks the priority table, and an expired GitHub token shows dashed rather than a cached badge; a relaunch emits no events but preserves unread |
 | **M5** | Linear grouping | Multi-identifier extraction, primary-issue selection, per-identifier `issue(id:)` resolution, cache, `Other` fallback | Rows group under real project headings; a multi-ticket PR shows `+N` and groups under its primary; a Linear outage keeps cached headings and marks the source stale |
-| **M6** | Release tracking | Merge-commit capture, unbound-merge persistence, paginated tag polling by per-repo pattern, containment via `compare`, binding cache, third segment + Done section | A merged PR flips to shipped when a matching tag appears — including a tag cut weeks later, and one found past the first page |
+| **M6** | Release tracking | Merge-commit capture, unbound-merge persistence, paginated tag polling by per-repo pattern, containment via `compare` with durable negatives and a per-poll budget, binding cache, third segment + Done section | A merged PR flips to shipped when a matching tag appears — including a tag cut weeks later, and one found past the first page |
 | **M7** | Interactions & persistence | Click-through, issue link, dismiss, `Clear all`, snooze, refresh, hovered-row keyboard actions with monitor teardown, Settings (tokens, repo scope, per-repo tag pattern) | Every row in PRD §8 works by pointer *and* by key; ten open/close cycles fire each action exactly once; state survives relaunch |
 | **M8** | Sync & resilience | Ordered interval table, display *and* system sleep, battery, staleness, per-source connection state and reconnect banners, backoff | Laptop sleeps overnight and wakes to correct, visibly-fresh state; an expired Linear key leaves GitHub rows intact |
 | **M9** | Polish | Dark appearance, accessibility pass, long-list scroll performance | VoiceOver reads each row's state; contrast and reduced-colour verified; 25-PR fixture scrolls at 60fps |
