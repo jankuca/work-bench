@@ -721,11 +721,26 @@ Implementation notes, because this is fiddlier than it looks:
   always opens *its* primary. Storing the index alone would carry position across rows — hover a PR with three
   tickets, press `L` twice, hover a different PR, and the next press opens that row's third ticket, or nothing
   if it has fewer.
-- **Own the monitor's lifecycle explicitly.** `addLocalMonitorForEvents(matching:handler:)` returns a token
-  that stays live until removed. Store it in a single optional property; before registering, remove and nil
-  any existing token; tear it down on popover close and on resign. Skipping this leaks a monitor per open,
-  and every previous handler keeps firing — so the third open of the panel would dismiss three rows on one
-  `X`. Remove each token exactly once: double `removeMonitor` over-releases.
+- **Own the monitor's lifecycle through one idempotent helper.**
+  `addLocalMonitorForEvents(matching:handler:)` returns a token that stays live until removed. Store it in a
+  single optional property and route *every* teardown — popover close, resign, and re-registration — through
+  one `stopMonitor()`:
+
+  ```swift
+  private var keyMonitor: Any?
+
+  private func stopMonitor() {
+      guard let token = keyMonitor else { return }   // already stopped
+      keyMonitor = nil                               // clear BEFORE removing
+      NSEvent.removeMonitor(token)
+  }
+  ```
+
+  Clearing the property before the call is what makes it safe to invoke twice, and close and resign do both
+  fire for the same dismissal — so any teardown written inline at each call site would double-remove, which
+  over-releases. `startMonitor()` calls `stopMonitor()` first, so a re-open can never stack a second monitor.
+  Getting this wrong in the other direction — never removing — leaks a monitor per open and keeps every
+  previous handler live, so the third open of the panel would dismiss three rows on one `X`.
 - Every key action must also exist as a pointer affordance (the ✕, the row menu). The keyboard is an
   accelerator, never the only path.
 - Hovered-row highlight is a subtle raise of the row background, distinct from the attention tint — an
