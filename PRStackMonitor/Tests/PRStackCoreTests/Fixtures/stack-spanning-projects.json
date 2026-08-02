@@ -1,0 +1,57 @@
+{
+  "comment": "A stack whose members resolve issues in three different projects. The whole group takes the project of its base, so the run stays contiguous under one heading; each member still shows its own identifier.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 600,
+        "title": "Stack base, billing ticket",
+        "headRef": "jk/s1",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-09T09:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-600", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 601,
+        "title": "Stack middle, payments ticket",
+        "headRef": "jk/s2",
+        "baseRef": "jk/s1",
+        "state": "open",
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "PAY-601", "projectId": "proj-payments", "projectName": "Payments" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 602,
+        "title": "Stack top, platform ticket",
+        "headRef": "jk/s3",
+        "baseRef": "jk/s2",
+        "state": "open",
+        "updatedAt": "2026-01-09T11:00:00Z",
+        "linearIssues": [
+          { "identifier": "PLT-602", "projectId": "proj-platform", "projectName": "Platform" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 650,
+        "title": "An unrelated payments pull request",
+        "headRef": "jk/pay",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-09T12:00:00Z",
+        "linearIssues": [
+          { "identifier": "PAY-650", "projectId": "proj-payments", "projectName": "Payments" }
+        ]
+      }
+    ]
+  }
+}

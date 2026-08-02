@@ -1,0 +1,39 @@
+{
+  "comment": "Dismissal is permanent. The shipped web pull request leaves the model entirely, and because it is gone it also stops the list counting as multi-repo.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/web",
+        "number": 1400,
+        "title": "Dismissed after shipping",
+        "headRef": "jk/n1400",
+        "baseRef": "main",
+        "state": "merged",
+        "mergeCommit": "cafe01",
+        "mergedAt": "2026-01-08T10:00:00Z",
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "PAY-1400", "projectId": "proj-payments", "projectName": "Payments" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1401,
+        "title": "Still open",
+        "headRef": "jk/n1401",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-09T11:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1401", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      }
+    ]
+  },
+  "local": {
+    "dismissed": ["acme/web#1400"],
+    "releaseBindings": { "acme/web#1400": "v2.0.0" }
+  }
+}

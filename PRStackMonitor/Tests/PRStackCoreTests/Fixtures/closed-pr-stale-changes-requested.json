@@ -1,0 +1,22 @@
+{
+  "comment": "A closed pull request carrying the review decision it had at close. It must not fall through to changesRequested and must not raise the badge.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 901,
+        "title": "Closed with changes requested",
+        "headRef": "jk/n901",
+        "baseRef": "main",
+        "state": "closed",
+        "reviewDecision": "changesRequested",
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-901", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      }
+    ]
+  }
+}

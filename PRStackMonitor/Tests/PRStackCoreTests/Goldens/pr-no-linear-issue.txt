@@ -1,0 +1,4 @@
+panel repoNames=false attention=1 unread=2 open=2 shipping=0
+section kind=other
+  row id=acme/billing#1001 status=inReview attention=false suppressed=false unread=true spine=none run=- group=- issue=BIL-1001 extra=0
+  row id=acme/billing#1000 status=conflicted attention=true suppressed=false unread=true spine=none run=- group=- issue=- extra=0

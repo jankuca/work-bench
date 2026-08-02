@@ -1,0 +1,11 @@
+panel repoNames=false attention=0 unread=5 open=4 shipping=0
+section kind=project id=proj-payments name=Payments
+  row id=acme/billing#801 status=inReview attention=false suppressed=false unread=true spine=none run=- group=- issue=PAY-801 extra=0
+section kind=project id=proj-platform name=Platform
+  row id=acme/billing#802 status=inReview attention=false suppressed=false unread=true spine=none run=- group=- issue=PLT-802 extra=0
+section kind=project id=proj-billing name=Billing
+  row id=acme/billing#800 status=inReview attention=false suppressed=false unread=true spine=none run=- group=- issue=BIL-800 extra=0
+section kind=other
+  row id=acme/billing#803 status=inReview attention=false suppressed=false unread=true spine=none run=- group=- issue=- extra=0
+section kind=done
+  row id=acme/billing#804 status=closed attention=false suppressed=false unread=true spine=none run=- group=- issue=- extra=0

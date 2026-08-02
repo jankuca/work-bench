@@ -1,0 +1,23 @@
+{
+  "comment": "Three tickets, one project. The row renders once under the primary, and the meta line's affix counts the other two.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 1100,
+        "title": "Fixes BIL-312, BIL-313 and BIL-314",
+        "headRef": "jk/bil-312-renderer",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-312", "projectId": "proj-billing", "projectName": "Billing" },
+          { "identifier": "BIL-313", "projectId": "proj-billing", "projectName": "Billing" },
+          { "identifier": "BIL-314", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      }
+    ]
+  }
+}

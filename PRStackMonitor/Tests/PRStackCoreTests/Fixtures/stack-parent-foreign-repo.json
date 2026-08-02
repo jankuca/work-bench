@@ -1,0 +1,33 @@
+{
+  "comment": "Both repositories have a branch called 'release'. The branch index is keyed on (repo, ref), so the web pull request is not joined to the billing one — no spine, no blocked status.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 400,
+        "title": "Release prep",
+        "headRef": "release",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-400", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/web",
+        "number": 401,
+        "title": "Web feature",
+        "headRef": "jk/feature",
+        "baseRef": "release",
+        "state": "open",
+        "updatedAt": "2026-01-09T11:00:00Z",
+        "linearIssues": [
+          { "identifier": "PAY-401", "projectId": "proj-payments", "projectName": "Payments" }
+        ]
+      }
+    ]
+  }
+}

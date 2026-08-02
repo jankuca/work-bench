@@ -1,0 +1,35 @@
+{
+  "comment": "Tickets spanning two projects. #1200 groups under the first identifier's project, not both. #1201's first identifier has no project, so the primary falls through to the first one that does.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 1200,
+        "title": "Closes BIL-320, also touches PAY-90",
+        "headRef": "jk/bil-320",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-320", "projectId": "proj-billing", "projectName": "Billing" },
+          { "identifier": "PAY-90", "projectId": "proj-payments", "projectName": "Payments" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1201,
+        "title": "Branch ticket has no project",
+        "headRef": "jk/ops-4",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-09T11:00:00Z",
+        "linearIssues": [
+          { "identifier": "OPS-4" },
+          { "identifier": "PAY-91", "projectId": "proj-payments", "projectName": "Payments" }
+        ]
+      }
+    ]
+  }
+}

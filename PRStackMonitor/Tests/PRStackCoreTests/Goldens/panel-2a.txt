@@ -1,0 +1,14 @@
+panel repoNames=true attention=4 unread=2 open=6 shipping=1
+section kind=project id=proj-payments name=Payments
+  row id=acme/web#4102 status=conflicted attention=true suppressed=false unread=true spine=none run=- group=- issue=PAY-77 extra=0
+section kind=project id=proj-billing name=Billing
+  row id=acme/billing#4014 status=blocked:acme/billing#4012 attention=false suppressed=false unread=false spine=top run=acme/billing#4008 group=acme/billing#4008 issue=BIL-312 extra=1
+  row id=acme/billing#4012 status=changesRequested attention=true suppressed=false unread=false spine=middle run=acme/billing#4008 group=acme/billing#4008 issue=BIL-311 extra=0
+  row id=acme/billing#4008 status=readyToMerge attention=false suppressed=false unread=false spine=base run=acme/billing#4008 group=acme/billing#4008 issue=BIL-300 extra=0
+  row id=acme/billing#4030 status=merged attention=false suppressed=false unread=false spine=none run=- group=- issue=BIL-305 extra=0
+  row id=acme/billing#4001 status=checksFailing attention=true suppressed=false unread=false spine=none run=- group=- issue=BIL-290 extra=0
+section kind=other
+  row id=acme/web#4051 status=conflicted attention=true suppressed=false unread=false spine=none run=- group=- issue=- extra=0
+section kind=done
+  row id=acme/billing#3990 status=shipped:v1.4.0 attention=false suppressed=false unread=true spine=none run=- group=- issue=BIL-280 extra=0
+  row id=acme/web#3975 status=closed attention=false suppressed=false unread=false spine=none run=- group=- issue=- extra=0

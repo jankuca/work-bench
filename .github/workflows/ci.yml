@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portable-modules:
+    # PRStackCore (and later GitHubKit and LinearKit) are Foundation-only, so they build
+    # and test in a Linux container. The AppKit targets build on a Mac only.
+    name: swift test
+    runs-on: ubuntu-latest
+    container: swift:6.0-jammy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        working-directory: PRStackMonitor
+        run: swift build --build-tests
+      - name: Test
+        working-directory: PRStackMonitor
+        run: swift test

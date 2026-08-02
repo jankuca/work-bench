@@ -1,0 +1,47 @@
+{
+  "comment": "The base of a three-deep stack merges first. It drops out of the branch index, its child re-targets trunk, and the spine reflows silently.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 100,
+        "title": "Ledger base",
+        "headRef": "jk/a",
+        "baseRef": "main",
+        "state": "merged",
+        "mergeCommit": "aaa111",
+        "mergedAt": "2026-01-09T10:00:00Z",
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 101,
+        "title": "Ledger middle",
+        "headRef": "jk/b",
+        "baseRef": "jk/a",
+        "state": "open",
+        "updatedAt": "2026-01-09T11:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-2", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 102,
+        "title": "Ledger top",
+        "headRef": "jk/c",
+        "baseRef": "jk/b",
+        "state": "open",
+        "updatedAt": "2026-01-09T12:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-3", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      }
+    ]
+  }
+}

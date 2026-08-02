@@ -1,0 +1,145 @@
+{
+  "comment": "Design iteration 2a end to end: a three-deep stack in Billing, a merged PR awaiting a tag, a conflicted PR with no ticket in Other, and a shipped + a closed PR in Done.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 4014,
+        "title": "Invoice renderer polish",
+        "headRef": "jk/invoice-3",
+        "baseRef": "jk/invoice-2",
+        "state": "open",
+        "checks": "passing",
+        "mergeable": "mergeable",
+        "updatedAt": "2026-01-10T09:00:00Z",
+        "commentCount": 3,
+        "lastCommentAt": "2026-01-10T08:40:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-312", "projectId": "proj-billing", "projectName": "Billing" },
+          { "identifier": "BIL-313", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 4012,
+        "title": "Invoice renderer",
+        "headRef": "jk/invoice-2",
+        "baseRef": "jk/invoice-1",
+        "state": "open",
+        "reviewDecision": "changesRequested",
+        "checks": "passing",
+        "mergeable": "mergeable",
+        "updatedAt": "2026-01-09T15:00:00Z",
+        "commentCount": 7,
+        "lastCommentAt": "2026-01-09T14:55:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-311", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 4008,
+        "title": "Invoice model",
+        "headRef": "jk/invoice-1",
+        "baseRef": "main",
+        "state": "open",
+        "reviewDecision": "approved",
+        "checks": "passing",
+        "mergeable": "mergeable",
+        "updatedAt": "2026-01-08T12:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-300", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 4030,
+        "title": "Dunning emails",
+        "headRef": "jk/dunning",
+        "baseRef": "main",
+        "state": "merged",
+        "mergeCommit": "1f2e3d4",
+        "mergedAt": "2026-01-09T18:00:00Z",
+        "updatedAt": "2026-01-09T18:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-305", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 4001,
+        "title": "Tax rounding",
+        "headRef": "jk/tax",
+        "baseRef": "main",
+        "state": "open",
+        "checks": { "state": "failing", "failingCount": 2 },
+        "mergeable": "mergeable",
+        "updatedAt": "2026-01-07T08:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-290", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/web",
+        "number": 4102,
+        "title": "Checkout retry",
+        "headRef": "jk/retry",
+        "baseRef": "main",
+        "state": "open",
+        "checks": "passing",
+        "mergeable": "conflicting",
+        "updatedAt": "2026-01-10T11:00:00Z",
+        "linearIssues": [
+          { "identifier": "PAY-77", "projectId": "proj-payments", "projectName": "Payments" }
+        ]
+      },
+      {
+        "repo": "acme/web",
+        "number": 4051,
+        "title": "Bump deps",
+        "headRef": "jk/deps",
+        "baseRef": "main",
+        "state": "open",
+        "mergeable": "conflicting",
+        "updatedAt": "2026-01-08T10:00:00Z"
+      },
+      {
+        "repo": "acme/billing",
+        "number": 3990,
+        "title": "Refund webhook",
+        "headRef": "jk/refund",
+        "baseRef": "main",
+        "state": "merged",
+        "mergeCommit": "9a8b7c6",
+        "mergedAt": "2026-01-05T10:00:00Z",
+        "updatedAt": "2026-01-05T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-280", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/web",
+        "number": 3975,
+        "title": "Old experiment",
+        "headRef": "jk/experiment",
+        "baseRef": "main",
+        "state": "closed",
+        "updatedAt": "2026-01-04T10:00:00Z"
+      }
+    ]
+  },
+  "local": {
+    "releaseBindings": { "acme/billing#3990": "v1.4.0" }
+  },
+  "readAsOfSnapshot": [
+    "acme/billing#4014",
+    "acme/billing#4012",
+    "acme/billing#4008",
+    "acme/billing#4030",
+    "acme/billing#4001",
+    "acme/web#4051",
+    "acme/web#3975"
+  ]
+}

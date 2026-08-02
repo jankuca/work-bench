@@ -1,0 +1,116 @@
+import Foundation
+
+/// One row in the panel: a pull request plus every decision the view needs to draw it.
+public struct PanelRow: Equatable, Sendable {
+    public var pullRequest: PullRequest
+    public var status: RowStatus
+    public var releaseStage: ReleaseStage
+    /// Status 4–6 **and** not snoozed. This is the value the tint, the title weight and
+    /// the icon's red badge all read.
+    public var isAttention: Bool
+    /// Snoozed with a wake time still in the future.
+    public var isSuppressed: Bool
+    /// The wake time, when snoozed — the meta line shows it.
+    public var snoozedUntil: Date?
+    public var isUnread: Bool
+    public var spine: SpinePosition
+    public var runBase: PRID?
+    public var stackRoot: PRID?
+
+    public init(
+        pullRequest: PullRequest,
+        status: RowStatus,
+        releaseStage: ReleaseStage,
+        isAttention: Bool,
+        isSuppressed: Bool,
+        snoozedUntil: Date?,
+        isUnread: Bool,
+        spine: SpinePosition,
+        runBase: PRID?,
+        stackRoot: PRID?
+    ) {
+        self.pullRequest = pullRequest
+        self.status = status
+        self.releaseStage = releaseStage
+        self.isAttention = isAttention
+        self.isSuppressed = isSuppressed
+        self.snoozedUntil = snoozedUntil
+        self.isUnread = isUnread
+        self.spine = spine
+        self.runBase = runBase
+        self.stackRoot = stackRoot
+    }
+
+    public var id: PRID { pullRequest.id }
+    public var primaryIssue: IssueRef? { pullRequest.primaryIssue }
+    public var additionalIssueCount: Int { pullRequest.additionalIssueCount }
+
+    /// What M4 diffs against the previous model. See ``EffectiveState``.
+    public var effectiveState: EffectiveState {
+        EffectiveState(status: status, isSuppressed: isSuppressed)
+    }
+}
+
+public struct PanelSection: Equatable, Sendable {
+    public enum Kind: Hashable, Sendable {
+        case project(id: String, name: String)
+        /// No linked issue, or no linked issue with a project.
+        case other
+        /// Closed and shipped rows.
+        case done
+    }
+
+    public var kind: Kind
+    public var rows: [PanelRow]
+
+    public init(kind: Kind, rows: [PanelRow]) {
+        self.kind = kind
+        self.rows = rows
+    }
+}
+
+/// The header's counts. Core decides what is counted; the view decides the wording.
+public struct PanelSummary: Equatable, Sendable {
+    /// Open pull requests — "10 in review".
+    public var openCount: Int
+    /// Merged, waiting for a release tag — "3 shipping".
+    public var shippingCount: Int
+
+    public init(openCount: Int, shippingCount: Int) {
+        self.openCount = openCount
+        self.shippingCount = shippingCount
+    }
+}
+
+/// Everything the panel renders, derived from one snapshot.
+public struct PanelModel: Equatable, Sendable {
+    /// Empty sections are dropped, so an empty `sections` is the all-clear state.
+    public var sections: [PanelSection]
+    /// The repo name shows in the meta line only when the list spans more than one
+    /// repository (PRD §12.3).
+    public var showsRepoNames: Bool
+    public var attentionCount: Int
+    public var unreadCount: Int
+    public var summary: PanelSummary
+
+    public init(
+        sections: [PanelSection],
+        showsRepoNames: Bool,
+        attentionCount: Int,
+        unreadCount: Int,
+        summary: PanelSummary
+    ) {
+        self.sections = sections
+        self.showsRepoNames = showsRepoNames
+        self.attentionCount = attentionCount
+        self.unreadCount = unreadCount
+        self.summary = summary
+    }
+
+    public var rows: [PanelRow] { sections.flatMap(\.rows) }
+    public var isEmpty: Bool { sections.isEmpty }
+
+    public func row(_ id: PRID) -> PanelRow? {
+        rows.first { $0.id == id }
+    }
+}

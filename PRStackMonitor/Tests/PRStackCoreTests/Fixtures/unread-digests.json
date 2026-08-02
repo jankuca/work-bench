@@ -1,0 +1,55 @@
+{
+  "comment": "Three unread outcomes: a digest recorded against this exact snapshot (read), a digest recorded against an older state (unread), and no digest at all, which is what a pull request the user has never seen looks like (unread).",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 1700,
+        "title": "Seen exactly as it is now",
+        "headRef": "jk/n1700",
+        "baseRef": "main",
+        "state": "open",
+        "commentCount": 4,
+        "lastCommentAt": "2026-01-09T09:00:00Z",
+        "updatedAt": "2026-01-09T09:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1700", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1701,
+        "title": "Seen, but something changed since",
+        "headRef": "jk/n1701",
+        "baseRef": "main",
+        "state": "open",
+        "commentCount": 9,
+        "lastCommentAt": "2026-01-09T10:00:00Z",
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1701", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1702,
+        "title": "Never seen",
+        "headRef": "jk/n1702",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-09T11:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1702", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      }
+    ]
+  },
+  "local": {
+    "readDigests": {
+      "acme/billing#1701": "rd=-;ck=noChecks;mg=unknown;cc=7;lc=1767952800;rs=unmerged"
+    }
+  },
+  "readAsOfSnapshot": ["acme/billing#1700"]
+}

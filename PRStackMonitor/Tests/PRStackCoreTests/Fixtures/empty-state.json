@@ -1,0 +1,8 @@
+{
+  "comment": "Nothing open, nothing merged, nothing done. Sections are dropped when empty, so the panel model is empty and the view shows the stated all-clear message rather than a blank list.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": []
+  }
+}
