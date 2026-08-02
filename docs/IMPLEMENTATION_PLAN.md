@@ -383,9 +383,20 @@ model or the view. Two things it *would* still touch: `RowStatus` gains a `deplo
 set, and the icon regains its amber in-flight state (the drawing code keeps that case, §5). That's the honest
 scope of the seam — the data path and the segment rendering are ready; the attention rules are not.
 
-Budget: GraphQL 5,000 points/hr, REST 5,000 req/hr. One search query plus a handful of tag/compare calls per
-poll puts steady state well under 500 req/hr. Honour `X-RateLimit-Remaining`; below 10% fall back to the idle
-interval and mark the footer.
+Budget: GraphQL 5,000 points/hr, REST 5,000 req/hr. Per poll, now that the searches paginate:
+
+| Call | Requests per poll |
+| --- | --- |
+| PR search | 1 per 50 open PRs (1 typical, capped at 10) |
+| Merged-PR query | 1, plus a page per 50 unbound merges (1 typical) |
+| Tag refs | 1 per repo with an unbound merged PR, plus a page per 100 matching tags |
+| `compare` (REST) | 1 per (unbound merged PR × new candidate tag), zero once bound |
+
+Worst realistic case — panel held open an entire hour at 30 s, 3 repos mid-release — is roughly 120 polls ×
+5 requests ≈ 600/hr, still an order of magnitude inside both limits. Idle (5 min) is ~12 polls/hr. The
+pathological case is a repo that tags constantly *and* has long-unbound merges, since compare calls multiply;
+the permanent binding cache is what keeps that from compounding poll over poll. Honour
+`X-RateLimit-Remaining`; below 10% fall back to the idle interval and mark the footer.
 
 ### Linear
 
