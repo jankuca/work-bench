@@ -153,7 +153,13 @@ struct PullRequest {
   var mergeCommit: String?
   var updatedAt: Date, createdAt: Date
   var commentCount: Int, lastCommentAt: Date?
-  var linearIssue: IssueRef?   // identifier + url, resolved by LinearKit
+  var linearIssues: [IssueRef]  // ordered, may be empty; resolved by LinearKit
+}
+
+extension PullRequest {
+  /// First linked issue that has a project; falls back to the first linked
+  /// issue; nil when none are linked. Drives section placement and the meta line.
+  var primaryIssue: IssueRef? { ... }
 }
 
 struct Stack { var members: [PRID] }        // ordered top-most first, base last
@@ -227,9 +233,42 @@ intention — fixture names in parentheses:
 
 ### Project grouping (Linear)
 
-Resolve an issue identifier per PR, in order: (1) branch name match `([A-Z][A-Z0-9]+-\d+)`, (2) PR title
-prefix, (3) `linear.app/…/issue/XXX-123` URL in the body. No identifier, or an issue with no project →
-**Other**.
+A PR routinely resolves **more than one** Linear ticket — "Fixes BIL-312, BIL-313", or a branch named for one
+issue whose body closes two more. Extraction therefore collects an **ordered set** of identifiers, not the
+first match, scanning in this order and de-duplicating while preserving first-seen position:
+
+1. Branch name — `([A-Z][A-Z0-9]+-\d+)`
+2. PR title, in reading order
+3. Body: `linear.app/…/issue/XXX-123` URLs and bare identifiers, in reading order
+
+No identifiers at all, or no linked issue that has a project → **Other**.
+
+#### One row, one section — the primary issue
+
+The **primary issue** is the first identifier in that order whose issue has a project, falling back to the
+first identifier overall. The row is grouped under the primary's project and nothing else. Because the order
+derives from PR fields rather than API response order, the primary is stable across polls, which is what
+keeps a row from migrating between sections (PRD §5.1).
+
+A PR whose tickets span **two projects** still renders once, under its primary. The alternative — showing the
+row in every project it touches — was rejected: `PRID` is the key for unread digests, dismissal tombstones,
+snooze deadlines and stack membership, so a duplicated row would either double-count in the badge or need all
+four of those keyed by (PR, project) instead. The branch name is the strongest signal of what a PR is *for*,
+and it's first in the scan order, so the common case lands where the author would expect.
+
+The extra tickets are not hidden: the meta line shows `BIL-312 +2` (§5), and the overflow opens the full list.
+Fixtures `pr-multiple-issues-same-project` and `pr-multiple-issues-cross-project` pin both the grouping and
+the affix.
+
+#### Stacks that span projects
+
+Related, and previously unspecified: a stack's members can resolve issues in different projects, but a run is
+drawn as adjacent rows and cannot straddle two section headings. **The stack takes the project of its base
+PR** — the bottom-most member, the one targeting trunk — and every member renders in that run regardless of
+its own primary issue. The base is the stack's anchor and the member least likely to change, so this is the
+stable choice; picking by majority would let a single new top-most PR relocate the whole run. A member whose
+own project differs still shows its own identifier in its meta line, so the divergence is visible without
+splitting the spine. Fixture: `stack-spanning-projects`.
 
 Resolution keeps the **full identifier** as the key throughout. Linear's `issue(id:)` accepts the
 human-readable identifier directly, so each uncached identifier is one aliased field in a single batched
@@ -239,6 +278,9 @@ query:
 query { a: issue(id: "BIL-312") { identifier url project { id name } }
         b: issue(id: "SRC-97")  { identifier url project { id name } } }
 ```
+
+Multi-ticket PRs simply contribute more aliases; the batch is per *identifier*, not per PR, so a ticket
+referenced by two PRs is fetched once and cached once.
 
 Do **not** resolve via `issues(filter: { team: { key: { in: [...] } }, number: { in: [...] } })`. Independent
 `in` lists match the cross-product: given `BIL-312` and `SRC-97`, that filter also matches `BIL-97` and
@@ -499,8 +541,11 @@ dot, `synced 34s ago`, `Mark all read`, `Settings`).
 - Spine: 1.5 pt hairline at the chip's centre line, drawn from `top: -8` and/or `bottom: -8` depending on
   the member's position in the run. Top member draws downward only, base member upward only.
 - Title, 12.5 pt, single line, ellipsis; weight 500 → 560 as the row gains urgency.
-- Meta line, 11 pt: Linear identifier (indigo, clickable), repo name **only when the list spans more than
-  one repo**, `#number`, **one** status phrase, age. The status phrase is the only coloured *status* token —
+- Meta line, 11 pt: Linear identifier (indigo, clickable) with a `+N` affix when the PR resolves more than
+  one ticket — `BIL-312 +2`, the affix in tertiary grey so it reads as a count, not a second link — repo name
+  **only when the list spans more than one repo**, `#number`, **one** status phrase, age. Clicking the
+  identifier opens the primary issue; clicking `+N` opens a small menu listing every linked ticket with its
+  project, each opening in the browser. The status phrase is the only coloured *status* token —
   the identifier's indigo is a link affordance, not a state signal, which is why it's the one other colour
   permitted here. The repo name is tertiary: same grey as `#number`, no colour, and it truncates before the
   number does.
@@ -522,7 +567,7 @@ No global hotkey for opening the panel. Once it's open, the row under the pointe
 | `X` | Dismiss (Done rows only) |
 | `S` | Snooze — opens the duration menu inline |
 | `↩` | Open the PR in the browser (same as click) |
-| `L` | Open the Linear issue |
+| `L` | Open the Linear issue — the primary one; repeat presses cycle through the rest when a PR links several |
 
 Implementation notes, because this is fiddlier than it looks:
 
@@ -592,8 +637,9 @@ added without disturbing anything else.
   scrubbing only credentials would still commit the contents of the user's work to a public repo.
   Each PRD edge case (§10) is a named fixture: no Linear issue, draft flip, out-of-order merge, never-tagged
   release, empty state, multi-repo list (repo name appears) and single-repo list (it doesn't), plus the stack
-  cases named in §2 and `release-tag-on-later-page`, `linear-cross-team-number-collision`, and the two closed
-  PR variants from the precedence table. Rollback-after-Done is not fixtured — it's undetectable under
+  cases named in §2 and `release-tag-on-later-page`, `linear-cross-team-number-collision`,
+  `pr-multiple-issues-same-project`, `pr-multiple-issues-cross-project`, `stack-spanning-projects`, and the
+  two closed PR variants from the precedence table. Rollback-after-Done is not fixtured — it's undetectable under
   tags-only tracking (§3).
 - **Golden panel models.** Assert the full derived `PanelModel` against a checked-in snapshot — catches
   ordering regressions, which are the ones a human reviewer will miss.
@@ -620,7 +666,7 @@ Each is independently demoable. Estimates assume one engineer working in focused
 | **M2** | GitHub ingestion | GraphQL client with search pagination, repo scope modes, DTO→domain mapping, token in Keychain, ETag/rate-limit handling | Real PRs appear in a debug dump under both All and Selected scope, including past the first page of 50 |
 | **M3** | Panel UI | Tokens, `PRRow`, spine, sections, header/footer, needs-attention + all-clear states | Panel is pixel-comparable to 2a against real data |
 | **M4** | Icon + unread + events | Status item drawing (4 states), domain-event diffing against `previous`, `EventSink` bus, digest-based unread, open/mark-all-read | Icon tracks the priority table; events fire with one sink registered; a relaunch emits no events but preserves unread |
-| **M5** | Linear grouping | Identifier extraction, per-identifier `issue(id:)` resolution, cache, `Other` fallback | Rows group under real project headings; a Linear outage keeps cached headings and marks the source stale |
+| **M5** | Linear grouping | Multi-identifier extraction, primary-issue selection, per-identifier `issue(id:)` resolution, cache, `Other` fallback | Rows group under real project headings; a multi-ticket PR shows `+N` and groups under its primary; a Linear outage keeps cached headings and marks the source stale |
 | **M6** | Release tracking | Merge-commit capture, unbound-merge persistence, paginated tag polling by per-repo pattern, containment via `compare`, binding cache, third segment + Done section | A merged PR flips to shipped when a matching tag appears — including a tag cut weeks later, and one found past the first page |
 | **M7** | Interactions & persistence | Click-through, issue link, dismiss, `Clear all`, snooze, refresh, hovered-row keyboard actions with monitor teardown, Settings (tokens, repo scope, per-repo tag pattern) | Every row in PRD §8 works by pointer *and* by key; ten open/close cycles fire each action exactly once; state survives relaunch |
 | **M8** | Sync & resilience | Ordered interval table, display *and* system sleep, battery, staleness, per-source connection state and reconnect banners, backoff | Laptop sleeps overnight and wakes to correct, visibly-fresh state; an expired Linear key leaves GitHub rows intact |
