@@ -69,6 +69,59 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertEqual(layout.placement(for: id(9)).groupRoot, id(1))
     }
 
+    /// When two branches off the same base are the same depth, chain length can't decide
+    /// which keeps the spine, so the higher pull request number does. Without a test the
+    /// tie-break direction is free to flip and only a golden would notice.
+    func testEqualLengthChainsGiveTheSpineToTheHigherNumber() {
+        let layout = StackLayout.build(
+            pullRequests: [
+                pullRequest(1, head: "base", base: "main"),
+                pullRequest(2, head: "x", base: "base"),
+                pullRequest(3, head: "x2", base: "x"),
+                pullRequest(4, head: "y", base: "base"),
+                pullRequest(5, head: "y2", base: "y")
+            ],
+            viewerLogin: "jankuca"
+        )
+
+        XCTAssertEqual(layout.groups.count, 1)
+        XCTAssertEqual(
+            layout.groups.first?.runs.map(\.members),
+            [[id(5), id(4), id(1)], [id(3), id(2)]],
+            "Both branches are two deep, so #4's branch should keep the spine on number alone"
+        )
+        // The losing branch is long enough to be a run in its own right, so it draws its
+        // own spine rather than collapsing to loose rows.
+        XCTAssertEqual(layout.placement(for: id(3)).spine, .top)
+        XCTAssertEqual(layout.placement(for: id(2)).spine, .base)
+        XCTAssertEqual(layout.placement(for: id(2)).runBase, id(2))
+        XCTAssertEqual(layout.placement(for: id(2)).groupRoot, id(1))
+    }
+
+    /// A pull request that is not itself in a cycle but whose parent chain leads into one
+    /// is made loose too. It has no trunk-anchored ancestry, so there is no honest spine
+    /// to draw for it, and leaving it stacked on a cycle member would render it as
+    /// `blocked` on a pull request the layout has already given up on.
+    func testACycleAlsoLoosensPullRequestsThatLeadIntoIt() {
+        let layout = StackLayout.build(
+            pullRequests: [
+                pullRequest(1, head: "p", base: "q"),
+                pullRequest(2, head: "q", base: "p"),
+                // Outside the cycle, but based on #1's head branch.
+                pullRequest(3, head: "c", base: "p")
+            ],
+            viewerLogin: "jankuca"
+        )
+
+        XCTAssertTrue(layout.groups.isEmpty)
+        XCTAssertTrue(layout.parentOf.isEmpty)
+        XCTAssertNil(layout.parentOf[id(3)], "A child of a cycle member must not resolve to blocked")
+        for number in 1...3 {
+            XCTAssertEqual(layout.placement(for: id(number)).spine, .none)
+            XCTAssertNil(layout.placement(for: id(number)).groupRoot)
+        }
+    }
+
     func testCycleLeavesEveryMemberLoose() {
         let layout = StackLayout.build(
             pullRequests: [
