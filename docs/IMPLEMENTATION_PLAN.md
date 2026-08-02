@@ -170,6 +170,7 @@ extension is a drop-in rather than a retrofit.
 struct PullRequest {
   let id: PRID                 // repo + number
   var title: String
+  var body: String?            // nullable; scanned for issue identifiers
   var number: Int
   var url: URL
   var headRef: String, baseRef: String
@@ -378,10 +379,11 @@ per repo, just read.
 One GraphQL search per poll (not per repo), **paginated to completion**:
 
 ```graphql
+rateLimit { cost remaining resetAt }
 search(query: "is:pr author:@me -is:draft <repo qualifiers>", type: ISSUE, first: 50, after: $cursor) {
   pageInfo { hasNextPage endCursor }
   nodes { ... on PullRequest {
-    number title url headRefName baseRefName isDraft state createdAt updatedAt mergedAt
+    number title body url headRefName baseRefName isDraft state createdAt updatedAt mergedAt
     mergeable  reviewDecision  mergeCommit { oid }
     repository { nameWithOwner  defaultBranchRef { name } }
     comments(last: 1) { totalCount nodes { createdAt } }   # totalCount + lastCommentAt
@@ -415,7 +417,25 @@ Field notes, since the domain model depends on them: `repository.nameWithOwner` 
 `PRID` and the meta-line repo name; `repository.defaultBranchRef.name` is the trunk (§ repo scope);
 `mergedAt` is the merge **time** — `mergeCommit.oid` is only the commit ID and carries no timestamp;
 `comments(last: 1)` yields both `totalCount` and the newest `createdAt` for `lastCommentAt`, both of which
-feed the unread digest.
+feed the unread digest. **`body` is nullable and must be carried through the DTO** — it is the third source
+in the identifier scan (§2), so omitting it silently drops body-only references like a `linear.app` URL under
+"Closes:", filing the PR under `Other` or picking the wrong primary project. Both this query and the
+merged-PR query select it.
+
+### Rate limiting — points, not requests
+
+GraphQL bills **points computed from node counts**, not one point per request. The nested
+`reviews(last: 20)` and `contexts(first: 20)` selections multiply against 50 PRs per page, so request counts
+alone are a poor proxy for the 5,000/hr budget. Every query therefore selects
+`rateLimit { cost remaining resetAt }` and the client records the *actual* cost of each call rather than
+estimating it.
+
+The scheduler holds a **per-poll point budget** (default 100, roughly one full page of the search plus tag
+queries). Exceeding it defers remaining pagination to the next poll. When `remaining` drops below 10% of the
+hourly allowance, drop to the idle interval, set the REST comparison budget to zero (§ release tracking), and
+mark the footer stale until `resetAt`. Backing off on the *measured* remaining points, before exhaustion,
+avoids the failure mode where the app is hard-blocked mid-poll and shows a disconnected icon for the rest of
+the hour.
 
 **Merged PRs** are fetched by a second query whose lower bound is *dynamic*, not a fixed window: it starts at
 the oldest **unbound** merged PR still in local state (i.e. merged but not yet matched to a tag), defaulting
@@ -474,8 +494,17 @@ default greyed out until overridden.
    repository and bind a PR to a staging tag.
 
    Walk every page: a repo that tags often can easily push the matching tag past the first page, and a
-   truncated candidate list produces a false "not shipped yet" that never self-corrects. Then filter to tags
-   newer than the PR's `mergedAt`, which keeps the *tested* set small even though the fetched set is complete.
+   truncated candidate list produces a false "not shipped yet" that never self-corrects.
+
+   **Server ordering is for pagination determinism only — do not treat it as the candidate order.**
+   `TAG_COMMIT_DATE` sorts by the *target commit's* date, not by when the tag was cut, so a tag created today
+   against an older commit sorts ahead of one cut last week against a newer commit. Since the binding is
+   permanent, taking the server's first hit can pin a PR to a later release forever. After pagination,
+   resolve each candidate's own timestamp — `tagger.date` for annotated tags, the target commit's
+   `committedDate` for lightweight ones, which is the only date they carry — then filter to
+   `taggedAt > mergedAt` and sort locally by `(taggedAt, name)`. The name breaks ties deterministically so
+   two tags on the same commit always resolve the same way. Only then run the containment tests, oldest
+   first. Fixture: `release-annotated-tag-on-older-commit`.
 3. Test containment **oldest candidate first** with `GET /repos/{o}/{r}/compare/{tag}...{sha}`: `status` of
    `identical` or `behind` means the tag contains the commit. First hit wins — that's the release the PR
    shipped in, and testing oldest-first is what makes it the *earliest* such release rather than an arbitrary
@@ -505,8 +534,8 @@ the pagination requirement; `release-compare-not-repeated-across-polls` pins the
 design draws:
 
 - **No "deploy in flight."** A tag either contains the commit or doesn't. The amber pulsing icon state and
-  the pulsing third segment have no input, so the icon priority collapses to
-  action-needed → unread → idle → disconnected.
+  the pulsing third segment have no input, so the icon drops to four states — see the priority table in §5,
+  which is authoritative for their ordering.
 - **No "deploy failed / held."** Nothing can raise a merged PR to action-needed. PRD §7's "deploy failed"
   outcome and §10's "rolled back after being reported live" are both undetectable and out of scope.
 - **The three-segment track re-reads** as *CI → merged to trunk → in a release tag*. Same three segments,
@@ -525,7 +554,7 @@ Budget: GraphQL 5,000 points/hr, REST 5,000 req/hr. Per poll, now that the searc
 
 | Call | Requests per poll |
 | --- | --- |
-| PR search | 1 per 50 open PRs (1 typical, capped at 10) |
+| PR search | 1 per 50 open PRs (1 typical, capped at 10 pages or the per-poll point budget) |
 | Merged-PR query | 1, plus a page per 50 unbound merges (1 typical) |
 | Tag refs | 1 per repo with an unbound merged PR, plus a page per 100 matching tags |
 | `compare` (REST) | 1 per (unbound merged PR × **untested** candidate tag), hard-capped at 20 per poll |
@@ -756,8 +785,9 @@ added without disturbing anything else.
   cases named in §2 and `release-tag-on-later-page`, `linear-cross-team-number-collision`,
   `pr-multiple-issues-same-project`, `pr-multiple-issues-cross-project`, `stack-spanning-projects`,
   `snooze-status-changed-while-asleep`, `snooze-expiry-no-underlying-change`,
-  `linear-resolve-order-cache-vs-fresh`, `release-compare-not-repeated-across-polls`, and the two closed PR
-  variants from the precedence table. Rollback-after-Done is not fixtured — it's undetectable under
+  `linear-resolve-order-cache-vs-fresh`, `release-compare-not-repeated-across-polls`,
+  `release-annotated-tag-on-older-commit`, `pr-body-only-identifier`, and the two closed PR variants from the
+  precedence table. Rollback-after-Done is not fixtured — it's undetectable under
   tags-only tracking (§3).
 - **Golden panel models.** Assert the full derived `PanelModel` against a checked-in snapshot — catches
   ordering regressions, which are the ones a human reviewer will miss.
@@ -781,7 +811,7 @@ Each is independently demoable. Estimates assume one engineer working in focused
 | --- | --- | --- | --- |
 | **M0** | Skeleton & local build | SwiftPM package + Xcode app target, `LSUIElement`, self-signed local identity, `make run`, empty popover | A signed-to-run-locally menu bar app opens an empty popover; keychain access doesn't re-prompt across rebuilds |
 | **M1** | Core model | Entities, `RowStatus` precedence (terminal states first), stack derivation, deterministic run/section ordering, snooze suppression, fixtures + golden tests | `derive()` turns a fixture snapshot into the exact 2a panel model; every stack fixture in §2 has a golden |
-| **M2** | GitHub ingestion | GraphQL client with search pagination, repo scope modes, DTO→domain mapping, token in Keychain, ETag/rate-limit handling | Real PRs appear in a debug dump under both All and Selected scope, including past the first page of 50 |
+| **M2** | GitHub ingestion | GraphQL client with search pagination, repo scope modes, DTO→domain mapping (including nullable `body`), token in Keychain, ETag and point-budget rate limiting | Real PRs appear in a debug dump under both All and Selected scope, including past the first page of 50 |
 | **M3** | Panel UI | Tokens, `PRRow`, spine, sections, header/footer, needs-attention + all-clear states | Panel is pixel-comparable to 2a against real data |
 | **M4** | Icon + unread + events | Status item drawing (4 states, disconnected outranking), effective-state event diffing against `previous`, `EventSink` bus, digest-based unread, open/mark-all-read | Icon tracks the priority table, and an expired GitHub token shows dashed rather than a cached badge; a relaunch emits no events but preserves unread |
 | **M5** | Linear grouping | Multi-identifier extraction, primary-issue selection, per-identifier `issue(id:)` resolution, cache, `Other` fallback | Rows group under real project headings; a multi-ticket PR shows `+N` and groups under its primary; a Linear outage keeps cached headings and marks the source stale |
