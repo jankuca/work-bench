@@ -42,7 +42,9 @@ on Linux once a toolchain is installed — see §6.
 
 ## 1. Architecture
 
-Six modules. The top three are pure Swift (Foundation only, no AppKit) so they build and test off-device.
+Six modules. Three of them — `PRStackCore`, `GitHubKit`, `LinearKit`, drawn at the bottom of the diagram —
+are pure Swift (Foundation only, no AppKit) and build and test off-device. `PanelUI` and `SyncEngine` are
+macOS-only and are the CI boundary: they compile on a Mac, not in a Linux container.
 
 ```text
 PRStackMonitor.app  (AppKit shell: NSStatusItem, NSPopover, SwiftUI views)
@@ -62,14 +64,33 @@ testable without a Mac in the loop.
 
 ### Data flow
 
+Linear resolution depends on identifiers extracted from the GitHub payload, so the two fetches are
+**sequential, not parallel** — on a cold start there are no identifiers to resolve until GitHub has answered.
+(Subsequent polls can overlap them speculatively using the cached identifier set, but correctness never
+depends on that.)
+
 ```text
-poll tick ─► GitHubKit.fetch(repos)   ┐
-            LinearKit.fetch(issueIds) ┼─► RawSnapshot ─► PRStackCore.derive(...)
-            Persistence.load()        ┘                          │
-            previous PanelModel ──────────────────────────────────┤
-                                                                 ├─► PanelModel  ─► PanelUI
-                                                                 ├─► IconState   ─► StatusItemController
-                                                                 └─► [DomainEvent] ─► EventBus ─► sinks
+poll tick
+   │
+   ├─► GitHubKit.fetch(repoScope) ──► [PullRequestDTO]
+   │                                     │
+   │                                     ├─► extract issue identifiers
+   │                                     │        │
+   │                                     │        └─► LinearKit.resolve(ids) ──► [IssueRef]
+   │                                     │                                            │
+   │                                     └────────────────┬───────────────────────────┘
+   │                                                      ▼
+   │                                                 RawSnapshot ─┐
+   ├─► Persistence.load() ───────────────► LocalState ────────────┤
+   └─► SyncEngine holds ─────────────────► previous: PanelModel? ─┤
+                                                                  ▼
+                                                    PRStackCore.derive(...)
+                                                                  │
+                                        ┌─────────────────────────┼─────────────────────┐
+                                        ▼                         ▼                     ▼
+                                   PanelModel               IconState            [DomainEvent]
+                                        │                         │                     │
+                                     PanelUI          StatusItemController      EventBus ─► sinks
 ```
 
 ```swift
@@ -90,18 +111,26 @@ but preserves unread`).
 
 ### Snooze semantics
 
-A PR with a snooze deadline in the future (`local.snoozedUntil[id] > now`) is **suppressed** across every
-derived surface, uniformly:
+A PR with a snooze deadline in the future (`local.snoozedUntil[id] > now`) is **suppressed**:
 
 - `RowStatus` still resolves normally, but `isAttention` is forced false — no warm tint, no bolder title.
 - The row does not count toward the icon's red badge, and cannot raise the icon out of idle.
-- No `DomainEvent` is emitted for it, so a future notification sink stays quiet too.
+- **Attention events** are withheld — `changesRequested`, `checksFailed` and the like. Lifecycle events are
+  not: `reachedProduction` still fires, and `shipped`/`closed` still move the row to Done. Snooze silences
+  "this needs you", not "this finished".
 - The row renders dimmed with the wake time in the meta line (PRD §8).
 
-The deadline is compared against the injected `now`, so expiry is deterministic and testable — at
-`now >= deadline` the row resumes full derivation with no further input, and the transition back into
-attention emits its event normally. Snooze never suppresses `shipped` or `closed`, which are not attention
-states and still move to Done.
+**Effective state, not raw status, is what gets diffed.** Each row carries
+`effective = (status, isSuppressed)`, and `previous` stores that pair. Diffing raw `RowStatus` alone would
+lose expiry: a PR that goes `checksFailing` *during* its snooze writes `checksFailing` into `previous`, so at
+wake time the status is unchanged and no transition exists to detect. With the pair, the row moves from
+`(checksFailing, suppressed)` to `(checksFailing, active)` — a real transition, which emits the withheld
+attention event exactly once, at wake.
+
+The deadline is compared against the injected `now`, so expiry is deterministic: at `now >= deadline` the row
+resumes full derivation with no further input and no user action. Two fixtures pin it —
+`snooze-status-changed-while-asleep` (the case above) and `snooze-expiry-no-underlying-change` (nothing
+changed during the snooze, so waking emits nothing).
 
 ### Event bus (the notification extension point)
 
@@ -213,9 +242,15 @@ attention. See the note there — this is the one place the model is narrower th
 
 ### Stack derivation
 
-Build `head → PR` index over the user's own open PRs; a PR's parent is the PR whose `headRef` equals this
-PR's `baseRef`. Chains of length ≥ 2 become a `Stack`, rendered top-most first (walk to the leaf, emit
-downward). Cases to handle explicitly, each with a fixture test:
+Build a `(repo, headRef) → PR` index over the user's own open PRs; a PR's parent is the PR whose
+`(repo, headRef)` equals this PR's `(repo, baseRef)`. **The repository must be part of the key.** Branch names
+like `main`, `develop` or `release` recur across repos, so a `headRef`-only index would join unrelated PRs
+into a phantom stack and mark one `blocked` on a PR in a different repository — the exact failure
+`stack-parent-foreign-repo` exists to catch. Authorship is filtered the same way: only the user's own PRs
+enter the index, so a parent branch owned by someone else never matches.
+
+Chains of length ≥ 2 become a `Stack`, rendered top-most first (walk to the leaf, emit downward). Cases to
+handle explicitly, each with a fixture test:
 
 Each case below is a **named fixture with golden assertions** in `PRStackCoreTests`, not just a documented
 intention — fixture names in parentheses:
@@ -343,10 +378,25 @@ search(query: "is:pr author:@me -is:draft <repo qualifiers>", type: ISSUE, first
     repository { nameWithOwner  defaultBranchRef { name } }
     comments(last: 1) { totalCount nodes { createdAt } }   # totalCount + lastCommentAt
     reviews(last: 20) { nodes { author { login avatarUrl } state submittedAt } }
-    commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first:20){ ... } } } } }
+    commits(last: 1) { nodes { commit { statusCheckRollup {
+      state
+      contexts(first: 20) {
+        totalCount
+        nodes {
+          __typename
+          ... on CheckRun     { name conclusion status detailsUrl }
+          ... on StatusContext { context state targetUrl }
+        }
+      }
+    } } } }
   } }
 }
 ```
+
+`contexts` returns the `StatusCheckRollupContext` union, so it needs inline fragments on both members —
+`CheckRun` (Actions and most apps) and `StatusContext` (legacy commit statuses). A bare selection set does not
+compile. The rollup `state` alone drives the green/red/amber segment; the per-context nodes exist so the
+failing check's name can appear in the status phrase (`2 checks failed`).
 
 Loop on `pageInfo.hasNextPage`, passing `endCursor` as `after`, until exhausted. This is not optional in
 either scope: All mode would otherwise silently drop everything past the 50th PR, and Selected mode would
@@ -382,18 +432,42 @@ default greyed out until overridden.
 2. Poll tags via GraphQL, **paginated**, ascending by tag commit date:
 
    ```graphql
-   refs(refPrefix: "refs/tags/", query: <pattern prefix>, first: 100, after: $cursor,
+   refs(refPrefix: "refs/tags/", query: <literal prefix of glob, or omitted>,
+        first: 100, after: $cursor,
         orderBy: { field: TAG_COMMIT_DATE, direction: ASC }) {
      pageInfo { hasNextPage endCursor }
-     nodes { name target { oid ... on Tag { committedDate } } }
+     nodes {
+       name
+       target {
+         __typename
+         oid
+         ... on Commit { committedDate }              # lightweight tag
+         ... on Tag {                                 # annotated tag
+           tagger { date }
+           target { ... on Commit { oid committedDate } }
+         }
+       }
+     }
    }
    ```
 
-   `orderBy` takes a `RefOrder` — both `field` and `direction` are required, and the direction must be
-   explicit rather than left to the default. Walk every page: a repo that tags often can easily push the
-   matching tag past the first page, and a truncated candidate list produces a false "not shipped yet" that
-   never self-corrects. Filter to tags newer than the PR's `mergedAt`, which keeps the tested set small even
-   though the fetched set is complete.
+   Three schema details that are easy to get wrong: `orderBy` takes a `RefOrder` where **both** `field` and
+   `direction` are required; `committedDate` lives on `Commit`, **not** on `Tag`, so an annotated tag needs
+   `tagger { date }` or its target commit's date; and an annotated tag's `target.oid` is the *tag object's*
+   id, not the commit's — the commit oid is one level further in. Containment is tested by tag **name**, so
+   this matters only for dating and ordering, but silently comparing a tag-object oid to a merge commit would
+   never match.
+
+   **`refs.query` is a substring name filter, not a glob matcher.** It can only be used as a coarse
+   server-side prefilter, built from the literal prefix of the configured pattern (`v*` → `v`,
+   `release-*` → `release-`) and **omitted entirely** when the pattern opens with a wildcard (`*-prod`).
+   The configured glob is then applied **locally**, in full `fnmatch` semantics, to every returned ref, and
+   only refs passing that local match become candidates. Without this, `*-prod` would admit every tag in the
+   repository and bind a PR to a staging tag.
+
+   Walk every page: a repo that tags often can easily push the matching tag past the first page, and a
+   truncated candidate list produces a false "not shipped yet" that never self-corrects. Then filter to tags
+   newer than the PR's `mergedAt`, which keeps the *tested* set small even though the fetched set is complete.
 3. Test containment **oldest candidate first** with `GET /repos/{o}/{r}/compare/{tag}...{sha}`: `status` of
    `identical` or `behind` means the tag contains the commit. First hit wins — that's the release the PR
    shipped in, and testing oldest-first is what makes it the *earliest* such release rather than an arbitrary
@@ -513,12 +587,20 @@ actually depend on; Linear alone being down is a footer/staleness condition, not
 
 A single template-ish `NSImage` redrawn on state change. Priority (highest wins), per PRD §4 and `1f`:
 
-| State | Drawing |
-| --- | --- |
-| Action needed | Glyph + red circular badge, top-right, count centred, 1.5pt background halo |
-| Unread | Glyph + indigo dot |
-| Idle | Plain glyph |
-| Disconnected | Dashed glyph outline at reduced opacity |
+| # | State | Drawing |
+| --- | --- | --- |
+| 1 | Disconnected (GitHub) | Dashed glyph outline at reduced opacity |
+| 2 | Action needed | Glyph + red circular badge, top-right, count centred, 1.5pt background halo |
+| 3 | Unread | Glyph + indigo dot |
+| 4 | Idle | Plain glyph |
+
+**Disconnected outranks everything**, which is a change from the PRD's ordering and deliberate. Every other
+state is derived from data that is, by definition, stale while GitHub is unreachable: a red badge counting
+three cached failures asserts something the app cannot currently verify, and the PRD's own rule (§4) is that
+the app never silently shows stale data as fresh. A dashed glyph over cached rows is the honest reading. The
+panel still shows the last known list under a reconnect banner — the badge disappears from the menu bar, not
+the information from the panel. Only **GitHub** disconnection does this; Linear being unreachable is a footer
+staleness condition (§4).
 
 The design's fifth state — amber pulsing "deploy in flight" — has no data source under tags-only tracking
 (§3) and is not built. The drawing code keeps the case so a future `DeploymentAPITracker` can light it up.
@@ -638,8 +720,9 @@ added without disturbing anything else.
   Each PRD edge case (§10) is a named fixture: no Linear issue, draft flip, out-of-order merge, never-tagged
   release, empty state, multi-repo list (repo name appears) and single-repo list (it doesn't), plus the stack
   cases named in §2 and `release-tag-on-later-page`, `linear-cross-team-number-collision`,
-  `pr-multiple-issues-same-project`, `pr-multiple-issues-cross-project`, `stack-spanning-projects`, and the
-  two closed PR variants from the precedence table. Rollback-after-Done is not fixtured — it's undetectable under
+  `pr-multiple-issues-same-project`, `pr-multiple-issues-cross-project`, `stack-spanning-projects`,
+  `snooze-status-changed-while-asleep`, `snooze-expiry-no-underlying-change`, and the two closed PR variants
+  from the precedence table. Rollback-after-Done is not fixtured — it's undetectable under
   tags-only tracking (§3).
 - **Golden panel models.** Assert the full derived `PanelModel` against a checked-in snapshot — catches
   ordering regressions, which are the ones a human reviewer will miss.
@@ -665,7 +748,7 @@ Each is independently demoable. Estimates assume one engineer working in focused
 | **M1** | Core model | Entities, `RowStatus` precedence (terminal states first), stack derivation, deterministic run/section ordering, snooze suppression, fixtures + golden tests | `derive()` turns a fixture snapshot into the exact 2a panel model; every stack fixture in §2 has a golden |
 | **M2** | GitHub ingestion | GraphQL client with search pagination, repo scope modes, DTO→domain mapping, token in Keychain, ETag/rate-limit handling | Real PRs appear in a debug dump under both All and Selected scope, including past the first page of 50 |
 | **M3** | Panel UI | Tokens, `PRRow`, spine, sections, header/footer, needs-attention + all-clear states | Panel is pixel-comparable to 2a against real data |
-| **M4** | Icon + unread + events | Status item drawing (4 states), domain-event diffing against `previous`, `EventSink` bus, digest-based unread, open/mark-all-read | Icon tracks the priority table; events fire with one sink registered; a relaunch emits no events but preserves unread |
+| **M4** | Icon + unread + events | Status item drawing (4 states, disconnected outranking), effective-state event diffing against `previous`, `EventSink` bus, digest-based unread, open/mark-all-read | Icon tracks the priority table, and an expired GitHub token shows dashed rather than a cached badge; a relaunch emits no events but preserves unread |
 | **M5** | Linear grouping | Multi-identifier extraction, primary-issue selection, per-identifier `issue(id:)` resolution, cache, `Other` fallback | Rows group under real project headings; a multi-ticket PR shows `+N` and groups under its primary; a Linear outage keeps cached headings and marks the source stale |
 | **M6** | Release tracking | Merge-commit capture, unbound-merge persistence, paginated tag polling by per-repo pattern, containment via `compare`, binding cache, third segment + Done section | A merged PR flips to shipped when a matching tag appears — including a tag cut weeks later, and one found past the first page |
 | **M7** | Interactions & persistence | Click-through, issue link, dismiss, `Clear all`, snooze, refresh, hovered-row keyboard actions with monitor teardown, Settings (tokens, repo scope, per-repo tag pattern) | Every row in PRD §8 works by pointer *and* by key; ten open/close cycles fire each action exactly once; state survives relaunch |
