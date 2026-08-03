@@ -9,7 +9,7 @@ for the whole design; this README covers only how to work in this package.
 | `GitHubKit` | M2 | Not yet present |
 | `LinearKit` | M5 | Not yet present |
 
-The AppKit shell (`App/`) is a separate Xcode project and is not part of this package.
+The AppKit shell (`App/`) is a separate Swift package and is not part of this one.
 
 ## Running the tests
 
@@ -38,7 +38,7 @@ can be re-recorded in place:
 
 ```sh
 PRSTACK_RECORD_GOLDENS=1 swift test
-git diff PRStackMonitor/Tests/PRStackCoreTests/Goldens
+git diff -- Tests/PRStackCoreTests/Goldens
 ```
 
 Always read that diff before committing it. A golden that changed silently is the

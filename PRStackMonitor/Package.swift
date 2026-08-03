@@ -16,6 +16,15 @@ let package = Package(
     targets: [
         .target(name: "PRStackCore"),
         .executableTarget(name: "PRStackDump", dependencies: ["PRStackCore"]),
-        .testTarget(name: "PRStackCoreTests", dependencies: ["PRStackCore"])
+        .testTarget(
+            name: "PRStackCoreTests",
+            dependencies: ["PRStackCore"],
+            // Excluded, not declared as resources: the tests reach these through
+            // #filePath in the source tree rather than Bundle.module, because
+            // PRSTACK_RECORD_GOLDENS=1 has to rewrite goldens in place. Copying them
+            // into a bundle nothing reads would be dead weight; leaving them undeclared
+            // makes SwiftPM warn about 48 unhandled files on every build.
+            exclude: ["Fixtures", "Goldens"]
+        )
     ]
 )

@@ -45,14 +45,24 @@ final class DerivationInvariantTests: XCTestCase {
         for name in Fixtures.allNames {
             let model = try Fixtures.derive(name)
             for section in model.sections {
-                var seen: [PRID] = []
-                var closed: Set<PRID> = []
+                var activeRoot: PRID?
+                var closedRoots: Set<PRID> = []
                 for row in section.rows {
-                    guard let root = row.stackRoot else { continue }
-                    XCTAssertFalse(closed.contains(root), "\(name): group \(root) is interrupted by another row")
-                    if seen.last != root {
-                        if let previous = seen.last { closed.insert(previous) }
-                        seen.append(root)
+                    // A loose row ends whatever run was in progress. Skipping it instead
+                    // would let group / loose / same-group pass as contiguous, which is
+                    // the exact interruption this test exists to catch.
+                    guard let root = row.stackRoot else {
+                        if let activeRoot { closedRoots.insert(activeRoot) }
+                        activeRoot = nil
+                        continue
+                    }
+                    if activeRoot != root {
+                        if let activeRoot { closedRoots.insert(activeRoot) }
+                        XCTAssertFalse(
+                            closedRoots.contains(root),
+                            "\(name): group \(root) resumes after another row interrupted it"
+                        )
+                        activeRoot = root
                     }
                 }
             }
