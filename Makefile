@@ -11,8 +11,15 @@ CONFIGURATION ?= debug
 INSTALL_DIR   ?= /Applications
 
 APP_PACKAGE := App
-EXECUTABLE  := $(APP_PACKAGE)/.build/$(CONFIGURATION)/PRStackMonitorApp
 BUNDLE      := build/$(APP_NAME).app
+
+# Ask SwiftPM where it put the binary rather than assuming `.build/$(CONFIGURATION)`.
+# That path is an internal detail — it varies by architecture and by build system, and
+# `.build/debug` is only a convenience symlink the current one happens to create.
+# Recursively expanded (`=`, not `:=`) so the query runs when a recipe needs the path,
+# after `build` has produced it, rather than every time make parses this file.
+BIN_DIR    = $(shell swift build --package-path $(APP_PACKAGE) -c $(CONFIGURATION) --show-bin-path)
+EXECUTABLE = $(BIN_DIR)/PRStackMonitorApp
 
 .PHONY: all help build bundle sign run install uninstall identity clean
 
@@ -32,6 +39,7 @@ build:
 	swift build --package-path $(APP_PACKAGE) -c $(CONFIGURATION)
 
 bundle: build
+	@test -x "$(EXECUTABLE)" || { echo "error: no executable at '$(EXECUTABLE)'"; exit 1; }
 	rm -rf "$(BUNDLE)"
 	mkdir -p "$(BUNDLE)/Contents/MacOS" "$(BUNDLE)/Contents/Resources"
 	cp "$(EXECUTABLE)" "$(BUNDLE)/Contents/MacOS/$(APP_NAME)"

@@ -4,6 +4,8 @@ The AppKit shell: an `NSStatusItem` and the `NSPopover` hanging off it. Everythi
 decides *what* to show lives in [`../PRStackMonitor`](../PRStackMonitor); this package is
 the part that needs a Mac.
 
+The `Makefile` is at the repository root, so run these from there rather than from `App/`:
+
 ```sh
 make run
 ```
