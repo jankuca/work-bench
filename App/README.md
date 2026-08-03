@@ -32,13 +32,20 @@ changing any of this.
 ## One-time: the local signing certificate
 
 Without a paid Apple Developer account the app is signed with a **self-signed certificate
-created on this Mac**. This is not about Gatekeeper — a locally built app is never
-quarantined. It is about the *designated requirement* staying constant across rebuilds.
+created on this Mac**. That buys a stable local signing identity and nothing more — not
+notarization, not Gatekeeper approval.
 
-An ad-hoc signature (`codesign -s -`) hashes the binary, so every rebuild produces a
-different identity, and from M2 onwards macOS treats each build as a new app asking for
-the GitHub token in the Keychain — a permission prompt on every single run. A stable
-self-signed identity fixes the requirement once.
+It is also not what makes the app launchable. Build output isn't tagged with the
+`com.apple.quarantine` attribute the way a downloaded app is, so Gatekeeper was never in
+the way to begin with. (If a build ever *is* quarantined — say the tree was unpacked from
+a downloaded archive that propagated the attribute — `xattr -dr com.apple.quarantine` on
+the bundle clears it.)
+
+What the certificate does buy is a *designated requirement* that stays constant across
+rebuilds. An ad-hoc signature (`codesign -s -`) identifies a single binary by its code
+hash, so every rebuild is a different identity, and from M2 onwards macOS treats each
+build as a new app asking for the GitHub token in the Keychain — a permission prompt on
+every single run. A stable self-signed identity fixes the requirement once.
 
 Create it once:
 
@@ -64,10 +71,20 @@ To use a different name: `make run SIGN_IDENTITY="Some Other Identity"`.
 
 ## App Sandbox
 
-v1 ships **unsandboxed**, per IMPLEMENTATION_PLAN §0. Nothing here needs an entitlement
-that would require a provisioning profile, so the sandbox can be switched on later
-without redesign — but until there is a paid account it buys nothing and costs debugging
-time, so there is no entitlements file.
+v1 ships **unsandboxed**, per IMPLEMENTATION_PLAN §0.
+
+Worth being precise about why, because the sandbox is easy to mis-file as an
+Apple-account problem. **The App Sandbox needs no paid account**, and it does contain the
+app for real. What needs a paid account is a *provisioning profile*, and so the
+entitlements that require one — iCloud, App Groups, Push. This app needs none of those,
+which is what §0 means by "switched on later without redesign": the architecture doesn't
+have to change.
+
+Switching it on is still work rather than a flag flip. It means adding an entitlements
+file and auditing everything the app reaches for — the Application Support directory,
+outbound HTTPS to GitHub and Linear, Keychain access — then confirming each still works
+inside the container. That work is deferred, not free, which is why there is no
+entitlements file yet.
 
 ## What M0 is, and is not
 
