@@ -38,8 +38,10 @@ notarization, not Gatekeeper approval.
 It is also not what makes the app launchable. Build output isn't tagged with the
 `com.apple.quarantine` attribute the way a downloaded app is, so Gatekeeper was never in
 the way to begin with. (If a build ever *is* quarantined — say the tree was unpacked from
-a downloaded archive that propagated the attribute — `xattr -dr com.apple.quarantine` on
-the bundle clears it.)
+a downloaded archive that propagated the attribute — `xattr -dr com.apple.quarantine
+build/PRStackMonitor.app` clears it. That is a troubleshooting step for a bundle you just
+built from a checkout you trust, and for nothing else: stripping quarantine off a
+downloaded or unverified app removes exactly the check that exists to protect you.)
 
 What the certificate does buy is a *designated requirement* that stays constant across
 rebuilds. An ad-hoc signature (`codesign -s -`) identifies a single binary by its code
@@ -75,10 +77,19 @@ v1 ships **unsandboxed**, per IMPLEMENTATION_PLAN §0.
 
 Worth being precise about why, because the sandbox is easy to mis-file as an
 Apple-account problem. **The App Sandbox needs no paid account**, and it does contain the
-app for real. What needs a paid account is a *provisioning profile*, and so the
-entitlements that require one — iCloud, App Groups, Push. This app needs none of those,
-which is what §0 means by "switched on later without redesign": the architecture doesn't
-have to change.
+app for real. What can need one is a *provisioning profile*, and so the entitlements that
+require a profile to be authorised.
+
+How much that costs depends on both the capability and the distribution path, and the two
+should not be conflated: signing ad-hoc or with a local self-signed identity for testing
+on this Mac is the loosest case, while App Store and Developer ID distribution are
+stricter and bring their own certificate and profile requirements. iCloud, App Groups and
+Push are the usual examples of profile-gated capabilities, not an exhaustive list — check
+any capability against Apple's current documentation before enabling it, rather than
+against this paragraph.
+
+What matters here is that this app claims no entitlements at all today, which is what §0
+means by "switched on later without redesign": the architecture doesn't have to change.
 
 Switching it on is still work rather than a flag flip. It means adding an entitlements
 file and auditing everything the app reaches for — the Application Support directory,
