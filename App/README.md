@@ -19,7 +19,8 @@ it. `make help` lists the rest.
 The implementation plan's §9 sketches an Xcode project. This is a SwiftPM executable plus
 a `Makefile` that assembles the bundle instead, because:
 
-- the build is reproducible from the command line, and diffable — a `.pbxproj` is neither;
+- the whole build is described in text a reviewer can actually read — `Package.swift` and
+  a `Makefile` — rather than in a project file that turns every touch into merge noise;
 - nothing here needs Interface Builder, asset catalogs, or a build phase Xcode uniquely
   provides;
 - `swift build` is the same toolchain CI already uses for the portable modules.
@@ -75,27 +76,18 @@ To use a different name: `make run SIGN_IDENTITY="Some Other Identity"`.
 
 v1 ships **unsandboxed**, per IMPLEMENTATION_PLAN §0.
 
-Worth being precise about why, because the sandbox is easy to mis-file as an
-Apple-account problem. **The App Sandbox needs no paid account**, and it does contain the
-app for real. What can need one is a *provisioning profile*, and so the entitlements that
-require a profile to be authorised.
+The one thing worth not mis-filing: **the App Sandbox itself needs no paid Apple
+Developer account**, and it does contain the app for real. Certain entitlements are gated
+on a provisioning profile, and which ones depends on both the capability and how the app
+is distributed — that is Apple's documentation to answer, not this README's.
 
-How much that costs depends on both the capability and the distribution path, and the two
-should not be conflated: signing ad-hoc or with a local self-signed identity for testing
-on this Mac is the loosest case, while App Store and Developer ID distribution are
-stricter and bring their own certificate and profile requirements. iCloud, App Groups and
-Push are the usual examples of profile-gated capabilities, not an exhaustive list — check
-any capability against Apple's current documentation before enabling it, rather than
-against this paragraph.
-
-What matters here is that this app claims no entitlements at all today, which is what §0
+None of it arises yet, because this app claims no entitlements at all. That is what §0
 means by "switched on later without redesign": the architecture doesn't have to change.
 
-Switching it on is still work rather than a flag flip. It means adding an entitlements
-file and auditing everything the app reaches for — the Application Support directory,
-outbound HTTPS to GitHub and Linear, Keychain access — then confirming each still works
-inside the container. That work is deferred, not free, which is why there is no
-entitlements file yet.
+Switching it on would still be work rather than a flag flip — an entitlements file, then
+confirming that the Application Support directory, outbound HTTPS to GitHub and Linear,
+and Keychain access all still function inside the container. Deferred, not free, which is
+why there is no entitlements file yet.
 
 ## What M0 is, and is not
 
