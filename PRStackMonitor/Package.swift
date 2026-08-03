@@ -8,10 +8,14 @@ let package = Package(
     name: "PRStackMonitor",
     platforms: [.macOS(.v14)],
     products: [
-        .library(name: "PRStackCore", targets: ["PRStackCore"])
+        .library(name: "PRStackCore", targets: ["PRStackCore"]),
+        // Debug dump: derive a snapshot and print the panel. Foundation only, so CI
+        // compiles it alongside everything else.
+        .executable(name: "prstack-dump", targets: ["PRStackDump"])
     ],
     targets: [
         .target(name: "PRStackCore"),
+        .executableTarget(name: "PRStackDump", dependencies: ["PRStackCore"]),
         .testTarget(name: "PRStackCoreTests", dependencies: ["PRStackCore"])
     ]
 )

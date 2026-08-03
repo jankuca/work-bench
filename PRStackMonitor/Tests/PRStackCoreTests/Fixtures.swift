@@ -17,15 +17,7 @@ struct DerivationCase {
     /// `local` with the `readAsOfSnapshot` digests filled in.
     func resolvedLocal() -> LocalState {
         var resolved = local
-        for id in readAsOfSnapshot {
-            guard let pullRequest = snapshot.pullRequests.first(where: { $0.id == id }) else {
-                continue
-            }
-            resolved.readDigests[id] = ReadDigest.make(
-                for: pullRequest,
-                releaseStage: Derivation.releaseStage(for: pullRequest, local: local)
-            )
-        }
+        resolved.markRead(readAsOfSnapshot, in: snapshot)
         return resolved
     }
 

@@ -93,6 +93,31 @@ public struct LocalState: Equatable, Sendable {
     }
 
     public static let empty = LocalState()
+
+    /// Records read digests for `ids` as those pull requests stand in `snapshot`.
+    ///
+    /// This is what opening the panel does, and what `Mark all read` does on demand
+    /// (IMPLEMENTATION_PLAN §2). Ids absent from the snapshot are ignored.
+    public mutating func markRead<Ids: Sequence>(_ ids: Ids, in snapshot: RawSnapshot)
+    where Ids.Element == PRID {
+        let byID = Dictionary(
+            snapshot.pullRequests.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        for id in ids {
+            guard let pullRequest = byID[id] else { continue }
+            // Read `self` fully before mutating it, rather than nesting the lookup inside
+            // the subscript assignment.
+            let stage = Derivation.releaseStage(for: pullRequest, local: self)
+            let digest = ReadDigest.make(for: pullRequest, releaseStage: stage)
+            readDigests[id] = digest
+        }
+    }
+
+    /// `Mark all read` — every pull request in the snapshot.
+    public mutating func markAllRead(in snapshot: RawSnapshot) {
+        markRead(snapshot.pullRequests.map(\.id), in: snapshot)
+    }
 }
 
 extension LocalState: Codable {

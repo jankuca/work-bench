@@ -117,6 +117,24 @@ final class DerivationInvariantTests: XCTestCase {
         }
     }
 
+    /// `Mark all read` is the same mechanism as opening the panel, so it must leave the
+    /// next derivation with nothing unread — and it must not invent digests for pull
+    /// requests the snapshot doesn't contain.
+    func testMarkAllReadClearsUnread() throws {
+        let fixture = try Fixtures.load("panel-2a")
+
+        var local = LocalState.empty
+        local.markAllRead(in: fixture.snapshot)
+
+        let model = Derivation.derive(snapshot: fixture.snapshot, local: local, now: fixture.now)
+        XCTAssertEqual(model.unreadCount, 0)
+        XCTAssertEqual(local.readDigests.count, fixture.snapshot.pullRequests.count)
+
+        var withStranger = LocalState.empty
+        withStranger.markRead([PRID(repo: "acme/nowhere", number: 1)], in: fixture.snapshot)
+        XCTAssertTrue(withStranger.readDigests.isEmpty)
+    }
+
     /// A dismissed pull request is gone from the model entirely and cannot be brought
     /// back by a later change to it.
     func testDismissalSurvivesAChangeToThePullRequest() throws {

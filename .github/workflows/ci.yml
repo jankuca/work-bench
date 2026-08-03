@@ -29,9 +29,11 @@ jobs:
           # Nothing here talks to git after checkout, and the job goes on to run code from
           # the branch, so the token has no business staying in .git/config.
           persist-credentials: false
+      # Plain `swift build` so the prstack-dump executable is compiled too, not just the
+      # library and its tests.
       - name: Build
         working-directory: PRStackMonitor
-        run: swift build --build-tests
+        run: swift build --build-tests && swift build
       - name: Test
         working-directory: PRStackMonitor
         run: swift test
