@@ -8,7 +8,9 @@ import PRStackCore
 // fixtures use, which means its output for a fixture is byte-identical to that
 // fixture's golden.
 
-private struct DumpInput: Decodable {
+// Not `private`: top-level bindings in main.swift are internal, so a private type here
+// would make `let input: DumpInput` below illegal.
+struct DumpInput: Decodable {
     var now: Date?
     var snapshot: RawSnapshot
     var local: LocalState?
@@ -37,7 +39,7 @@ private let timestamps = ISO8601DateFormatter()
 var path: String?
 var overriddenNow: Date?
 
-var arguments = Array(CommandLine.arguments.dropFirst())
+let arguments = Array(CommandLine.arguments.dropFirst())
 var index = arguments.startIndex
 
 while index < arguments.endIndex {
