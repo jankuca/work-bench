@@ -1,0 +1,33 @@
+{
+  "comment": "The list spans two repositories, so the meta line shows the repo name (PRD 12.3).",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 1600,
+        "title": "Billing side",
+        "headRef": "jk/n1600",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1600", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/web",
+        "number": 1601,
+        "title": "Web side",
+        "headRef": "jk/n1601",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-09T11:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1601", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "comment": "Two runs in one project plus a loose pull request. Runs come first, ordered by base number descending; the loose row sorts after them even though its number is higher and it is the only row needing attention. Urgency never reorders (PRD 5.1).",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 700,
+        "title": "Run A base",
+        "headRef": "jk/a1",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-09T09:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-700", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 701,
+        "title": "Run A top",
+        "headRef": "jk/a2",
+        "baseRef": "jk/a1",
+        "state": "open",
+        "updatedAt": "2026-01-09T09:30:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-701", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 710,
+        "title": "Run B base",
+        "headRef": "jk/b1",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-710", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 711,
+        "title": "Run B top",
+        "headRef": "jk/b2",
+        "baseRef": "jk/b1",
+        "state": "open",
+        "updatedAt": "2026-01-09T10:30:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-711", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 720,
+        "title": "Loose and conflicted",
+        "headRef": "jk/c",
+        "baseRef": "main",
+        "state": "open",
+        "mergeable": "conflicting",
+        "updatedAt": "2026-01-10T11:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-720", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      }
+    ]
+  }
+}

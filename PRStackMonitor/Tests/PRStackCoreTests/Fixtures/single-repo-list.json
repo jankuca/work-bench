@@ -1,0 +1,33 @@
+{
+  "comment": "One repository, so the repo name is omitted from the meta line.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 1610,
+        "title": "First",
+        "headRef": "jk/n1610",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1610", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1611,
+        "title": "Second",
+        "headRef": "jk/n1611",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-09T11:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1611", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      }
+    ]
+  }
+}

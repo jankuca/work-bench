@@ -1,0 +1,20 @@
+{
+  "comment": "Terminal states are checked before any live signal. This closed pull request carries a conflict and failing checks and must still resolve to closed, in Done, with no attention.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 900,
+        "title": "Abandoned experiment",
+        "headRef": "jk/n900",
+        "baseRef": "main",
+        "state": "closed",
+        "checks": { "state": "failing", "failingCount": 3 },
+        "mergeable": "conflicting",
+        "updatedAt": "2026-01-09T10:00:00Z"
+      }
+    ]
+  }
+}

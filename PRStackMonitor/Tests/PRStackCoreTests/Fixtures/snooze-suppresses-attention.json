@@ -1,0 +1,38 @@
+{
+  "comment": "A snoozed row keeps its real status but is stripped of attention, so it cannot tint, cannot count toward the badge, and cannot raise the icon out of idle. Its unsnoozed twin still does all three.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 1300,
+        "title": "Snoozed until this evening",
+        "headRef": "jk/n1300",
+        "baseRef": "main",
+        "state": "open",
+        "checks": { "state": "failing", "failingCount": 2 },
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1300", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1301,
+        "title": "Not snoozed",
+        "headRef": "jk/n1301",
+        "baseRef": "main",
+        "state": "open",
+        "checks": { "state": "failing", "failingCount": 2 },
+        "updatedAt": "2026-01-09T11:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1301", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      }
+    ]
+  },
+  "local": {
+    "snoozedUntil": { "acme/billing#1300": "2026-01-10T18:00:00Z" }
+  }
+}

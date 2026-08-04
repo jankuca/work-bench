@@ -1,0 +1,29 @@
+{
+  "comment": "Two routes into Other: no linked issue at all (#1000), and a linked issue that has no project (#1001, BIL-1001). Design 2a's Other row reads '#1000 . merge conflict . 2d' with no identifier token at all.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 1000,
+        "title": "Bump dependencies",
+        "headRef": "jk/n1000",
+        "baseRef": "main",
+        "state": "open",
+        "mergeable": "conflicting",
+        "updatedAt": "2026-01-09T10:00:00Z"
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1001,
+        "title": "Ticket exists but has no project",
+        "headRef": "jk/n1001",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-09T11:00:00Z",
+        "linearIssues": [{ "identifier": "BIL-1001" }]
+      }
+    ]
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "comment": "Projects order by their most recent activity, then Other, then Done. The Other and Done rows are the most recently updated in the snapshot and still sort last.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 800,
+        "title": "Least recent project",
+        "headRef": "jk/n800",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-05T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-800", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 801,
+        "title": "Most recent project",
+        "headRef": "jk/n801",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-07T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "PAY-801", "projectId": "proj-payments", "projectName": "Payments" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 802,
+        "title": "Middle project",
+        "headRef": "jk/n802",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-06T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "PLT-802", "projectId": "proj-platform", "projectName": "Platform" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 803,
+        "title": "No ticket at all",
+        "headRef": "jk/n803",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-09T10:00:00Z"
+      },
+      {
+        "repo": "acme/billing",
+        "number": 804,
+        "title": "Closed without merging",
+        "headRef": "jk/n804",
+        "baseRef": "main",
+        "state": "closed",
+        "updatedAt": "2026-01-10T10:00:00Z"
+      }
+    ]
+  }
+}

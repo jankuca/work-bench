@@ -1,0 +1,57 @@
+{
+  "comment": "Two pull requests share a base. The longest chain keeps the spine; the sibling branch renders as its own run directly beneath, still inside the same group. No error state.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 200,
+        "title": "Shared base",
+        "headRef": "jk/base",
+        "baseRef": "main",
+        "state": "open",
+        "updatedAt": "2026-01-09T09:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-200", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 201,
+        "title": "Sibling leaf",
+        "headRef": "jk/x",
+        "baseRef": "jk/base",
+        "state": "open",
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-201", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 202,
+        "title": "Longer chain, first",
+        "headRef": "jk/y",
+        "baseRef": "jk/base",
+        "state": "open",
+        "updatedAt": "2026-01-09T11:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-202", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 203,
+        "title": "Longer chain, second",
+        "headRef": "jk/z",
+        "baseRef": "jk/y",
+        "state": "open",
+        "updatedAt": "2026-01-09T12:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-203", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      }
+    ]
+  }
+}

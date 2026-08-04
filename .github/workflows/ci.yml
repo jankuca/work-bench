@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# This job runs pull-request code (`swift test` executes the branch's own tests), so the
+# token it is handed is scoped down to the one thing checkout needs.
+permissions:
+  contents: read
+
+jobs:
+  portable-modules:
+    # PRStackCore (and later GitHubKit and LinearKit) are Foundation-only, so they build
+    # and test in a Linux container. The AppKit targets build on a Mac only.
+    name: swift test
+    runs-on: ubuntu-latest
+    # Pinned by digest, not by tag: the goldens in this package assert exact derivation
+    # output, so the toolchain that verifies them should not move underneath us.
+    container: swift:6.0-jammy@sha256:f0bfe313779a0bb99db87f97c88ea6ada014aa6b3359f9c5583bf70b0b721217
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # Nothing here talks to git after checkout, and the job goes on to run code from
+          # the branch, so the token has no business staying in .git/config.
+          persist-credentials: false
+      # Plain `swift build` so the prstack-dump executable is compiled too, not just the
+      # library and its tests.
+      - name: Build
+        working-directory: PRStackMonitor
+        run: swift build --build-tests && swift build
+      - name: Test
+        working-directory: PRStackMonitor
+        run: swift test

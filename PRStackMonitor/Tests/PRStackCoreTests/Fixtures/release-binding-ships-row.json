@@ -1,0 +1,26 @@
+{
+  "comment": "The same pull request as never-tagged-release, once a tag cut weeks after the merge has been bound to it. It flips to shipped and moves to Done, and it stops counting as shipping.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 1500,
+        "title": "Merged long ago, never tagged",
+        "headRef": "jk/n1500",
+        "baseRef": "main",
+        "state": "merged",
+        "mergeCommit": "d00d01",
+        "mergedAt": "2025-11-20T10:00:00Z",
+        "updatedAt": "2025-11-20T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1500", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      }
+    ]
+  },
+  "local": {
+    "releaseBindings": { "acme/billing#1500": "v1.9.0" }
+  }
+}

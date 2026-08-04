@@ -1,0 +1,27 @@
+{
+  "comment": "Snooze silences 'this needs you', not 'this finished'. A snoozed pull request that shipped still resolves to shipped and still moves to Done; it is only marked suppressed so the row renders dimmed.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 1320,
+        "title": "Snoozed, then shipped",
+        "headRef": "jk/n1320",
+        "baseRef": "main",
+        "state": "merged",
+        "mergeCommit": "beef01",
+        "mergedAt": "2026-01-09T10:00:00Z",
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1320", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      }
+    ]
+  },
+  "local": {
+    "snoozedUntil": { "acme/billing#1320": "2026-01-10T18:00:00Z" },
+    "releaseBindings": { "acme/billing#1320": "v3.1.0" }
+  }
+}

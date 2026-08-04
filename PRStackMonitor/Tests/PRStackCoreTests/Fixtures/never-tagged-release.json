@@ -1,0 +1,23 @@
+{
+  "comment": "Merged seven weeks ago and still not in any matching tag. Per PRD 10 this is quiet by design, not an error: the row sits at 'merged . awaiting release' in its own project section and counts as shipping, not as Done.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 1500,
+        "title": "Merged long ago, never tagged",
+        "headRef": "jk/n1500",
+        "baseRef": "main",
+        "state": "merged",
+        "mergeCommit": "d00d01",
+        "mergedAt": "2025-11-20T10:00:00Z",
+        "updatedAt": "2025-11-20T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1500", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      }
+    ]
+  }
+}

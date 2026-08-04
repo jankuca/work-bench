@@ -1,0 +1,33 @@
+{
+  "comment": "Impossible in git, cheap to guard. Two pull requests each base off the other's head branch; the visited-set breaks the loop and both render as loose rows with no spine and no blocked status.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 300,
+        "title": "Loop one",
+        "headRef": "jk/p",
+        "baseRef": "jk/q",
+        "state": "open",
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-300", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 301,
+        "title": "Loop two",
+        "headRef": "jk/q",
+        "baseRef": "jk/p",
+        "state": "open",
+        "updatedAt": "2026-01-09T11:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-301", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      }
+    ]
+  }
+}

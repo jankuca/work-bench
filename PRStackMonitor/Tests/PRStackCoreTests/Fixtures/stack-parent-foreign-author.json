@@ -1,0 +1,35 @@
+{
+  "comment": "The parent branch belongs to somebody else's pull request. Only the viewer's own pull requests enter the branch index, so this is not a stack.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 500,
+        "title": "Shared base by a colleague",
+        "headRef": "jk/shared",
+        "baseRef": "main",
+        "state": "open",
+        "author": "otherdev",
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-500", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 501,
+        "title": "On top of a colleague's branch",
+        "headRef": "jk/mine",
+        "baseRef": "jk/shared",
+        "state": "open",
+        "author": "jankuca",
+        "updatedAt": "2026-01-09T11:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-501", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      }
+    ]
+  }
+}

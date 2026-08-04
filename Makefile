@@ -10,8 +10,13 @@ SIGN_IDENTITY ?= PRStackMonitor Local
 CONFIGURATION ?= debug
 INSTALL_DIR   ?= /Applications
 
-APP_PACKAGE := App
-BUNDLE      := build/$(APP_NAME).app
+APP_PACKAGE  := App
+CORE_PACKAGE := PRStackMonitor
+BUNDLE       := build/$(APP_NAME).app
+
+# Which fixture `make dump` derives. Any name from
+# PRStackMonitor/Tests/PRStackCoreTests/Fixtures works.
+FIXTURE ?= panel-2a
 
 # Ask SwiftPM where it put the binary rather than assuming `.build/$(CONFIGURATION)`.
 # That path is an internal detail — it varies by architecture and by build system, and
@@ -21,7 +26,7 @@ BUNDLE      := build/$(APP_NAME).app
 BIN_DIR    = $(shell swift build --package-path $(APP_PACKAGE) -c $(CONFIGURATION) --show-bin-path)
 EXECUTABLE = $(BIN_DIR)/PRStackMonitorApp
 
-.PHONY: all help build bundle sign run install uninstall identity clean
+.PHONY: all help build bundle sign run install uninstall identity test dump clean
 
 all: sign
 
@@ -33,6 +38,8 @@ help:
 	@echo "make install    copy the signed app to $(INSTALL_DIR)"
 	@echo "make uninstall  remove it from $(INSTALL_DIR)"
 	@echo "make identity   list the code signing identities this Mac can use"
+	@echo "make test       run the portable core's tests"
+	@echo "make dump       derive a fixture and print the panel (FIXTURE=$(FIXTURE))"
 	@echo "make clean      remove build products"
 
 build:
@@ -81,6 +88,16 @@ uninstall:
 identity:
 	@security find-identity -v -p codesigning || true
 
+test:
+	swift test --package-path $(CORE_PACKAGE)
+
+# The panel model as text. Same renderer the golden tests compare, so the output for a
+# fixture matches that fixture's golden exactly.
+dump:
+	@swift run --package-path $(CORE_PACKAGE) prstack-dump \
+		$(CORE_PACKAGE)/Tests/PRStackCoreTests/Fixtures/$(FIXTURE).json
+
 clean:
 	rm -rf build
 	swift package --package-path $(APP_PACKAGE) clean
+	swift package --package-path $(CORE_PACKAGE) clean

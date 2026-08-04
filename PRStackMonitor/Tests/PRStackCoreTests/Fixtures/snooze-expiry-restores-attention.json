@@ -1,0 +1,41 @@
+{
+  "comment": "Expiry is a pure function of the injected clock, with no user action and no further input. #1310's deadline has passed; #1311's deadline is exactly now, and the comparison is strict, so it is awake too.",
+  "now": "2026-01-10T19:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 1310,
+        "title": "Snooze expired an hour ago",
+        "headRef": "jk/n1310",
+        "baseRef": "main",
+        "state": "open",
+        "checks": { "state": "failing", "failingCount": 1 },
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1310", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1311,
+        "title": "Snooze expires exactly now",
+        "headRef": "jk/n1311",
+        "baseRef": "main",
+        "state": "open",
+        "checks": { "state": "failing", "failingCount": 1 },
+        "updatedAt": "2026-01-09T11:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1311", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      }
+    ]
+  },
+  "local": {
+    "snoozedUntil": {
+      "acme/billing#1310": "2026-01-10T18:00:00Z",
+      "acme/billing#1311": "2026-01-10T19:00:00Z"
+    }
+  }
+}
