@@ -18,6 +18,15 @@ BUNDLE       := build/$(APP_NAME).app
 # PRStackMonitor/Tests/PRStackCoreTests/Fixtures works.
 FIXTURE ?= panel-2a
 
+# `make fetch` talks to GitHub. REPOS empty means the All scope; listing repositories
+# switches to Selected. PAGE_SIZE is deliberately exposed: setting it low is how you watch
+# pagination run past the first page on an account that does not have 50 open pull
+# requests. Credentials come from $PRSTACK_GITHUB_TOKEN, then $GITHUB_TOKEN, then the
+# login keychain.
+REPOS ?=
+PAGE_SIZE ?= 50
+EMIT ?=
+
 # Ask SwiftPM where it put the binary rather than assuming `.build/$(CONFIGURATION)`.
 # That path is an internal detail — it varies by architecture and by build system, and
 # `.build/debug` is only a convenience symlink the current one happens to create.
@@ -26,7 +35,7 @@ FIXTURE ?= panel-2a
 BIN_DIR    = $(shell swift build --package-path $(APP_PACKAGE) -c $(CONFIGURATION) --show-bin-path)
 EXECUTABLE = $(BIN_DIR)/PRStackMonitorApp
 
-.PHONY: all help build bundle sign run install uninstall identity test dump clean
+.PHONY: all help build bundle sign run install uninstall identity test dump fetch clean
 
 all: sign
 
@@ -40,6 +49,7 @@ help:
 	@echo "make identity   list the code signing identities this Mac can use"
 	@echo "make test       run the portable core's tests"
 	@echo "make dump       derive a fixture and print the panel (FIXTURE=$(FIXTURE))"
+	@echo "make fetch      derive live GitHub data (REPOS='o/a o/b' PAGE_SIZE=$(PAGE_SIZE))"
 	@echo "make clean      remove build products"
 
 build:
@@ -96,6 +106,14 @@ test:
 dump:
 	@swift run --package-path $(CORE_PACKAGE) prstack-dump \
 		$(CORE_PACKAGE)/Tests/PRStackCoreTests/Fixtures/$(FIXTURE).json
+
+# The same renderer against live data. Diagnostics — pages, points spent, why pagination
+# stopped — go to stderr, so redirecting stdout still captures only the panel.
+fetch:
+	@swift run --package-path $(CORE_PACKAGE) prstack-dump --github \
+		--page-size $(PAGE_SIZE) \
+		$(foreach repo,$(REPOS),--repo $(repo)) \
+		$(if $(EMIT),--emit-snapshot $(EMIT),)
 
 clean:
 	rm -rf build

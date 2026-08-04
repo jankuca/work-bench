@@ -1,0 +1,155 @@
+{
+  "data": {
+    "rateLimit": { "limit": 5000, "cost": 7, "remaining": 4931, "resetAt": "2026-01-10T13:00:00Z" },
+    "viewer": { "login": "avery" },
+    "search": {
+      "issueCount": 4,
+      "pageInfo": { "hasNextPage": false, "endCursor": "Y3Vyc29yOjI=" },
+      "nodes": [
+        {
+          "__typename": "PullRequest",
+          "number": 4012,
+          "title": "Split invoice totals out of the ledger writer",
+          "body": "Closes BIL-312.\n\nAlso touches https://linear.app/acme/issue/BIL-313/rounding",
+          "url": "https://github.com/acme/billing/pull/4012",
+          "headRefName": "avery/bil-312-invoice-totals",
+          "baseRefName": "avery/bil-311-ledger-writer",
+          "isDraft": false,
+          "state": "OPEN",
+          "createdAt": "2026-01-06T08:00:00Z",
+          "updatedAt": "2026-01-09T16:40:00Z",
+          "mergedAt": null,
+          "mergeable": "MERGEABLE",
+          "reviewDecision": "CHANGES_REQUESTED",
+          "mergeCommit": null,
+          "author": { "login": "avery" },
+          "repository": {
+            "nameWithOwner": "acme/billing",
+            "defaultBranchRef": { "name": "main" }
+          },
+          "comments": {
+            "totalCount": 7,
+            "nodes": [{ "createdAt": "2026-01-09T16:35:00Z" }]
+          },
+          "reviews": {
+            "nodes": [
+              {
+                "author": { "login": "rowan", "avatarUrl": "https://avatars.example/rowan" },
+                "state": "APPROVED",
+                "submittedAt": "2026-01-08T09:00:00Z"
+              },
+              {
+                "author": { "login": "rowan", "avatarUrl": "https://avatars.example/rowan" },
+                "state": "COMMENTED",
+                "submittedAt": "2026-01-09T11:00:00Z"
+              },
+              {
+                "author": { "login": "kai", "avatarUrl": "https://avatars.example/kai" },
+                "state": "CHANGES_REQUESTED",
+                "submittedAt": "2026-01-09T15:00:00Z"
+              },
+              {
+                "author": { "login": "sam", "avatarUrl": "https://avatars.example/sam" },
+                "state": "PENDING",
+                "submittedAt": null
+              }
+            ]
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE",
+                    "contexts": {
+                      "totalCount": 4,
+                      "nodes": [
+                        {
+                          "__typename": "CheckRun",
+                          "name": "unit",
+                          "conclusion": "SUCCESS",
+                          "status": "COMPLETED",
+                          "detailsUrl": "https://ci.example/1"
+                        },
+                        {
+                          "__typename": "CheckRun",
+                          "name": "integration",
+                          "conclusion": "FAILURE",
+                          "status": "COMPLETED",
+                          "detailsUrl": "https://ci.example/2"
+                        },
+                        {
+                          "__typename": "CheckRun",
+                          "name": "lint",
+                          "conclusion": "TIMED_OUT",
+                          "status": "COMPLETED",
+                          "detailsUrl": "https://ci.example/3"
+                        },
+                        {
+                          "__typename": "StatusContext",
+                          "context": "legacy/coverage",
+                          "state": "SUCCESS",
+                          "targetUrl": "https://ci.example/4"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "PullRequest",
+          "number": 4011,
+          "title": "Introduce the ledger writer",
+          "body": null,
+          "url": "https://github.com/acme/billing/pull/4011",
+          "headRefName": "avery/bil-311-ledger-writer",
+          "baseRefName": "main",
+          "isDraft": false,
+          "state": "MERGED",
+          "createdAt": "2026-01-04T08:00:00Z",
+          "updatedAt": "2026-01-09T10:00:00Z",
+          "mergedAt": "2026-01-09T09:58:00Z",
+          "mergeable": "UNKNOWN",
+          "reviewDecision": "APPROVED",
+          "mergeCommit": { "oid": "9f1c2ab7d4e5f60718293a4b5c6d7e8f90a1b2c3" },
+          "author": { "login": "avery" },
+          "repository": {
+            "nameWithOwner": "acme/billing",
+            "defaultBranchRef": { "name": "main" }
+          },
+          "comments": { "totalCount": 0, "nodes": [] },
+          "reviews": { "nodes": [] },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS",
+                    "contexts": { "totalCount": 2, "nodes": [] }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "Issue",
+          "number": 88,
+          "title": "Search returns issues too"
+        },
+        {
+          "__typename": "PullRequest",
+          "number": 4010,
+          "title": "A pull request in a repository the token cannot read",
+          "url": "https://github.com/acme/hidden/pull/4010",
+          "state": "OPEN",
+          "updatedAt": "2026-01-09T10:00:00Z",
+          "repository": null
+        }
+      ]
+    }
+  }
+}
