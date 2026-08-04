@@ -318,9 +318,25 @@ extension PullRequest: Codable {
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        // Identity is checked here rather than trusted downstream. `PullRequest.id` is what
+        // `LocalState` persists, and its decoder *throws* on a key it cannot parse — so a
+        // single pull request with a malformed `repo` or a non-positive `number` would cost
+        // the user their entire stored state on the next launch. This is the one place
+        // untrusted input becomes a `PRID`, so it is the one place worth guarding.
+        let repo = try container.decode(String.self, forKey: .repo)
+        let number = try container.decode(Int.self, forKey: .number)
+        guard PRID.isWellFormed(repo: repo, number: number) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .repo,
+                in: container,
+                debugDescription: "Expected 'owner/name' and a positive number, got '\(repo)' and \(number)"
+            )
+        }
+
         self.init(
-            repo: try container.decode(String.self, forKey: .repo),
-            number: try container.decode(Int.self, forKey: .number),
+            repo: repo,
+            number: number,
             title: try container.decodeIfPresent(String.self, forKey: .title) ?? "",
             body: try container.decodeIfPresent(String.self, forKey: .body),
             url: try container.decodeIfPresent(URL.self, forKey: .url),

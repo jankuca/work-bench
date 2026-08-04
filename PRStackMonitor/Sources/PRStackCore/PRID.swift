@@ -12,8 +12,29 @@ public struct PRID: Hashable, Sendable, CustomStringConvertible {
     public let number: Int
 
     public init(repo: String, number: Int) {
+        // The two initialisers have to agree. `rawValue` is what `LocalState` writes to
+        // disk, and decoding rejects any key `init?(rawValue:)` will not parse — by
+        // throwing, which fails the *whole* state file rather than dropping one entry. So
+        // a `PRID` that cannot survive its own `rawValue` is a stored-state hazard.
+        //
+        // An assert rather than a failable init: callers pass GitHub's own `nameWithOwner`
+        // and pull request number, so a violation is a bug here, not untrusted input, and
+        // making this fail would push a `!` into `PullRequest.id`, which cannot fail.
+        assert(
+            PRID.isWellFormed(repo: repo, number: number),
+            "PRID(repo: \"\(repo)\", number: \(number)) serialises to a rawValue that cannot be parsed back"
+        )
         self.repo = repo
         self.number = number
+    }
+
+    /// `owner/name` and a positive number — the contract both initialisers share.
+    static func isWellFormed(repo: String, number: Int) -> Bool {
+        let components = repo.split(separator: "/", omittingEmptySubsequences: false)
+        return components.count == 2
+            && components.allSatisfy({ !$0.isEmpty })
+            && !repo.contains(where: { $0 == "#" })
+            && number > 0
     }
 
     /// `owner/name#123` — the spelling used on disk, in golden files, and as a
@@ -31,17 +52,13 @@ public struct PRID: Hashable, Sendable, CustomStringConvertible {
         guard let separator = rawValue.lastIndex(of: "#") else { return nil }
         let repo = String(rawValue[..<separator])
 
-        // `owner/name`, as GitHub spells it: exactly two non-empty components, and no
-        // stray `#` (only the last one is the separator, so an earlier one lands here).
-        let components = repo.split(separator: "/", omittingEmptySubsequences: false)
-        guard components.count == 2,
-              components.allSatisfy({ !$0.isEmpty }),
-              !repo.contains(where: { $0 == "#" })
-        else { return nil }
-
-        // Pull request numbers start at 1, and only the canonical spelling of one counts.
+        // Only the canonical spelling of a number counts: `Int` also accepts `+7` and
+        // `007`, which parse and then round-trip as `7`.
         let digits = String(rawValue[rawValue.index(after: separator)...])
-        guard let number = Int(digits), number > 0, String(number) == digits else { return nil }
+        guard let number = Int(digits), String(number) == digits else { return nil }
+
+        // The same predicate the memberwise initialiser asserts, so the two cannot drift.
+        guard PRID.isWellFormed(repo: repo, number: number) else { return nil }
 
         self.init(repo: repo, number: number)
     }

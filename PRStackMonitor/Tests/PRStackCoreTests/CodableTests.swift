@@ -39,6 +39,51 @@ final class CodableTests: XCTestCase {
         }
     }
 
+    /// Decoding is where untrusted text becomes a `PRID`, so a pull request whose identity
+    /// could not survive `rawValue` is rejected at the door — it never reaches `LocalState`
+    /// to fail *that* decode, which would cost the user every dismissal and snooze.
+    func testPullRequestRejectsAMalformedIdentity() {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let malformed = [
+            ("acme", 4012),             // no owner
+            ("acme/billing", 0),        // numbers start at 1
+            ("acme/billing", -3),
+            ("acme/bil#ling", 7),       // would re-parse as a different repository
+            ("acme/billing/api", 7)
+        ]
+        for (repo, number) in malformed {
+            let json = """
+            {"repo": "\(repo)", "number": \(number), "updatedAt": "2026-01-09T15:00:00Z"}
+            """
+            XCTAssertThrowsError(
+                try decoder.decode(PullRequest.self, from: Data(json.utf8)),
+                "'\(repo)#\(number)' should not decode as a pull request"
+            )
+        }
+    }
+
+    /// The inverse property has to hold for every id the system actually constructs, not
+    /// only for the canonical strings picked above. `LocalState` persists exactly these
+    /// keys, and decoding *throws* on one it cannot parse — so a single unparseable id
+    /// costs the user their whole stored state, not one entry.
+    func testEveryConstructedFixtureIDSurvivesItsOwnRawValue() throws {
+        for name in Fixtures.allNames {
+            let fixture = try Fixtures.load(name)
+            for pullRequest in fixture.snapshot.pullRequests {
+                XCTAssertTrue(
+                    PRID.isWellFormed(repo: pullRequest.repo, number: pullRequest.number),
+                    "\(name): \(pullRequest.id) is not a well-formed id"
+                )
+                XCTAssertEqual(
+                    PRID(rawValue: pullRequest.id.rawValue),
+                    pullRequest.id,
+                    "\(name): \(pullRequest.id) does not survive its own rawValue"
+                )
+            }
+        }
+    }
+
     /// `LocalState` is written to disk on every panel interaction, so its keys have to
     /// survive a round trip as readable JSON object keys rather than as key/value arrays.
     func testLocalStateRoundTrips() throws {
