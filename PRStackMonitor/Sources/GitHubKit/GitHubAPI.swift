@@ -57,8 +57,15 @@ public enum GitHubAPI {
             }
             // A secondary limit leaves the hourly allowance intact and announces itself
             // with `Retry-After` and/or the documented phrase in the body.
-            if let retryAfter = response.header("retry-after").flatMap(Double.init) {
-                return .rateLimited(resetAt: now.addingTimeInterval(retryAfter))
+            //
+            // The header's *presence* is the signal, not its parseability. `Retry-After` is
+            // delta-seconds or an HTTP-date (RFC 9110 §10.2.3), and reading it as a Double
+            // only recognises the first — so a date-form header would fall through to
+            // `.unauthorized` and raise the reconnect banner for a throttle. The delta,
+            // when there is one, only refines the answer into a resume time.
+            if let retryAfter = response.header("retry-after") {
+                let delta = Double(retryAfter.trimmingCharacters(in: .whitespaces))
+                return .rateLimited(resetAt: delta.map { now.addingTimeInterval($0) })
             }
             if response.status == 429
                 || message.range(of: "secondary rate limit", options: .caseInsensitive) != nil {

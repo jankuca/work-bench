@@ -242,6 +242,24 @@ final class GraphQLClientTests: XCTestCase {
         )
     }
 
+    /// `Retry-After` is delta-seconds *or* an HTTP-date. Reading it as a number only
+    /// recognises the first, so the date form has to classify on the header's presence —
+    /// otherwise a throttle with no "secondary rate limit" phrase in the body falls
+    /// through to the reconnect path.
+    func testAnHTTPDateRetryAfterStillClassifiesAsRateLimited() {
+        let response = HTTPResponse(
+            status: 403,
+            headers: [
+                "x-ratelimit-remaining": "4321",
+                "Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"
+            ],
+            body: Data(#"{"message":"Request blocked"}"#.utf8)
+        )
+        let error = GitHubAPI.error(for: response, now: Date(timeIntervalSince1970: 1_800_000_000))
+        XCTAssertEqual(error, GitHubError.rateLimited(resetAt: nil))
+        XCTAssertFalse(error.isAuthenticationFailure)
+    }
+
     /// The distinction the classifier exists for: a genuinely bad token still has to reach
     /// the reconnect path.
     func testABadTokenIsStillAnAuthenticationFailure() {
