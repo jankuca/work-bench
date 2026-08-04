@@ -89,7 +89,10 @@ final class CodableTests: XCTestCase {
     /// keys, and decoding *throws* on one it cannot parse — so a single unparseable id
     /// costs the user their whole stored state, not one entry.
     func testEveryConstructedFixtureIDSurvivesItsOwnRawValue() throws {
-        for name in Fixtures.allNames {
+        let names = Fixtures.allNames
+        // Without this the test passes vacuously if the fixture directory ever moves.
+        XCTAssertFalse(names.isEmpty, "No fixtures found in \(Fixtures.fixturesDirectory.path)")
+        for name in names {
             let fixture = try Fixtures.load(name)
             for pullRequest in fixture.snapshot.pullRequests {
                 XCTAssertTrue(

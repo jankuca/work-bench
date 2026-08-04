@@ -51,7 +51,11 @@ public struct CheckRollup: Hashable, Sendable {
 
     public init(state: State, failingCount: Int = 0) {
         self.state = state
-        self.failingCount = failingCount
+        // Only a failing rollup carries a count. Without this, `{"state":"passing",
+        // "failingCount":3}` decodes to a value that produces the same `digestToken` as
+        // plain `"passing"` but compares unequal to it — the count is reachable through
+        // `==` and `hash` while never reaching the digest.
+        self.failingCount = state == .failing ? max(0, failingCount) : 0
     }
 
     public static let noChecks = CheckRollup(state: .noChecks)

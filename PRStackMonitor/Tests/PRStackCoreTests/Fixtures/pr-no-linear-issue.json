@@ -1,5 +1,5 @@
 {
-  "comment": "Two routes into Other: no linked issue at all, and a linked issue that has no project. Design 2a's Other row reads '#4051 . merge conflict . 2d' with no identifier token at all.",
+  "comment": "Two routes into Other: no linked issue at all (#1000), and a linked issue that has no project (#1001, BIL-1001). Design 2a's Other row reads '#1000 . merge conflict . 2d' with no identifier token at all.",
   "now": "2026-01-10T12:00:00Z",
   "snapshot": {
     "viewerLogin": "jankuca",

@@ -150,7 +150,13 @@ extension LocalState: Codable {
 
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        // Sorted so an encoded state file is stable enough to diff.
+        // `dismissed` is sorted here, so it alone is stable. The three maps below encode
+        // as JSON objects whose key order comes from `Dictionary` iteration, which varies
+        // per process — the writing layer (M3) has to set
+        // `outputFormatting.insert(.sortedKeys)` for the state file to be diffable.
+        // Sorting cannot be done from inside `encode(to:)` without changing the on-disk
+        // schema to key/value arrays, and the readable object form is the reason
+        // `LocalState` has a hand-written `Codable` at all.
         try container.encode(dismissed.map(\.rawValue).sorted(), forKey: .dismissed)
         try container.encode(LocalState.stringKeyed(snoozedUntil) { $0 }, forKey: .snoozedUntil)
         try container.encode(LocalState.stringKeyed(readDigests) { $0.value }, forKey: .readDigests)
