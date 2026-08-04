@@ -8,13 +8,18 @@ import XCTest
 /// went out as well as what came back. Running out of responses fails the test rather
 /// than hanging, which is what turns "the client paginated one page too many" into a
 /// readable failure.
-final class StubTransport: HTTPTransport, @unchecked Sendable {
+///
+/// Unsynchronised on purpose. `GitHubClient` awaits each page before asking for the next
+/// and XCTest runs one test method at a time, so there is exactly one consumer and a lock
+/// would guard nothing — while `NSLock` across an `async` boundary is a hard error in the
+/// Swift 6 language mode. If a future test ever drives this concurrently, make it an
+/// `actor` rather than adding a lock back.
+final class StubTransport: HTTPTransport {
     enum Step {
         case respond(HTTPResponse)
         case fail(any Error)
     }
 
-    private let lock = NSLock()
     private var steps: [Step]
     private(set) var requests: [HTTPRequest] = []
 
@@ -32,23 +37,13 @@ final class StubTransport: HTTPTransport, @unchecked Sendable {
         StubTransport(Array(repeating: .respond(response), count: 64))
     }
 
-    var remainingSteps: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return steps.count
-    }
+    var remainingSteps: Int { steps.count }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        lock.lock()
         requests.append(request)
-        guard !steps.isEmpty else {
-            lock.unlock()
-            throw Unexpected(request: request)
-        }
-        let step = steps.removeFirst()
-        lock.unlock()
+        guard !steps.isEmpty else { throw Unexpected(request: request) }
 
-        switch step {
+        switch steps.removeFirst() {
         case .respond(let response): return response
         case .fail(let error): throw error
         }
