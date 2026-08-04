@@ -37,6 +37,18 @@ final class SearchQueryTests: XCTestCase {
         XCTAssertEqual(query.droppedRepositories, ["acme billing", "acme"])
     }
 
+    /// A blank row in a settings list is not a repository the user asked for and lost.
+    /// `GitHubClient.droppedWarnings` filters blanks out, so this path has to agree or the
+    /// same input produces different warnings depending on whether anything else was
+    /// selected.
+    func testBlankEntriesAreNotReportedAsDropped() throws {
+        let query = try XCTUnwrap(
+            SearchQuery.build(scope: .selected(["acme/billing", "   ", ""]))
+        )
+        XCTAssertEqual(query.text, "is:pr author:@me -is:draft repo:acme/billing")
+        XCTAssertTrue(query.droppedRepositories.isEmpty)
+    }
+
     func testDuplicateRepositoriesCollapseAndAreNotReportedAsDropped() throws {
         let query = try XCTUnwrap(
             SearchQuery.build(scope: .selected(["acme/Billing", " acme/billing ", "acme/billing"]))
@@ -55,14 +67,23 @@ final class SearchQueryTests: XCTestCase {
         XCTAssertEqual(selected.text, "is:pr author:@me -is:draft repo:acme/billing is:open")
     }
 
-    func testWellFormednessRejectsWhatWouldChangeTheQualifier() {
+    /// Every name GitHub can actually have, and nothing else. The allowlist matters
+    /// because a denylist only catches the characters somebody thought of, and anything
+    /// that slips through fails the whole search rather than just its own qualifier.
+    func testWellFormednessAcceptsExactlyTheNamesGitHubAllows() {
         XCTAssertTrue(RepoScope.isWellFormed("acme/billing"))
         XCTAssertTrue(RepoScope.isWellFormed("acme-corp/billing.api"))
+        XCTAssertTrue(RepoScope.isWellFormed("acme_corp/billing_2"))
+
         XCTAssertFalse(RepoScope.isWellFormed("acme"))
         XCTAssertFalse(RepoScope.isWellFormed("acme/billing/extra"))
         XCTAssertFalse(RepoScope.isWellFormed("/billing"))
         XCTAssertFalse(RepoScope.isWellFormed("acme/"))
         XCTAssertFalse(RepoScope.isWellFormed("acme/bil ling"))
         XCTAssertFalse(RepoScope.isWellFormed("acme/\"billing\""))
+        // These three passed the old denylist and would have reached the wire.
+        XCTAssertFalse(RepoScope.isWellFormed("acme/bil(ling)"))
+        XCTAssertFalse(RepoScope.isWellFormed("acme/a,b"))
+        XCTAssertFalse(RepoScope.isWellFormed("acme/#1"))
     }
 }

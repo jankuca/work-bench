@@ -150,6 +150,21 @@ final class PullRequestMapperTests: XCTestCase {
         XCTAssertEqual(rollup, .failing(1))
     }
 
+    /// The query selects `detailsUrl` on `CheckRun` and `targetUrl` on `StatusContext`.
+    /// A field that is selected and then dropped at decode time is a cost paid for nothing.
+    func testCheckContextReportURLsSurviveDecoding() throws {
+        let node = try XCTUnwrap(nodes().first { $0.number == 4012 })
+        let commit = try XCTUnwrap((node.commits?.nodes ?? []).compactMap { $0 }.last?.commit)
+        let contexts = (commit.statusCheckRollup?.contexts?.nodes ?? []).compactMap { $0 }
+
+        XCTAssertEqual(contexts.first { $0.name == "integration" }?.reportURL, "https://ci.example/2")
+        // The legacy half of the union reports through `targetUrl` instead.
+        XCTAssertEqual(
+            contexts.first { $0.context == "legacy/coverage" }?.reportURL,
+            "https://ci.example/4"
+        )
+    }
+
     func testRollupStates() {
         func rollup(_ state: String?) -> CheckRollup {
             PullRequestMapper.checks(

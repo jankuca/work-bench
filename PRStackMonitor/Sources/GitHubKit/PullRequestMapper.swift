@@ -122,6 +122,15 @@ enum PullRequestMapper {
     /// The result is ordered by when each reviewer's retained review was submitted, with
     /// the login as a tie-break, so the avatar row is stable across polls rather than
     /// following API order.
+    ///
+    /// Bounded by `reviews(last: 20)` — the plan's query (§3). A reviewer whose only
+    /// approval sits further back than the last twenty reviews is not represented here.
+    /// That is accepted rather than overlooked: the selection multiplies against 50 pull
+    /// requests per page and is billed in points, and paginating reviews would cost a
+    /// request per pull request, which the per-poll budget exists to prevent. The row's
+    /// *status* does not depend on this — `reviewDecision` is a separate field and is
+    /// always GitHub's current answer — so what lags on an unusually long review thread is
+    /// one avatar's ring, not the panel's correctness.
     static func reviewers(from connection: ReviewConnectionDTO?) -> [ReviewerState] {
         struct Entry {
             var login: String

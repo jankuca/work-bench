@@ -36,6 +36,9 @@ public enum GitHubError: Error, Equatable, CustomStringConvertible {
     case rateLimited(resetAt: Date?)
     case http(status: Int, message: String)
     case transport(String)
+    /// A configured endpoint that credentials must not be sent to. Not a server failure —
+    /// the request is refused before it is made.
+    case insecureEndpoint(URL)
     /// A `200` whose `data` never arrived.
     case graphQL([GraphQLError])
     case malformedResponse(String)
@@ -53,6 +56,8 @@ public enum GitHubError: Error, Equatable, CustomStringConvertible {
             return "GitHub returned HTTP \(status): \(message)"
         case .transport(let detail):
             return "could not reach GitHub: \(detail)"
+        case .insecureEndpoint(let url):
+            return "refusing to send a GitHub token to '\(url.absoluteString)': the endpoint must be https"
         case .graphQL(let errors):
             return "GitHub returned errors: " + errors.map(\.description).joined(separator: "; ")
         case .malformedResponse(let detail):

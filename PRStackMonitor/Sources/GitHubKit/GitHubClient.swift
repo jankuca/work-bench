@@ -191,7 +191,7 @@ public struct GitHubClient {
                 budget.record(reported.cost)
             }
 
-            for node in (payload.search.nodes ?? []).compactMap({ $0 }) {
+            for node in (payload.search?.nodes ?? []).compactMap({ $0 }) {
                 switch PullRequestMapper.map(node) {
                 case .mapped(let pullRequest):
                     // The search index can shift between pages, which repeats a node on the
@@ -204,7 +204,10 @@ public struct GitHubClient {
                 }
             }
 
-            let pageInfo = payload.search.pageInfo
+            // A null `search` means GitHub failed the connection and said why in `errors`,
+            // which are already banked as warnings above. Treating it as the end of
+            // pagination is right: there is no cursor to go on with.
+            let pageInfo = payload.search?.pageInfo
             let hasNextPage = (pageInfo?.hasNextPage ?? false) && pageInfo?.endCursor != nil
             guard hasNextPage else {
                 nextCursor = nil

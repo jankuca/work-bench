@@ -218,6 +218,29 @@ final class PullRequestFetchTests: XCTestCase {
         XCTAssertFalse(model.showsRepoNames, "one repository in the list, so no repo names")
     }
 
+    /// GraphQL nulls a field whose resolver failed and explains why in `errors`. A DTO
+    /// that required `search` would turn that into a decode failure and throw GitHub's own
+    /// explanation away.
+    func testANullSearchConnectionKeepsGitHubsErrors() async throws {
+        let transport = StubTransport(responses: [
+            .json(
+                """
+                {"data":{"search":null},
+                 "errors":[{"type":"FORBIDDEN","message":"Resource not accessible"}]}
+                """
+            )
+        ])
+        let fetch = try await client(transport).fetchPullRequests(scope: .all)
+
+        XCTAssertTrue(fetch.pullRequests.isEmpty)
+        XCTAssertEqual(fetch.stopReason, .complete)
+        XCTAssertNil(fetch.nextCursor)
+        XCTAssertEqual(
+            fetch.warnings,
+            [.graphQL(GraphQLError(message: "Resource not accessible", type: "FORBIDDEN"))]
+        )
+    }
+
     /// One inaccessible repository does not invalidate the page; the error becomes a
     /// warning the footer can show.
     func testGraphQLErrorsAlongsideDataBecomeWarnings() async throws {

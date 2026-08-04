@@ -34,14 +34,25 @@ public enum RepoScope: Equatable, Sendable {
         return result
     }
 
-    /// `owner/name`, with nothing in either half that would change the meaning of the
-    /// qualifier it is spliced into.
+    /// GitHub owner and repository names are ASCII letters, digits, `.`, `_` and `-`, and
+    /// nothing else.
+    ///
+    /// An allowlist rather than a denylist, because the point of this check is to keep a
+    /// name off the wire that GitHub's search would reject — and a denylist only catches
+    /// the characters somebody thought of. `acme/bil(ling)`, `acme/a,b` and `acme/#1` are
+    /// all names GitHub cannot have, and any of them would fail the whole query and take
+    /// every other repository's pull requests with it.
+    private static let allowedInName = CharacterSet(
+        charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+    )
+
+    /// `owner/name`, both halves non-empty and spelled with characters GitHub allows.
     public static func isWellFormed(_ repository: String) -> Bool {
         let components = repository.split(separator: "/", omittingEmptySubsequences: false)
         guard components.count == 2 else { return false }
-        let forbidden = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'`:*?~^\\"))
         return components.allSatisfy { component in
-            !component.isEmpty && String(component).rangeOfCharacter(from: forbidden) == nil
+            !component.isEmpty
+                && component.unicodeScalars.allSatisfy { RepoScope.allowedInName.contains($0) }
         }
     }
 }
@@ -71,6 +82,7 @@ public struct SearchQuery: Equatable, Sendable {
     /// result and no request at all.
     public static func build(scope: RepoScope, extraQualifiers: [String] = []) -> SearchQuery? {
         var qualifiers = [baseQualifiers]
+        var dropped: [String] = []
 
         if case .selected(let requested) = scope {
             let normalized = scope.normalizedRepositories
@@ -78,18 +90,16 @@ public struct SearchQuery: Equatable, Sendable {
             qualifiers.append(contentsOf: normalized.map { "repo:\($0)" })
 
             let kept = Set(normalized.map { $0.lowercased() })
-            let dropped = requested.filter { requested in
-                let trimmed = requested.trimmingCharacters(in: .whitespacesAndNewlines)
-                return !kept.contains(trimmed.lowercased())
+            dropped = requested.filter { entry in
+                let trimmed = entry.trimmingCharacters(in: .whitespacesAndNewlines)
+                // A blank entry is not a repository the user asked for and lost — it is an
+                // empty row in a settings list. Reporting it as `ignored '  '` would also
+                // disagree with the empty-scope path, which filters blanks out.
+                return !trimmed.isEmpty && !kept.contains(trimmed.lowercased())
             }
-            qualifiers.append(contentsOf: extraQualifiers)
-            return SearchQuery(
-                text: qualifiers.joined(separator: " "),
-                droppedRepositories: dropped
-            )
         }
 
         qualifiers.append(contentsOf: extraQualifiers)
-        return SearchQuery(text: qualifiers.joined(separator: " "))
+        return SearchQuery(text: qualifiers.joined(separator: " "), droppedRepositories: dropped)
     }
 }

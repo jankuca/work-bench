@@ -11,7 +11,11 @@ import Foundation
 struct SearchPayload: Decodable, Equatable {
     var rateLimit: RateLimitDTO? = nil
     var viewer: ActorDTO? = nil
-    var search: SearchConnectionDTO
+    /// Optional for the same reason as everything else here, and this one is load-bearing:
+    /// GraphQL nulls a field whose resolver failed and explains why in `errors`. A required
+    /// `search` would make that response a decode failure, so the client would report
+    /// `malformedResponse` and throw GitHub's own explanation away.
+    var search: SearchConnectionDTO? = nil
 }
 
 struct RateLimitDTO: Decodable, Equatable {
@@ -109,18 +113,28 @@ struct CheckContextDTO: Decodable, Equatable {
     var name: String? = nil
     var conclusion: String? = nil
     var status: String? = nil
+    var detailsUrl: String? = nil
     // StatusContext
     var context: String? = nil
     var state: String? = nil
+    var targetUrl: String? = nil
 
     private enum CodingKeys: String, CodingKey {
         case typeName = "__typename"
         case name
         case conclusion
         case status
+        case detailsUrl
         case context
         case state
+        case targetUrl
     }
+
+    /// Where this check reports, whichever half of the union it came from. Nothing renders
+    /// it yet — the status phrase M3 draws is `2 checks failed`, from ``name`` and the
+    /// rollup — but the query selects it, and a field that is selected and then dropped at
+    /// decode time is a cost paid for nothing.
+    var reportURL: String? { detailsUrl ?? targetUrl }
 }
 
 struct PullRequestNodeDTO: Decodable, Equatable {

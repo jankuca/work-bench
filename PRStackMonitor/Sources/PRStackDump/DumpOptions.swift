@@ -83,10 +83,17 @@ struct DumpOptions {
             return arguments[index]
         }
 
+        // Every numeric option here is a bound, and every one of them is meaningless at
+        // zero or below. `GitHubClient.Configuration` quietly clamps two of them, which
+        // would leave the user's value silently ignored; `--point-budget -5` is not
+        // clamped at all and reports "spent 0 of -5 GraphQL point(s)". Reject at the door.
         func nextInt(_ flag: String) throws -> Int {
             let raw = try next(flag)
             guard let value = Int(raw) else {
                 throw DumpFailure("\(flag) needs a whole number, got '\(raw)'")
+            }
+            guard value > 0 else {
+                throw DumpFailure("\(flag) needs a positive whole number, got '\(raw)'")
             }
             return value
         }

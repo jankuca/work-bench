@@ -101,6 +101,65 @@ final class GraphQLClientTests: XCTestCase {
         }
     }
 
+    /// The reset time is what the scheduler backs off *until*, so it is worth recovering
+    /// from the body the same response already carries.
+    func testRateLimitedErrorRecoversItsResetTimeFromTheBody() async {
+        let transport = StubTransport(responses: [
+            .json(
+                """
+                {"data":{"rateLimit":{"resetAt":"2026-01-10T13:00:00Z"}},
+                 "errors":[{"type":"RATE_LIMITED","message":"API rate limit exceeded"}]}
+                """
+            )
+        ])
+        do {
+            let _: GraphQLResult<Probe> = try await client(transport).perform(query: "query Q { value }")
+            XCTFail("expected a rate limit failure")
+        } catch {
+            XCTAssertEqual(
+                error as? GitHubError,
+                GitHubError.rateLimited(resetAt: ISO8601DateFormatter().date(from: "2026-01-10T13:00:00Z"))
+            )
+        }
+    }
+
+    func testRateLimitedErrorFallsBackToTheResetHeader() async {
+        let transport = StubTransport(responses: [
+            .json(
+                #"{"errors":[{"type":"RATE_LIMITED","message":"API rate limit exceeded"}]}"#,
+                headers: ["x-ratelimit-remaining": "0", "x-ratelimit-reset": "1800000000"]
+            )
+        ])
+        do {
+            let _: GraphQLResult<Probe> = try await client(transport).perform(query: "query Q { value }")
+            XCTFail("expected a rate limit failure")
+        } catch {
+            XCTAssertEqual(
+                error as? GitHubError,
+                GitHubError.rateLimited(resetAt: Date(timeIntervalSince1970: 1_800_000_000))
+            )
+        }
+    }
+
+    /// A token put on the wire in cleartext is disclosed the moment it is sent, so the
+    /// request is refused before it is made rather than after it fails.
+    func testCredentialsAreNeverSentToANonHTTPSEndpoint() async {
+        let endpoint = URL(string: "http://api.github.test/graphql")!
+        let transport = StubTransport(responses: [])
+        let client = GraphQLClient(
+            transport: transport,
+            tokenProvider: StaticTokenProvider("ghp_test"),
+            endpoint: endpoint
+        )
+        do {
+            let _: GraphQLResult<Probe> = try await client.perform(query: "query Q { value }")
+            XCTFail("expected the request to be refused")
+        } catch {
+            XCTAssertEqual(error as? GitHubError, GitHubError.insecureEndpoint(endpoint))
+        }
+        XCTAssertTrue(transport.requests.isEmpty)
+    }
+
     func testAbsentDataWithErrorsThrows() async {
         let transport = StubTransport(responses: [
             .json(#"{"errors":[{"type":"NOT_FOUND","message":"Could not resolve to a Repository"}]}"#)
@@ -151,6 +210,49 @@ final class GraphQLClientTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? GitHubError, GitHubError.http(status: 502, message: "Server Error"))
         }
+    }
+
+    // MARK: - Classifying 403
+
+    /// GitHub answers a *secondary* rate limit with a 403 while the hourly allowance is
+    /// untouched. Reading that as an authentication failure raises the reconnect banner
+    /// and the dashed menu bar glyph for what is a few seconds of throttling.
+    func testSecondaryRateLimitIsNotAnAuthenticationFailure() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+        let withRetryAfter = HTTPResponse(
+            status: 403,
+            headers: ["x-ratelimit-remaining": "4321", "Retry-After": "60"],
+            body: Data(#"{"message":"You have exceeded a secondary rate limit"}"#.utf8)
+        )
+        XCTAssertEqual(
+            GitHubAPI.error(for: withRetryAfter, now: now),
+            GitHubError.rateLimited(resetAt: now.addingTimeInterval(60))
+        )
+
+        // The header is not always present; the documented phrase is the other signal.
+        let messageOnly = HTTPResponse(
+            status: 403,
+            headers: ["x-ratelimit-remaining": "4321"],
+            body: Data(#"{"message":"You have exceeded a secondary rate limit. Please wait."}"#.utf8)
+        )
+        XCTAssertEqual(
+            GitHubAPI.error(for: messageOnly, now: now),
+            GitHubError.rateLimited(resetAt: nil)
+        )
+    }
+
+    /// The distinction the classifier exists for: a genuinely bad token still has to reach
+    /// the reconnect path.
+    func testABadTokenIsStillAnAuthenticationFailure() {
+        let response = HTTPResponse(
+            status: 403,
+            headers: ["x-ratelimit-remaining": "4321"],
+            body: Data(#"{"message":"Bad credentials"}"#.utf8)
+        )
+        let error = GitHubAPI.error(for: response)
+        XCTAssertEqual(error, GitHubError.unauthorized("Bad credentials"))
+        XCTAssertTrue(error.isAuthenticationFailure)
     }
 
     func testVariablesEncodeAsJSON() throws {

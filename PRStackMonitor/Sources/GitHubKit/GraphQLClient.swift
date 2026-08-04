@@ -65,7 +65,7 @@ public struct GraphQLClient {
     ) async throws -> GraphQLResult<Value> {
         let token = try tokenProvider.token()
 
-        var headers = GitHubAPI.headers(token: token, accept: "application/json")
+        var headers = try GitHubAPI.headers(token: token, accept: "application/json", for: endpoint)
         headers["Content-Type"] = "application/json"
 
         let body = try JSONEncoder().encode(RequestBody(query: query, variables: variables))
@@ -77,20 +77,34 @@ public struct GraphQLClient {
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        let envelope: Envelope<Value>
-        do {
-            envelope = try decoder.decode(Envelope<Value>.self, from: response.body)
-        } catch {
-            throw GitHubError.malformedResponse(String(describing: error))
-        }
 
-        let errors = envelope.errors ?? []
+        // Errors are read *before* and independently of `data`, and this ordering is
+        // load-bearing. When a resolver fails, GitHub answers 200 with a `data` shaped
+        // unlike the query's own result type and the reason in `errors`. Decoding the
+        // envelope first would make that a `malformedResponse` and discard the reason —
+        // including a RATE_LIMITED that the scheduler has to see.
+        let errors = (try? decoder.decode(ErrorsOnly.self, from: response.body))?.errors ?? []
 
         // GitHub reports an exhausted allowance as a 200 carrying a RATE_LIMITED error, not
         // as a 403. Treating it as an ordinary GraphQL error would let the scheduler keep
         // polling straight into the wall.
         if errors.contains(where: { $0.type == "RATE_LIMITED" }) {
-            throw GitHubError.rateLimited(resetAt: nil)
+            // A reset time matters here: it is what the scheduler backs off *until*, and
+            // without one the footer can only say "resets at unknown". The same response
+            // usually still carries `data.rateLimit.resetAt`, and the headers carry
+            // `x-ratelimit-reset` as a second chance.
+            throw GitHubError.rateLimited(
+                resetAt: GraphQLClient.reportedReset(in: response, decoder: decoder)
+            )
+        }
+
+        let envelope: Envelope<Value>
+        do {
+            envelope = try decoder.decode(Envelope<Value>.self, from: response.body)
+        } catch {
+            throw errors.isEmpty
+                ? GitHubError.malformedResponse(String(describing: error))
+                : GitHubError.graphQL(errors)
         }
         guard let data = envelope.data else {
             throw errors.isEmpty
@@ -98,6 +112,32 @@ public struct GraphQLClient {
                 : GitHubError.graphQL(errors)
         }
         return GraphQLResult(data: data, errors: errors)
+    }
+
+    /// The `errors` array alone, decodable from any response regardless of what `data`
+    /// holds.
+    private struct ErrorsOnly: Decodable {
+        var errors: [GraphQLError]?
+    }
+
+    /// Reads only `data.rateLimit.resetAt`, so it decodes a response whose `data` is
+    /// otherwise unusable — which is exactly the shape a rate-limited answer has.
+    private struct RateLimitProbe: Decodable {
+        struct Payload: Decodable {
+            struct Limit: Decodable {
+                var resetAt: Date?
+            }
+            var rateLimit: Limit?
+        }
+        var data: Payload?
+    }
+
+    private static func reportedReset(in response: HTTPResponse, decoder: JSONDecoder) -> Date? {
+        if let probe = try? decoder.decode(RateLimitProbe.self, from: response.body),
+           let resetAt = probe.data?.rateLimit?.resetAt {
+            return resetAt
+        }
+        return RESTRateLimit.from(response)?.resetAt
     }
 
     private struct RequestBody: Encodable {

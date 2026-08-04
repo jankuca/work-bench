@@ -70,6 +70,34 @@ public protocol HTTPTransport {
     func send(_ request: HTTPRequest) async throws -> HTTPResponse
 }
 
+/// Holds the in-flight data task so the cancellation handler can reach it.
+///
+/// `onCancel` runs in a different isolation domain from the closure that creates the task,
+/// and it can run *before* it — hence the flag as well as the reference, so a cancellation
+/// that arrives first is not lost. The lock never spans a suspension point, which is what
+/// keeps it legal in an async context.
+private final class DataTaskBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: URLSessionDataTask?
+    private var isCancelled = false
+
+    func store(_ task: URLSessionDataTask) {
+        lock.lock()
+        let cancelled = isCancelled
+        if !cancelled { self.task = task }
+        lock.unlock()
+        if cancelled { task.cancel() }
+    }
+
+    func cancel() {
+        lock.lock()
+        isCancelled = true
+        let task = self.task
+        lock.unlock()
+        task?.cancel()
+    }
+}
+
 /// The production transport.
 public struct URLSessionTransport: HTTPTransport {
     private let session: URLSession
@@ -103,18 +131,28 @@ public struct URLSessionTransport: HTTPTransport {
         // Hand-rolled rather than `session.data(for:)`: the async overload is not uniformly
         // available across the Foundation implementations this package builds against, and
         // the continuation is the same handful of lines.
-        let (data, response) = try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<(Data, URLResponse), any Error>) in
-            let task = session.dataTask(with: urlRequest) { data, response, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else if let response {
-                    continuation.resume(returning: (data ?? Data(), response))
-                } else {
-                    continuation.resume(throwing: GitHubError.transport("no response and no error"))
+        //
+        // The cancellation handler is not optional decoration. A bare continuation does not
+        // observe `Task` cancellation, so a poll cancelled on sleep (M8) would leave its
+        // request in flight and only resume when the 30-second timeout expired.
+        let inFlight = DataTaskBox()
+        let (data, response) = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<(Data, URLResponse), any Error>) in
+                let task = session.dataTask(with: urlRequest) { data, response, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else if let response {
+                        continuation.resume(returning: (data ?? Data(), response))
+                    } else {
+                        continuation.resume(throwing: GitHubError.transport("no response and no error"))
+                    }
                 }
+                inFlight.store(task)
+                task.resume()
             }
-            task.resume()
+        } onCancel: {
+            inFlight.cancel()
         }
 
         guard let http = response as? HTTPURLResponse else {
