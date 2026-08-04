@@ -20,11 +20,29 @@ public struct PRID: Hashable, Sendable, CustomStringConvertible {
     /// dictionary key wherever `PRID` has to become a JSON object key.
     public var rawValue: String { "\(repo)#\(number)" }
 
+    /// Parses the spelling above, and nothing else.
+    ///
+    /// This is the validator `LocalState` decoding runs every persisted key through, so
+    /// it has to be the exact inverse of ``rawValue``: anything it accepts but spells
+    /// differently would be silently rewritten the next time the state is written back.
+    /// That rules out more than the obviously malformed — `Int` also accepts `+7` and
+    /// `007`, which parse fine and then round-trip as `7`.
     public init?(rawValue: String) {
         guard let separator = rawValue.lastIndex(of: "#") else { return nil }
         let repo = String(rawValue[..<separator])
-        guard !repo.isEmpty else { return nil }
-        guard let number = Int(rawValue[rawValue.index(after: separator)...]) else { return nil }
+
+        // `owner/name`, as GitHub spells it: exactly two non-empty components, and no
+        // stray `#` (only the last one is the separator, so an earlier one lands here).
+        let components = repo.split(separator: "/", omittingEmptySubsequences: false)
+        guard components.count == 2,
+              components.allSatisfy({ !$0.isEmpty }),
+              !repo.contains(where: { $0 == "#" })
+        else { return nil }
+
+        // Pull request numbers start at 1, and only the canonical spelling of one counts.
+        let digits = String(rawValue[rawValue.index(after: separator)...])
+        guard let number = Int(digits), number > 0, String(number) == digits else { return nil }
+
         self.init(repo: repo, number: number)
     }
 

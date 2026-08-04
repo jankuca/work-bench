@@ -10,10 +10,33 @@ final class CodableTests: XCTestCase {
     }
 
     func testPRIDRejectsMalformedRawValues() {
-        XCTAssertNil(PRID(rawValue: "acme/billing"))
-        XCTAssertNil(PRID(rawValue: "#12"))
-        XCTAssertNil(PRID(rawValue: "acme/billing#"))
-        XCTAssertNil(PRID(rawValue: "acme/billing#twelve"))
+        let malformed = [
+            "acme/billing",         // no number at all
+            "#12",                  // no repository
+            "acme/billing#",        // separator, but nothing after it
+            "acme/billing#twelve",  // not a number
+            "acme#12",              // no owner — the shape `LocalState.rekey` must reject
+            "/billing#12",          // empty owner
+            "acme/#12",             // empty name
+            "acme/billing/api#12",  // three components; `nameWithOwner` is always two
+            "acme/bil#ling#12",     // stray separator inside the repository
+            "acme/billing#0",       // pull request numbers start at 1
+            "acme/billing#-3",
+            "acme/billing#+12",     // parses as 12, so it would round-trip as a different key
+            "acme/billing#012"
+        ]
+        for raw in malformed {
+            XCTAssertNil(PRID(rawValue: raw), "'\(raw)' should not parse as a pull request id")
+        }
+    }
+
+    /// Parsing must be the exact inverse of ``PRID/rawValue``. `LocalState` keys survive a
+    /// decode/encode cycle on every panel interaction, so a value that parses to something
+    /// spelled differently would silently rewrite the user's stored state.
+    func testPRIDParsingIsTheExactInverseOfItsRawValue() {
+        for raw in ["acme/billing#4012", "acme/web#1", "a/b#999999"] {
+            XCTAssertEqual(PRID(rawValue: raw)?.rawValue, raw)
+        }
     }
 
     /// `LocalState` is written to disk on every panel interaction, so its keys have to
