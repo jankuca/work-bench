@@ -324,9 +324,9 @@ extension PullRequest: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
         // Identity is checked here rather than trusted downstream. `PullRequest.id` is what
-        // `LocalState` persists, and its decoder *throws* on a key it cannot parse — so a
-        // single pull request with a malformed `repo` or a non-positive `number` would cost
-        // the user their entire stored state on the next launch. This is the one place
+        // `LocalState` persists, and its decoder drops a key it cannot parse — so an id that
+        // cannot survive its own `rawValue` would take the user's dismissal or snooze for
+        // that pull request with it, silently, on the next launch. This is the one place
         // untrusted input becomes a `PRID`, so it is the one place worth guarding.
         let repo = try container.decode(String.self, forKey: .repo)
         let number = try container.decode(Int.self, forKey: .number)

@@ -61,8 +61,8 @@ final class CodableTests: XCTestCase {
     }
 
     /// Decoding is where untrusted text becomes a `PRID`, so a pull request whose identity
-    /// could not survive `rawValue` is rejected at the door — it never reaches `LocalState`
-    /// to fail *that* decode, which would cost the user every dismissal and snooze.
+    /// could not survive `rawValue` is rejected at the door — it never reaches `LocalState`,
+    /// where an unparseable key is dropped and takes that row's dismissal or snooze with it.
     func testPullRequestRejectsAMalformedIdentity() {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -86,8 +86,8 @@ final class CodableTests: XCTestCase {
 
     /// The inverse property has to hold for every id the system actually constructs, not
     /// only for the canonical strings picked above. `LocalState` persists exactly these
-    /// keys, and decoding *throws* on one it cannot parse — so a single unparseable id
-    /// costs the user their whole stored state, not one entry.
+    /// keys and silently drops any it cannot parse, so an id that does not survive its own
+    /// `rawValue` loses that pull request's dismissal, snooze and read digest with no error.
     func testEveryConstructedFixtureIDSurvivesItsOwnRawValue() throws {
         let names = Fixtures.allNames
         // Without this the test passes vacuously if the fixture directory ever moves.
