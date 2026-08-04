@@ -121,11 +121,6 @@ public struct LocalState: Equatable, Sendable {
 }
 
 extension LocalState: Codable {
-    struct InvalidPRIDKey: Error, CustomStringConvertible {
-        let raw: String
-        var description: String { "Not a pull request id: '\(raw)'" }
-    }
-
     private enum CodingKeys: String, CodingKey {
         case dismissed
         case snoozedUntil
@@ -134,16 +129,22 @@ extension LocalState: Codable {
     }
 
     public init(from decoder: any Decoder) throws {
+        // Unparseable ids are dropped, not thrown on. This is a cache of the user's own
+        // dismissals and snoozes, not authoritative data: discarding one stale entry is a
+        // fair price, while failing the decode would throw away every dismissal and snooze
+        // they have ever set because of a single bad key. That also bounds the damage from
+        // any id built through an unvalidated path — a hand-edited file, or a future caller
+        // of a public initialiser — to the entry itself.
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let dismissed = try container.decodeIfPresent([PRID].self, forKey: .dismissed) ?? []
+        let dismissed = try container.decodeIfPresent([String].self, forKey: .dismissed) ?? []
         let snoozed = try container.decodeIfPresent([String: Date].self, forKey: .snoozedUntil) ?? [:]
         let digests = try container.decodeIfPresent([String: String].self, forKey: .readDigests) ?? [:]
         let bindings = try container.decodeIfPresent([String: String].self, forKey: .releaseBindings) ?? [:]
         self.init(
-            dismissed: Set(dismissed),
-            snoozedUntil: try LocalState.rekey(snoozed) { $0 },
-            readDigests: try LocalState.rekey(digests) { ReadDigest(value: $0) },
-            releaseBindings: try LocalState.rekey(bindings) { $0 }
+            dismissed: Set(dismissed.compactMap(PRID.init(rawValue:))),
+            snoozedUntil: LocalState.rekey(snoozed) { $0 },
+            readDigests: LocalState.rekey(digests) { ReadDigest(value: $0) },
+            releaseBindings: LocalState.rekey(bindings) { $0 }
         )
     }
 
@@ -159,10 +160,10 @@ extension LocalState: Codable {
     private static func rekey<Input, Output>(
         _ source: [String: Input],
         _ transform: (Input) -> Output
-    ) throws -> [PRID: Output] {
+    ) -> [PRID: Output] {
         var result: [PRID: Output] = [:]
         for (raw, value) in source {
-            guard let id = PRID(rawValue: raw) else { throw InvalidPRIDKey(raw: raw) }
+            guard let id = PRID(rawValue: raw) else { continue }
             result[id] = transform(value)
         }
         return result

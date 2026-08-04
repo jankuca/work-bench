@@ -39,6 +39,27 @@ final class CodableTests: XCTestCase {
         }
     }
 
+    /// A single unparseable key must cost the user that entry and nothing else. Throwing
+    /// here would discard every dismissal and snooze they have ever set.
+    func testLocalStateDropsUnparseableKeysAndKeepsTheRest() throws {
+        let json = #"""
+        {
+          "dismissed": ["acme/billing#4012", "acme#7", "acme/web#0"],
+          "snoozedUntil": {"acme/billing#4013": "2026-01-10T12:00:00Z", "bogus": "2026-01-10T12:00:00Z"},
+          "readDigests": {"acme/web#77": "rd=-;ck=passing;mg=mergeable;cc=0;lc=-;rs=unmerged", "acme/web#+77": "x"},
+          "releaseBindings": {"acme/web#78": "v1.4.0", "acme/web#007": "v9"}
+        }
+        """#
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let state = try decoder.decode(LocalState.self, from: Data(json.utf8))
+
+        XCTAssertEqual(state.dismissed, [PRID(repo: "acme/billing", number: 4012)])
+        XCTAssertEqual(Set(state.snoozedUntil.keys), [PRID(repo: "acme/billing", number: 4013)])
+        XCTAssertEqual(Set(state.readDigests.keys), [PRID(repo: "acme/web", number: 77)])
+        XCTAssertEqual(Set(state.releaseBindings.keys), [PRID(repo: "acme/web", number: 78)])
+    }
+
     /// Decoding is where untrusted text becomes a `PRID`, so a pull request whose identity
     /// could not survive `rawValue` is rejected at the door — it never reaches `LocalState`
     /// to fail *that* decode, which would cost the user every dismissal and snooze.
