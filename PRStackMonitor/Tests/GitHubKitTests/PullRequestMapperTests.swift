@@ -12,7 +12,7 @@ final class PullRequestMapperTests: XCTestCase {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let envelope = try decoder.decode(Envelope.self, from: try Fixtures.data("search-page-full.json"))
-        return (envelope.data.search.nodes ?? []).compactMap { $0 }
+        return (envelope.data.search?.nodes ?? []).compactMap { $0 }
     }
 
     private func mapped() throws -> [PullRequest] {
