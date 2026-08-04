@@ -62,3 +62,6 @@ fastlane/screenshots/**/*.png
 fastlane/test_output
 
 .DS_Store
+
+# Local .app bundle assembled by the Makefile
+/build/
