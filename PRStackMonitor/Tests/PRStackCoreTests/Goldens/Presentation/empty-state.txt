@@ -1,0 +1,3 @@
+header title="Pull requests" summary="" refreshing=false attention=0
+allClear title="Everything's clear" detail="No open pull requests need you."
+footer tone=success text="synced 34s ago" markAllRead=false

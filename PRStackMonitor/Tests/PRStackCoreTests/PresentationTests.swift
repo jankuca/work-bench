@@ -387,7 +387,8 @@ final class PanelPresentationTests: XCTestCase {
     }
 
     func testSectionHeadingsAndClearAll() throws {
-        guard case .sections(let sections) = try panel("panel-2a").body else {
+        let presented = try panel("panel-2a")
+        guard case .sections(let sections) = presented.body else {
             return XCTFail("expected sections")
         }
         XCTAssertEqual(sections.map(\.heading), ["Payments", "Billing", "Other", "Done"])
@@ -397,7 +398,8 @@ final class PanelPresentationTests: XCTestCase {
 
     /// Connected with nothing to show is a stated message, not an empty list.
     func testAllClearIsStated() throws {
-        guard case .allClear(let message) = try panel("empty-state").body else {
+        let presented = try panel("empty-state")
+        guard case .allClear(let message) = presented.body else {
             return XCTFail("expected the all-clear state")
         }
         XCTAssertEqual(message.title, "Everything's clear")
@@ -405,7 +407,8 @@ final class PanelPresentationTests: XCTestCase {
 
     /// Nothing connected and nothing cached is the first run, not a clear day.
     func testNoSourceAndNoRowsIsTheConnectPrompt() throws {
-        guard case .connect = try panel("empty-state", github: .unconfigured, syncedAgo: nil).body else {
+        let presented = try panel("empty-state", github: .unconfigured, syncedAgo: nil)
+        guard case .connect = presented.body else {
             return XCTFail("expected the connect prompt")
         }
     }

@@ -53,7 +53,8 @@ final class GoldenPresentationTests: XCTestCase {
     /// its meta line, and none grows a second phrase.
     func testEveryRowCarriesOneNumberAndOnePhrase() throws {
         for name in Fixtures.allNames {
-            guard case .sections(let sections) = present(try Fixtures.load(name)).body else { continue }
+            let presented = present(try Fixtures.load(name))
+            guard case .sections(let sections) = presented.body else { continue }
             for row in sections.flatMap(\.rows) {
                 let numbers = row.meta.filter { if case .number = $0 { return true } else { return false } }
                 let phrases = row.meta.filter { if case .phrase = $0 { return true } else { return false } }

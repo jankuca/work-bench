@@ -227,10 +227,13 @@ public struct PanelPresentation: Equatable, Sendable {
 
     private static func body(sections: [SectionPresentation], status: PanelStatus) -> Body {
         if !sections.isEmpty { return .sections(sections) }
-        // Order matters: an unconfigured source with no rows is a first run, but an
-        // *expired* one with no rows is not "all clear" either — there is simply nothing
-        // cached to show under the banner, and claiming everything is clear would be the
-        // stale-as-fresh mistake PRD §4 forbids.
+        // Only a *connected* source may say everything is clear. With no rows and no
+        // working connection the panel knows nothing about the user's pull requests, and
+        // "Everything's clear" would be asserting the one thing it cannot see — the
+        // stale-as-fresh reading PRD §4 forbids. The connect prompt is the fallback for
+        // every other health, including `unreachable`: it is the only body that makes no
+        // claim about the list, and it names the action that fixes the two cases that can
+        // be fixed.
         guard status.github.isConnected else {
             return .connect(
                 ConnectPrompt(

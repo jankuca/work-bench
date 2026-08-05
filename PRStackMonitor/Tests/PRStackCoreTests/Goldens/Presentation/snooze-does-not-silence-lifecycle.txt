@@ -1,0 +1,5 @@
+header title="Pull requests" summary="" refreshing=false attention=0
+section heading="Done" count=1 muted=true clearAll="Clear all"
+  row id=acme/billing#1320 title="Snoozed, then shipped" emphasis=dim chip=success/dot tint=false unread=true spine=none track=empty|passing|passing reviewers=[]+0 dismissible=true
+    meta issue(BIL-1320) num(#1320) phrase(released in v3.1.0|success) age(yesterday) snooze(snoozed 6h)
+footer tone=success text="synced 34s ago" markAllRead=true

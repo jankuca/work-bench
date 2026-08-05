@@ -1,0 +1,13 @@
+header title="Pull requests" summary="5 in review" refreshing=false attention=1
+section heading="Billing" count=5 muted=false clearAll=-
+  row id=acme/billing#711 title="Run B top" emphasis=dim chip=neutral/bar tint=false unread=true spine=down track=empty|empty|empty reviewers=[]+0 dismissible=false
+    meta issue(BIL-711) num(#711) phrase(waiting on #710|neutral) age(1d)
+  row id=acme/billing#710 title="Run B base" emphasis=normal chip=neutral/dot tint=false unread=true spine=up track=empty|empty|empty reviewers=[]+0 dismissible=false
+    meta issue(BIL-710) num(#710) phrase(in review|neutral) age(1d)
+  row id=acme/billing#701 title="Run A top" emphasis=dim chip=neutral/bar tint=false unread=true spine=down track=empty|empty|empty reviewers=[]+0 dismissible=false
+    meta issue(BIL-701) num(#701) phrase(waiting on #700|neutral) age(1d)
+  row id=acme/billing#700 title="Run A base" emphasis=normal chip=neutral/dot tint=false unread=true spine=up track=empty|empty|empty reviewers=[]+0 dismissible=false
+    meta issue(BIL-700) num(#700) phrase(in review|neutral) age(1d)
+  row id=acme/billing#720 title="Loose and conflicted" emphasis=strong chip=danger/slash tint=true unread=true spine=none track=empty|empty|empty reviewers=[]+0 dismissible=false
+    meta issue(BIL-720) num(#720) phrase(merge conflict|danger) age(1h)
+footer tone=success text="synced 34s ago" markAllRead=true

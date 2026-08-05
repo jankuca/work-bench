@@ -1,0 +1,7 @@
+header title="Pull requests" summary="2 in review" refreshing=false attention=1
+section heading="Billing" count=2 muted=false clearAll=-
+  row id=acme/billing#1301 title="Not snoozed" emphasis=strong chip=danger/dot tint=true unread=true spine=none track=failing|empty|empty reviewers=[]+0 dismissible=false
+    meta issue(BIL-1301) num(#1301) phrase(2 checks failed|danger) age(1d)
+  row id=acme/billing#1300 title="Snoozed until this evening" emphasis=dim chip=danger/dot tint=false unread=true spine=none track=failing|empty|empty reviewers=[]+0 dismissible=false
+    meta issue(BIL-1300) num(#1300) phrase(2 checks failed|danger) age(1d) snooze(snoozed 6h)
+footer tone=success text="synced 34s ago" markAllRead=true
