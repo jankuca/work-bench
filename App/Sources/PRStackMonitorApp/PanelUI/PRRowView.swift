@@ -44,8 +44,15 @@ struct PRRowView: View {
         .accessibilityLabel(row.accessibilityLabel)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { onOpen() }
-        .accessibilityAction(named: "Open issue", when: row.issues.first != nil) {
-            if let issue = row.issues.first { onOpenIssue(issue) }
+        // One per ticket, not one for "the issue": a pull request that resolves three of
+        // them reaches the other two only through the `+N` menu, and combining the
+        // children is what put that menu out of reach. Naming each by identifier also
+        // makes the rotor say "Open BIL-313" rather than making the user guess which
+        // ticket "Open issue" means.
+        .accessibilityActions {
+            ForEach(Array(row.issues.enumerated()), id: \.offset) { item in
+                Button("Open \(item.element.identifier)") { onOpenIssue(item.element) }
+            }
         }
         .accessibilityAction(named: "Dismiss", when: row.isDismissible, perform: onDismiss)
     }
