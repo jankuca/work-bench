@@ -20,6 +20,8 @@ final class PanelController: ObservableObject {
     private var local: LocalState
     private var status: PanelStatus
     private var pollTask: Task<Void, Never>?
+    /// Bumped per poll, so a late result can tell whether it is still the current one.
+    private var pollGeneration = 0
 
     private let source: any PanelSource
     private let clock: () -> Date
@@ -56,17 +58,23 @@ final class PanelController: ObservableObject {
 
     func refresh() {
         guard pollTask == nil else { return }
+        pollGeneration += 1
+        let generation = pollGeneration
         status.isRefreshing = true
         rebuild()
 
         pollTask = Task { [weak self] in
             guard let self else { return }
             let outcome = await self.source.load()
-            self.apply(outcome)
+            self.apply(outcome, from: generation)
         }
     }
 
-    private func apply(_ outcome: PollOutcome) {
+    private func apply(_ outcome: PollOutcome, from generation: Int) {
+        // A poll cancelled by the panel closing still runs to completion, and can land
+        // after the next open has started one. Without this guard its arrival would clear
+        // the *live* task's handle, and the poll after that would run alongside it.
+        guard generation == pollGeneration else { return }
         pollTask = nil
         status.isRefreshing = false
 
