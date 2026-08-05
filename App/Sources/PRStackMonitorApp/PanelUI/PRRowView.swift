@@ -35,9 +35,19 @@ struct PRRowView: View {
         .padding(.horizontal, Tokens.Row.horizontalMargin)
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpen)
+        // One element per row, not one per control. A panel of 25 rows is 100+ views;
+        // exposing each separately turns a glanceable list into a long walk by ear. The
+        // named actions below are what keeps that from hiding anything — VoiceOver
+        // reaches the issue link and the ✕ through the row's action rotor, so combining
+        // the children costs navigation depth and not reachability.
         .accessibilityElement(children: .combine)
         .accessibilityLabel(row.accessibilityLabel)
         .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onOpen() }
+        .accessibilityAction(named: "Open issue", when: row.issues.first != nil) {
+            if let issue = row.issues.first { onOpenIssue(issue) }
+        }
+        .accessibilityAction(named: "Dismiss", when: row.isDismissible, perform: onDismiss)
     }
 
     // MARK: - Background
@@ -121,6 +131,23 @@ struct PRRowView: View {
             }
         }
         .fixedSize()
+    }
+}
+
+private extension View {
+    /// `accessibilityAction(named:)`, applied only when the row actually has the action.
+    /// An "Open issue" entry on a row with no ticket is a rotor entry that does nothing.
+    @ViewBuilder
+    func accessibilityAction(
+        named name: String,
+        when condition: Bool,
+        perform action: @escaping () -> Void
+    ) -> some View {
+        if condition {
+            accessibilityAction(named: Text(name), action)
+        } else {
+            self
+        }
     }
 }
 

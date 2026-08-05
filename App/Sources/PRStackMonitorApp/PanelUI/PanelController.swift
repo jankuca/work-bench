@@ -128,7 +128,7 @@ final class PanelController: ObservableObject {
         alert.messageText = "Settings arrive with M7"
         alert.informativeText = """
         Until then PRStackMonitor reads its GitHub token from $PRSTACK_GITHUB_TOKEN, then \
-        from the login keychain under \(KeychainTokenStore.defaultService).
+        $GITHUB_TOKEN, then the login keychain under \(KeychainTokenStore.defaultService).
         """
         alert.alertStyle = .informational
         alert.runModal()

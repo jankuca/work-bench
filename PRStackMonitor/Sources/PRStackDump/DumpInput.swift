@@ -75,14 +75,15 @@ struct DumpInput: Codable {
 
     /// The panel as the view would show it, one layer above ``derive(now:)``.
     ///
-    /// The status is fixed at "connected, synced 34 seconds ago" — the footer design 2a
-    /// shows — because a dump has no sync engine behind it and a wall-clock sync time
-    /// would make two dumps of the same file differ.
+    /// The clock is resolved once and passed down. Resolving it twice would read the wall
+    /// clock twice for a file with no `now` and no `--now`, so the model could be derived
+    /// in one second and its ages rendered in the next — two dumps of the same input that
+    /// do not match, which is the one property this output is for.
     func present(now overridden: Date?) -> PanelPresentation {
         let clock = self.clock(overriddenBy: overridden)
         return PanelPresentation.make(
-            model: derive(now: overridden),
-            status: PanelStatus(github: .connected, lastSyncedAt: clock.addingTimeInterval(-34)),
+            model: derive(now: clock),
+            status: .fixture(now: clock),
             now: clock
         )
     }

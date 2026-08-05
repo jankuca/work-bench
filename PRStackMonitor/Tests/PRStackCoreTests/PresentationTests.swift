@@ -413,14 +413,32 @@ final class PanelPresentationTests: XCTestCase {
         }
     }
 
-    /// An expired token with nothing cached must not claim everything is clear — that is
-    /// exactly the stale-as-fresh reading PRD §4 forbids.
-    func testExpiredTokenWithNoRowsIsNotAllClear() throws {
-        let presented = try panel("empty-state", github: .unauthorized("bad credentials"))
-        guard case .connect = presented.body else {
-            return XCTFail("expected the connect prompt, not the all-clear state")
+    /// What licenses "Everything's clear" is a completed sync, not the health of the
+    /// connection right now.
+    func testAllClearNeedsASyncToHaveHappenedNotAWorkingConnection() throws {
+        // Never synced and no rows: the panel has not seen the list, whatever the reason.
+        for health in [SourceHealth.unauthorized("bad credentials"), .unreachable("timed out")] {
+            let presented = try panel("empty-state", github: health, syncedAgo: nil)
+            guard case .connect = presented.body else {
+                return XCTFail("\(health) with no sync should not claim everything is clear")
+            }
         }
-        XCTAssertEqual(presented.banner?.message, "GitHub token expired")
+
+        // Synced, found nothing, and the poll since then failed: still true, and the
+        // footer says how long ago. Offering "Connect GitHub" here would ask the user to
+        // fix an account that is already connected.
+        let expired = try panel("empty-state", github: .unauthorized("bad credentials"))
+        guard case .allClear = expired.body else {
+            return XCTFail("a verified-empty list stays clear under an expired token")
+        }
+        // The banner is what says the list can no longer be verified.
+        XCTAssertEqual(expired.banner?.message, "GitHub token expired")
+
+        let unreachable = try panel("empty-state", github: .unreachable("timed out"))
+        guard case .allClear = unreachable.body else {
+            return XCTFail("a verified-empty list stays clear under a failed poll")
+        }
+        XCTAssertNil(unreachable.banner)
     }
 
     /// The banner comes off the top of the panel; the rows stay. Losing the token does
@@ -451,6 +469,21 @@ final class PanelPresentationTests: XCTestCase {
         let current = try panel("panel-2a", syncedAgo: 34)
         XCTAssertEqual(current.footer.syncTone, .success)
         XCTAssertEqual(current.footer.syncText, "synced 34s ago")
+    }
+
+    /// Three strings nothing else reaches: the footer before any poll has succeeded.
+    func testFooterBeforeTheFirstSync() throws {
+        let unconfigured = try panel("empty-state", github: .unconfigured, syncedAgo: nil)
+        XCTAssertEqual(unconfigured.footer.syncTone, .neutral)
+        XCTAssertEqual(unconfigured.footer.syncText, "not connected")
+
+        let expired = try panel("empty-state", github: .unauthorized("bad credentials"), syncedAgo: nil)
+        XCTAssertEqual(expired.footer.syncTone, .danger)
+        XCTAssertEqual(expired.footer.syncText, "disconnected")
+
+        let unreachable = try panel("empty-state", github: .unreachable("timed out"), syncedAgo: nil)
+        XCTAssertEqual(unreachable.footer.syncTone, .neutral)
+        XCTAssertEqual(unreachable.footer.syncText, "never synced")
     }
 
     /// The footer says how it is at a glance and why on hover. A connected source has no

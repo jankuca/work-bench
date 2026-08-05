@@ -13,19 +13,14 @@ import XCTest
 ///
 /// Re-record with `PRSTACK_RECORD_GOLDENS=1 swift test` and read the diff.
 final class GoldenPresentationTests: XCTestCase {
-    /// Fixed so the goldens do not move: connected, synced 34 seconds before the
-    /// fixture's own `now`, which is the footer design 2a shows. `prstack-dump
-    /// --presentation` uses the same pair, so its output for a fixture reproduces that
-    /// fixture's golden byte for byte — the property the model-level dump already has.
-    private static let syncedAgo: TimeInterval = 34
-
+    /// `PanelStatus.fixture` is shared with `prstack-dump --presentation`, so its output
+    /// for a fixture reproduces that fixture's golden byte for byte — the property the
+    /// model-level dump already has, and one that a second copy of the offset would
+    /// quietly break.
     private func present(_ fixture: DerivationCase) -> PanelPresentation {
         PanelPresentation.make(
             model: fixture.derive(),
-            status: PanelStatus(
-                github: .connected,
-                lastSyncedAt: fixture.now.addingTimeInterval(-GoldenPresentationTests.syncedAgo)
-            ),
+            status: .fixture(now: fixture.now),
             now: fixture.now
         )
     }
@@ -43,7 +38,10 @@ final class GoldenPresentationTests: XCTestCase {
     /// Presentation is a pure function of the model, the status and the clock. Anything
     /// else in it would make the panel redraw differently on an identical poll.
     func testPresentationIsRepeatable() throws {
-        for name in Fixtures.allNames {
+        let names = Fixtures.allNames
+        XCTAssertFalse(names.isEmpty, "No fixtures found in \(Fixtures.fixturesDirectory.path)")
+
+        for name in names {
             let fixture = try Fixtures.load(name)
             XCTAssertEqual(present(fixture), present(fixture), "Fixture '\(name)' is not repeatable")
         }
@@ -52,7 +50,10 @@ final class GoldenPresentationTests: XCTestCase {
     /// Every row reaches the view with exactly one status phrase — no row silently loses
     /// its meta line, and none grows a second phrase.
     func testEveryRowCarriesOneNumberAndOnePhrase() throws {
-        for name in Fixtures.allNames {
+        let names = Fixtures.allNames
+        XCTAssertFalse(names.isEmpty, "No fixtures found in \(Fixtures.fixturesDirectory.path)")
+
+        for name in names {
             let presented = present(try Fixtures.load(name))
             guard case .sections(let sections) = presented.body else { continue }
             for row in sections.flatMap(\.rows) {

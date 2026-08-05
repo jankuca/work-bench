@@ -58,6 +58,18 @@ public struct PanelStatus: Equatable, Sendable {
 
     public static let unconfigured = PanelStatus(github: .unconfigured)
 
+    /// The status a fixture renders under: connected, synced 34 seconds ago — the footer
+    /// design 2a shows.
+    ///
+    /// A fixture carries no sync history, and reading the wall clock for one would make
+    /// two renderings of the same file differ. This lives here rather than in either
+    /// caller because `prstack-dump --presentation` and the presentation goldens have to
+    /// agree byte for byte, and two copies of the same constant is how that quietly stops
+    /// being true.
+    public static func fixture(now: Date) -> PanelStatus {
+        PanelStatus(github: .connected, lastSyncedAt: now.addingTimeInterval(-34))
+    }
+
     /// Data older than this reads as stale rather than current. Five minutes is two
     /// missed polls at M8's foreground interval, which is the point at which "synced 6m
     /// ago" stops being a detail and starts being a warning.
@@ -235,14 +247,20 @@ public struct PanelPresentation: Equatable, Sendable {
 
     private static func body(sections: [SectionPresentation], status: PanelStatus) -> Body {
         if !sections.isEmpty { return .sections(sections) }
-        // Only a *connected* source may say everything is clear. With no rows and no
-        // working connection the panel knows nothing about the user's pull requests, and
-        // "Everything's clear" would be asserting the one thing it cannot see — the
-        // stale-as-fresh reading PRD §4 forbids. The connect prompt is the fallback for
-        // every other health, including `unreachable`: it is the only body that makes no
-        // claim about the list, and it names the action that fixes the two cases that can
-        // be fixed.
-        guard status.github.isConnected else {
+        // "Everything's clear" is a claim about the user's pull requests, so the panel may
+        // only make it once it has actually seen them. What licenses the claim is a
+        // *completed sync*, not the health of the connection right now:
+        //
+        // - Synced, found nothing, and the poll since then failed → still true. The list
+        //   was empty when it was last verified and the footer says how long ago.
+        // - Never synced → not known to be true, whatever the reason. Saying it anyway is
+        //   the stale-as-fresh reading PRD §4 forbids, and there is no cached list to be
+        //   stale about.
+        //
+        // Reading the current health instead gets the first case wrong: one timed-out poll
+        // would replace a legitimate all-clear with "Connect your accounts", offering to
+        // fix an account that is already connected.
+        guard status.github.isConnected || status.lastSyncedAt != nil else {
             return .connect(
                 ConnectPrompt(
                     title: "Connect your accounts",
