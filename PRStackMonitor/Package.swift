@@ -2,20 +2,23 @@
 
 import PackageDescription
 
-// GitHubKit and LinearKit join this package at M2 and M5. PRStackCore stays
-// Foundation-only so it builds and tests off-device (see docs/IMPLEMENTATION_PLAN.md §1).
+// LinearKit joins this package at M5. Every target here is Foundation-only so it builds
+// and tests off-device (see docs/IMPLEMENTATION_PLAN.md §1); the one macOS-specific file,
+// GitHubKit's Keychain store, is fenced behind `canImport(Security)`.
 let package = Package(
     name: "PRStackMonitor",
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "PRStackCore", targets: ["PRStackCore"]),
-        // Debug dump: derive a snapshot and print the panel. Foundation only, so CI
-        // compiles it alongside everything else.
+        .library(name: "GitHubKit", targets: ["GitHubKit"]),
+        // Debug dump: derive a snapshot and print the panel, from a fixture file or from
+        // GitHub itself. Foundation only, so CI compiles it alongside everything else.
         .executable(name: "prstack-dump", targets: ["PRStackDump"])
     ],
     targets: [
         .target(name: "PRStackCore"),
-        .executableTarget(name: "PRStackDump", dependencies: ["PRStackCore"]),
+        .target(name: "GitHubKit", dependencies: ["PRStackCore"]),
+        .executableTarget(name: "PRStackDump", dependencies: ["PRStackCore", "GitHubKit"]),
         .testTarget(
             name: "PRStackCoreTests",
             dependencies: ["PRStackCore"],
@@ -25,6 +28,12 @@ let package = Package(
             // into a bundle nothing reads would be dead weight; leaving them undeclared
             // makes SwiftPM warn about 48 unhandled files on every build.
             exclude: ["Fixtures", "Goldens"]
+        ),
+        .testTarget(
+            name: "GitHubKitTests",
+            dependencies: ["GitHubKit", "PRStackCore"],
+            // Read from the source tree via #filePath, same as above.
+            exclude: ["Fixtures"]
         )
     ]
 )
