@@ -14,8 +14,14 @@ let usage = """
 usage: prstack-dump <snapshot.json> [--now 2026-01-10T12:00:00Z]
        prstack-dump --github [--repo owner/name ...] [options]
 
-Reads a snapshot, derives it, and prints the panel. The rendering is the same one the
+Reads a snapshot, derives it, and prints the panel. Both renderings are the ones the
 golden tests compare, so dumping a fixture reproduces that fixture's golden byte for byte.
+
+Rendering
+
+  --presentation        Print the panel as the view shows it — the phrase, meta line,
+                        release track and section headings per row — instead of the
+                        derived model. This is the layer M3's row view reads.
 
 Snapshot file
 
@@ -62,6 +68,7 @@ struct DumpOptions {
     var pointBudget = PointBudget.defaultPoints
     var token: String?
     var emitSnapshotPath: String?
+    var rendersPresentation = false
 
     /// No `--repo` means every repository, which is the `all` mode from
     /// IMPLEMENTATION_PLAN §3 rather than an empty selection.
@@ -116,6 +123,8 @@ struct DumpOptions {
                 options.token = try next("--token")
             case "--emit-snapshot":
                 options.emitSnapshotPath = try next("--emit-snapshot")
+            case "--presentation":
+                options.rendersPresentation = true
             case "--now":
                 let raw = try next("--now")
                 guard let parsed = ISO8601DateFormatter().date(from: raw) else {

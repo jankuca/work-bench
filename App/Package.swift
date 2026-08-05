@@ -15,7 +15,18 @@ import PackageDescription
 let package = Package(
     name: "PRStackMonitorApp",
     platforms: [.macOS(.v14)],
+    dependencies: [
+        // By path, not by URL: the two packages are one repository and always move
+        // together, so a version requirement would be a fiction to maintain.
+        .package(path: "../PRStackMonitor")
+    ],
     targets: [
-        .executableTarget(name: "PRStackMonitorApp")
+        .executableTarget(
+            name: "PRStackMonitorApp",
+            dependencies: [
+                .product(name: "PRStackCore", package: "PRStackMonitor"),
+                .product(name: "GitHubKit", package: "PRStackMonitor")
+            ]
+        )
     ]
 )

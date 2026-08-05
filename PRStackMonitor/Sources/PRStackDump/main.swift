@@ -28,7 +28,10 @@ do {
         try input.write(to: path)
     }
 
-    print(PanelModelReport.render(input.derive(now: options.now)), terminator: "")
+    let rendered = options.rendersPresentation
+        ? PanelPresentationReport.render(input.present(now: options.now))
+        : PanelModelReport.render(input.derive(now: options.now))
+    print(rendered, terminator: "")
 } catch let failure as DumpFailure {
     fail(failure.message)
 } catch {

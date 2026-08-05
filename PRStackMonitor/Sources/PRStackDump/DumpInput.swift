@@ -53,6 +53,12 @@ struct DumpInput: Codable {
         }
     }
 
+    /// The clock this input derives against: the override, then the file, then the
+    /// wall clock.
+    func clock(overriddenBy overridden: Date?) -> Date {
+        overridden ?? now ?? Date()
+    }
+
     /// The model this input derives to.
     func derive(now overridden: Date?) -> PanelModel {
         var local = self.local ?? .empty
@@ -63,7 +69,21 @@ struct DumpInput: Codable {
         return Derivation.derive(
             snapshot: snapshot,
             local: local,
-            now: overridden ?? now ?? Date()
+            now: clock(overriddenBy: overridden)
+        )
+    }
+
+    /// The panel as the view would show it, one layer above ``derive(now:)``.
+    ///
+    /// The status is fixed at "connected, synced 34 seconds ago" — the footer design 2a
+    /// shows — because a dump has no sync engine behind it and a wall-clock sync time
+    /// would make two dumps of the same file differ.
+    func present(now overridden: Date?) -> PanelPresentation {
+        let clock = self.clock(overriddenBy: overridden)
+        return PanelPresentation.make(
+            model: derive(now: overridden),
+            status: PanelStatus(github: .connected, lastSyncedAt: clock.addingTimeInterval(-34)),
+            now: clock
         )
     }
 }

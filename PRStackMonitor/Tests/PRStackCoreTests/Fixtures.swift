@@ -52,6 +52,11 @@ enum Fixtures {
 
     static var fixturesDirectory: URL { directory.appendingPathComponent("Fixtures") }
     static var goldensDirectory: URL { directory.appendingPathComponent("Goldens") }
+    /// A subdirectory rather than a suffix on the file names, so a reviewer reading a
+    /// diff can tell at a glance which layer moved.
+    static var presentationGoldensDirectory: URL {
+        goldensDirectory.appendingPathComponent("Presentation")
+    }
 
     static var allNames: [String] {
         let contents = (try? FileManager.default.contentsOfDirectory(atPath: fixturesDirectory.path)) ?? []
@@ -85,14 +90,26 @@ enum Goldens {
         file: StaticString = #filePath,
         line: UInt = #line
     ) throws {
-        let rendered = PanelModelReport.render(model)
-        let url = Fixtures.goldensDirectory.appendingPathComponent("\(name).txt")
+        try assert(
+            name,
+            rendered: PanelModelReport.render(model),
+            in: Fixtures.goldensDirectory,
+            file: file,
+            line: line
+        )
+    }
+
+    static func assert(
+        _ name: String,
+        rendered: String,
+        in goldens: URL,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let url = goldens.appendingPathComponent("\(name).txt")
 
         if isRecording {
-            try FileManager.default.createDirectory(
-                at: Fixtures.goldensDirectory,
-                withIntermediateDirectories: true
-            )
+            try FileManager.default.createDirectory(at: goldens, withIntermediateDirectories: true)
             try rendered.write(to: url, atomically: true, encoding: .utf8)
             return
         }

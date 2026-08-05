@@ -89,12 +89,33 @@ confirming that the Application Support directory, outbound HTTPS to GitHub and 
 and Keychain access all still function inside the container. Deferred, not free, which is
 why there is no entitlements file yet.
 
-## What M0 is, and is not
+## What is here, and what is not
 
-M0 is the shell: a menu bar item that opens an empty popover, built and signed by one
-command. The popover deliberately shows a placeholder rather than a mock of design 2a —
-a drawing with no data behind it invites design review of something that does not exist
-yet.
+The panel is real as of M3: design 2a's tokens, rows, spine, sections, header and footer,
+plus the all-clear and first-run/disconnected states. It renders live pull requests — the
+popover polls GitHub once when it opens and once per press of the refresh control.
 
-The panel, its tokens and the row layout are M3. The data behind them is M2 (GitHub) and
-M5 (Linear). The icon's four states are M4; the SF Symbol here is a stand-in.
+Almost none of *what* it shows is decided in this package. `PRStackCore`'s presentation
+layer resolves every row down to a title, an emphasis tier, a semantic tone, a meta line
+and a release track; `PanelUI` turns those into geometry and colour. That split is what
+lets the wording and composition be tested in CI, on Linux, where none of this could
+build.
+
+Not here yet:
+
+- **Sync** (M8). `PanelController` polls on open and on demand. There is no interval
+  table, no sleep or battery awareness, no backoff.
+- **Interactions and persistence** (M7). `Mark all read`, dismiss and `Clear all` work,
+  but only in memory — quitting forgets them. The hovered-row keyboard actions and the
+  Settings window are M7 too; `Settings` currently explains where the token is read from.
+- **The icon's four states** (M4). The SF Symbol is still a stand-in, and opening the
+  panel does not yet clear unread.
+- **Project headings from Linear** (M5). Until then every row groups under `Other`,
+  because nothing populates `linearIssues`.
+
+## Running it against your own pull requests
+
+`make run` picks up a token from `$PRSTACK_GITHUB_TOKEN`, then `$GITHUB_TOKEN`, then the
+login keychain. With none of them the panel shows the connect prompt. To see the panel
+against fixture data without a token at all, `make panel` prints the same presentation the
+row view consumes.

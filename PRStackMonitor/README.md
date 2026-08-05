@@ -5,7 +5,7 @@ for the whole design; this README covers only how to work in this package.
 
 | Target | Milestone | Notes |
 | --- | --- | --- |
-| `PRStackCore` | M1 | Domain model and all derivation logic. Foundation only, no I/O, no clock reads |
+| `PRStackCore` | M1, M3 | Domain model and all derivation logic, plus the presentation layer the panel view reads. Foundation only, no I/O, no clock reads |
 | `GitHubKit` | M2 | GraphQL + REST clients, DTOs, rate limiting. One macOS-only file, fenced |
 | `LinearKit` | M5 | Not yet present |
 | `prstack-dump` | M1–M2 | Debug tool: derive a fixture, or a live GitHub poll, and print the panel |
@@ -32,9 +32,17 @@ without betting the suite on that difference.
 ## Fixtures and goldens
 
 `Tests/PRStackCoreTests/Fixtures/*.json` are the inputs to
-`Derivation.derive(snapshot:local:now:)`; `Tests/PRStackCoreTests/Goldens/*.txt` are the
-rendered panel models they must produce. Every fixture needs a golden — the golden test
-iterates the whole directory and fails on a missing one.
+`Derivation.derive(snapshot:local:now:)`. Each one has **two** goldens, and every fixture
+needs both — the golden tests iterate the whole directory and fail on a missing one:
+
+| Directory | Renders | Catches |
+| --- | --- | --- |
+| `Goldens/*.txt` | the derived `PanelModel` | ordering, sectioning, status, unread |
+| `Goldens/Presentation/*.txt` | the `PanelPresentation` over it | wording, meta line composition, tone, release track |
+
+The second set exists because the panel is built on a Mac and the rules that decide what
+it says are not. Every string the row view draws is resolved in `PRStackCore`, so it can
+be pinned in the same Linux container as the rest.
 
 Fixtures are **synthetic**: invented repositories, logins, titles and Linear identifiers.
 If a recorded API response is ever used to get a shape right, it must be fully anonymised
@@ -51,6 +59,16 @@ git diff -- Tests/PRStackCoreTests/Goldens
 
 Always read that diff before committing it. A golden that changed silently is the
 regression the golden was there to catch.
+
+`prstack-dump` prints either rendering for a fixture, byte-identical to that fixture's
+golden:
+
+```sh
+swift run prstack-dump Tests/PRStackCoreTests/Fixtures/panel-2a.json
+swift run prstack-dump --presentation Tests/PRStackCoreTests/Fixtures/panel-2a.json
+```
+
+From the repository root those are `make dump` and `make panel`.
 
 ### Fixture format
 
@@ -86,6 +104,7 @@ swift run prstack-dump --github                 # All scope
 swift run prstack-dump --github --repo acme/billing --repo acme/source   # Selected scope
 swift run prstack-dump --github --page-size 5   # force pagination past the first page
 swift run prstack-dump --github --emit-snapshot /tmp/live.json
+swift run prstack-dump --github --presentation                # what the row view reads
 ```
 
 From the repository root, `make fetch REPOS='acme/billing' PAGE_SIZE=5` does the same.
