@@ -122,13 +122,21 @@ public struct FooterPresentation: Equatable, Sendable {
     public var syncTone: StatusTone
     /// `synced 34s ago`, `stale · last synced 41m ago`, `never synced`.
     public var syncText: String
+    /// Why the source is unhappy, when it is — the view shows it on hover.
+    ///
+    /// Kept off ``syncText`` deliberately. "could not reach GitHub: the request timed
+    /// out" is the wrong length for a 11 pt footer and the wrong altitude for a glance,
+    /// but it is the first thing wanted once the glance has raised a question, and the
+    /// panel is the only place it exists.
+    public var detail: String?
     /// Hidden when there is nothing unread, so the panel does not offer an action that
     /// would do nothing.
     public var showsMarkAllRead: Bool
 
-    public init(syncTone: StatusTone, syncText: String, showsMarkAllRead: Bool) {
+    public init(syncTone: StatusTone, syncText: String, detail: String? = nil, showsMarkAllRead: Bool) {
         self.syncTone = syncTone
         self.syncText = syncText
+        self.detail = detail
         self.showsMarkAllRead = showsMarkAllRead
     }
 }
@@ -285,6 +293,7 @@ public struct PanelPresentation: Equatable, Sendable {
         return FooterPresentation(
             syncTone: sync.tone,
             syncText: sync.text,
+            detail: status.github.message,
             // Offering `Mark all read` with nothing unread is offering an action that
             // does nothing.
             showsMarkAllRead: model.unreadCount > 0

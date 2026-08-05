@@ -145,6 +145,7 @@ struct PanelFooterView: View {
             Text(footer.syncText)
                 .font(Tokens.text(11))
                 .foregroundStyle(Tokens.textTertiary.color)
+                .help(footer.detail ?? footer.syncText)
             Spacer(minLength: 0)
             if footer.showsMarkAllRead {
                 Button("Mark all read", action: onMarkAllRead)

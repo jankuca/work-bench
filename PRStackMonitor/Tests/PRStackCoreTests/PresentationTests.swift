@@ -453,6 +453,20 @@ final class PanelPresentationTests: XCTestCase {
         XCTAssertEqual(current.footer.syncText, "synced 34s ago")
     }
 
+    /// The footer says how it is at a glance and why on hover. A connected source has no
+    /// "why", so nothing is offered.
+    func testFooterCarriesTheFailureDetail() throws {
+        XCTAssertEqual(
+            try panel("panel-2a", github: .unreachable("the request timed out")).footer.detail,
+            "the request timed out"
+        )
+        XCTAssertEqual(
+            try panel("panel-2a", github: .unauthorized("bad credentials")).footer.detail,
+            "bad credentials"
+        )
+        XCTAssertNil(try panel("panel-2a").footer.detail)
+    }
+
     func testMarkAllReadHidesWithNothingUnread() throws {
         let fixture = try Fixtures.load("panel-2a")
         var local = fixture.resolvedLocal()
