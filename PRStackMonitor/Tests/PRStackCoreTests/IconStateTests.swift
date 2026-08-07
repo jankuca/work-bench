@@ -89,6 +89,9 @@ final class IconStateTests: XCTestCase {
     /// than asserted as a convention.
     func testAttentionAlwaysReachesTheIcon() throws {
         let connected = PanelStatus(github: .connected)
+        // `allNames` turns a directory-enumeration failure into an empty array, so without
+        // this the loop below passes by never running.
+        XCTAssertFalse(Fixtures.allNames.isEmpty, "No fixtures found in \(Fixtures.fixturesDirectory.path)")
         for name in Fixtures.allNames {
             let model = try Fixtures.derive(name)
             let icon = IconState.resolve(model: model, status: connected)
@@ -107,6 +110,7 @@ final class IconStateTests: XCTestCase {
     /// may resolve to it. The case stays in the enum for a future deployment tracker.
     func testInFlightIsNeverResolved() throws {
         let healths: [SourceHealth] = [.connected, .unconfigured, .unauthorized("x"), .unreachable("y")]
+        XCTAssertFalse(Fixtures.allNames.isEmpty, "No fixtures found in \(Fixtures.fixturesDirectory.path)")
         for name in Fixtures.allNames {
             let model = try Fixtures.derive(name)
             for health in healths {

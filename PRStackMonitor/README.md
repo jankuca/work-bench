@@ -44,9 +44,10 @@ The second set exists because the panel is built on a Mac and the rules that dec
 it says are not. Every string the row view draws is resolved in `PRStackCore`, so it can
 be pinned in the same Linux container as the rest.
 
-A fixture is one snapshot and one clock, so the M4 event cases — which are all *pairs* of
-snapshots — are built in code instead, in `EventDiffTests`. Moving a fixture's clock past a
-snooze deadline is still a fixture's job; producing a second snapshot is not.
+A fixture is one snapshot and one clock, so the M4 event cases are built in code instead,
+in `EventDiffTests` — each one needs a *pair* of models, and the connection cases a pair of
+`PanelStatus` values. Moving a fixture's clock past a snooze deadline is still a fixture's
+job; producing the second half of a pair is not.
 
 Fixtures are **synthetic**: invented repositories, logins, titles and Linear identifiers.
 If a recorded API response is ever used to get a shape right, it must be fully anonymised

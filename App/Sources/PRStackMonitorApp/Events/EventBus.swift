@@ -10,8 +10,11 @@ import PRStackCore
 /// cannot currently verify. Carrying the resolved ``IconState`` too means a sink never
 /// re-derives a rule that core already owns.
 struct EventContext {
+    /// The panel as it stands after the derivation these events came out of.
     var model: PanelModel
+    /// Where each source stands. What tells a sink whether the model is worth acting on.
     var status: PanelStatus
+    /// The icon core resolved for this model and status, so no sink re-derives the rule.
     var icon: IconState
 }
 
@@ -44,12 +47,15 @@ struct EventPreferences: Equatable {
         self.disabled = disabled
     }
 
+    /// Everything on — what a fresh install gets.
     static let all = EventPreferences()
 
+    /// Whether events of this type reach the sinks.
     func allows(_ kind: DomainEventKind) -> Bool {
         !disabled.contains(kind)
     }
 
+    /// What M7's Settings checkbox calls.
     mutating func setEnabled(_ enabled: Bool, for kind: DomainEventKind) {
         if enabled {
             disabled.remove(kind)
@@ -60,10 +66,13 @@ struct EventPreferences: Equatable {
 
     // MARK: Storage
 
+    /// The `UserDefaults` key one toggle is stored under. Derived from the case name, so
+    /// an event type added later needs no second list to be registered in.
     static func defaultsKey(for kind: DomainEventKind) -> String {
         "events.\(kind.rawValue).enabled"
     }
 
+    /// Reads every toggle. Absent keys stay enabled.
     static func load(from defaults: UserDefaults = .standard) -> EventPreferences {
         var preferences = EventPreferences()
         for kind in DomainEventKind.allCases {
@@ -76,6 +85,8 @@ struct EventPreferences: Equatable {
         return preferences
     }
 
+    /// Writes every toggle, including the enabled ones, so a value flipped back on
+    /// overwrites the stored exception rather than leaving it behind.
     func save(to defaults: UserDefaults = .standard) {
         for kind in DomainEventKind.allCases {
             defaults.set(allows(kind), forKey: EventPreferences.defaultsKey(for: kind))
@@ -101,6 +112,7 @@ final class EventBus {
         self.preferences = preferences
     }
 
+    /// Adds a sink. Registration is one-way — nothing in v1 has a reason to unregister.
     func register(_ sink: any EventSink) {
         sinks.append(sink)
     }

@@ -325,6 +325,11 @@ final class EventDiffTests: XCTestCase {
         PRID(repo: "acme/billing", number: number)
     }
 
+    /// A fixed timestamp for every pull request these tests build. Nothing here asserts an
+    /// age, and a moving one would make the panel's section ordering depend on when the
+    /// suite ran.
+    private static let updatedAt = Date(timeIntervalSince1970: 900_000)
+
     private func pullRequest(
         _ number: Int,
         state: GitHubState = .open,
@@ -343,7 +348,8 @@ final class EventDiffTests: XCTestCase {
             reviewDecision: reviewDecision,
             checks: checks,
             mergeable: mergeable,
-            mergedAt: state == .merged ? Date(timeIntervalSince1970: 900_000) : nil,
+            updatedAt: EventDiffTests.updatedAt,
+            mergedAt: state == .merged ? EventDiffTests.updatedAt : nil,
             commentCount: commentCount
         )
     }

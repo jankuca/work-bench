@@ -103,7 +103,8 @@ Disconnected outranks everything: an expired GitHub token shows the dashed glyph
 than a badge counting failures the app can no longer verify.
 
 Derivation's transitions reach the icon through `Events/` — an `EventBus`, one registered
-`EventSink`, and a per-event-type toggle set (`EventPreferences`) that nothing reads yet.
+`EventSink`, and a per-event-type toggle set (`EventPreferences`) the bus already filters
+on, though nothing sets it: the Settings checkboxes are M7.
 That is deliberate: adding "notify me when my pull request reaches production" later means
 writing a `UserNotificationSink` and registering it, with no change to core, to the panel,
 or to the bus.

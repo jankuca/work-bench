@@ -18,13 +18,20 @@ import PRStackCore
 enum StatusItemIcon {
     // MARK: - Geometry
 
-    private static let canvas = NSSize(width: 22, height: 18)
+    /// Sized from what actually gets drawn, not rounded to a convenient number.
+    ///
+    /// The glyph is bottom-left. The badge overhangs it by 6 pt to the right and 3 pt
+    /// above, and ``punchHalo`` expands the badge by a further 1.5 pt in every direction —
+    /// so the widest thing drawn reaches `15 + 6 + 1.5` and the tallest spans
+    /// `3 + 1.5` above the glyph's top. A canvas sized to the glyph plus the badge alone
+    /// would clip the halo along the top and right edges, which is exactly where the badge
+    /// needs its separation from the menu bar's background.
+    private static let canvas = NSSize(width: 22.5, height: 19.5)
     private static let glyphSide: CGFloat = 15
     private static let glyphStroke: CGFloat = 1.6
     private static let glyphRadius: CGFloat = 4
     private static let glyphDot: CGFloat = 4
-    /// The glyph sits at the bottom-left of the canvas; the badge overhangs above and to
-    /// the right of it, which is the 3 pt and 6 pt the canvas is oversized by.
+    /// Bottom-left, so the overhang above it is the canvas's extra height.
     private static let glyphOrigin = NSPoint(x: 0, y: 0)
 
     private static let dotSide: CGFloat = 7
@@ -53,6 +60,7 @@ enum StatusItemIcon {
 
     // MARK: - Rendering
 
+    /// The image for one state, sized ``canvas`` and ready to hand to a status item button.
     static func image(for state: IconState) -> NSImage {
         // A block-backed image, so the glyph's `labelColor` resolves against whatever
         // appearance the menu bar is drawing in rather than the one that happened to be
@@ -97,6 +105,7 @@ enum StatusItemIcon {
         }
     }
 
+    /// The glyph's box, bottom-left of the canvas. Everything else is positioned from it.
     private static func glyphRect() -> NSRect {
         NSRect(
             x: glyphOrigin.x,

@@ -25,6 +25,8 @@ final class IconSink: EventSink {
     /// is cheap; assigning `button.image` is not free of flicker on every menu bar.
     private var shown: IconState?
 
+    /// - Parameter presenter: held weakly; the status item outlives this sink, not the
+    ///   other way round.
     init(presenter: any IconPresenter) {
         self.presenter = presenter
     }
