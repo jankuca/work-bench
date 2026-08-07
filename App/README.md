@@ -97,10 +97,15 @@ popover polls GitHub once at launch, once when it opens, and once per press of t
 control.
 
 The menu bar icon is real as of M4. It is drawn here rather than picked from SF Symbols
-(`StatusItemIcon.swift`, geometry from design `1f`), but *which* of the four states it
-draws is decided in `PRStackCore` by `IconState.resolve`, which is table-tested in CI.
-Disconnected outranks everything: an expired GitHub token shows the dashed glyph rather
-than a badge counting failures the app can no longer verify.
+(`StatusItemIcon.swift`, geometry from design `1f`), but *which* state it draws is decided
+in `PRStackCore` by `IconState.resolve`, which is table-tested in CI. Disconnected outranks
+everything: an expired GitHub token shows the dashed glyph rather than a badge counting
+failures the app can no longer verify.
+
+Four states are reachable. The drawing code carries a fifth — the design's amber
+"deploy in flight" — which `resolve` never returns, because tags-only release tracking has
+no input for it (IMPLEMENTATION_PLAN §3). A test pins that, so the case cannot start
+appearing by accident before a deployment tracker exists to mean it.
 
 Derivation's transitions reach the icon through `Events/` — an `EventBus`, one registered
 `EventSink`, and a per-event-type toggle set (`EventPreferences`) the bus already filters
