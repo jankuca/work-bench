@@ -23,11 +23,29 @@ final class PanelController: ObservableObject {
     /// Bumped per poll, so a late result can tell whether it is still the current one.
     private var pollGeneration = 0
 
+    /// The model from the last derivation, held in memory and **never persisted**, so a
+    /// relaunch replays no history (IMPLEMENTATION_PLAN §1). `SyncEngine` takes this over
+    /// at M8.
+    private var previous: PanelModel?
+    /// The status the previous derivation ran under, for the connection transitions that
+    /// cannot come out of a snapshot.
+    private var previousStatus: PanelStatus?
+    /// The read digests as they stood *before* this open, while the panel is open.
+    ///
+    /// Opening rewrites the digests — that is what clears unread — but the rows on screen
+    /// have to keep the dots that made the user open it. So the authoritative `local` is
+    /// rewritten immediately and the panel derives against this copy until it closes.
+    /// Reading unread off the rewritten digests instead would blank every dot in the frame
+    /// the panel appears in, which is the one frame they exist for.
+    private var digestsWhileOpen: [PRID: ReadDigest]?
+
     private let source: any PanelSource
     private let clock: () -> Date
+    private let events: EventBus
 
-    init(source: any PanelSource, clock: @escaping () -> Date = { Date() }) {
+    init(source: any PanelSource, events: EventBus, clock: @escaping () -> Date = { Date() }) {
         self.source = source
+        self.events = events
         self.clock = clock
         snapshot = RawSnapshot(viewerLogin: "", pullRequests: [])
         local = .empty
@@ -41,6 +59,12 @@ final class PanelController: ObservableObject {
     /// poll lands under it — the alternative is a blank panel for as long as GitHub takes,
     /// which is the one thing a menu bar app cannot afford.
     func panelDidOpen() {
+        // Unread is "changed since the panel was last open", so opening is what rewrites
+        // the digests — including the rows the poll below is about to refresh, which get
+        // rewritten again when it lands. The icon drops out of `unread` from here; it
+        // never drops out of action-needed, which only the pull requests can clear.
+        digestsWhileOpen = local.readDigests
+        local.markAllRead(in: snapshot)
         rebuild()
         refresh()
     }
@@ -50,10 +74,9 @@ final class PanelController: ObservableObject {
         // observes cancellation, so this actually stops the request.
         pollTask?.cancel()
         pollTask = nil
-        if status.isRefreshing {
-            status.isRefreshing = false
-            rebuild()
-        }
+        digestsWhileOpen = nil
+        status.isRefreshing = false
+        rebuild()
     }
 
     func refresh() {
@@ -85,6 +108,13 @@ final class PanelController: ObservableObject {
             snapshot = fetched
             status.github = .connected
             status.lastSyncedAt = clock()
+            // A poll that lands while the panel is open has been seen, so it is read.
+            // `digestsWhileOpen` stays frozen at the open, so the dots for it still appear
+            // on screen — what this clears is the menu bar, which would otherwise light up
+            // for activity the user is looking straight at.
+            if digestsWhileOpen != nil {
+                local.markAllRead(in: snapshot)
+            }
         case .failed(let health):
             // The rows stay. Losing the connection does not make what was fetched untrue,
             // only unverifiable — the banner and the footer say which (§5).
@@ -99,6 +129,11 @@ final class PanelController: ObservableObject {
     /// M7 — which is also where `LocalState` gets a store to be written to.
     func markAllRead() {
         local.markAllRead(in: snapshot)
+        // Unlike opening, this one is asked for explicitly, so the dots go now rather than
+        // at the next open — an action that visibly does nothing has been pressed twice.
+        // Only while the panel is open: with it closed there is nothing frozen to update,
+        // and writing one here would freeze the digests outside an open.
+        if digestsWhileOpen != nil { digestsWhileOpen = local.readDigests }
         rebuild()
     }
 
@@ -138,11 +173,48 @@ final class PanelController: ObservableObject {
 
     private func rebuild() {
         let now = clock()
-        panel = PanelPresentation.make(
-            model: Derivation.derive(snapshot: snapshot, local: local, now: now),
-            status: status,
-            now: now
+
+        // While the panel is open the rows are compared against the digests as they stood
+        // at the open, not against the ones that open rewrote.
+        var deriving = local
+        if let digestsWhileOpen { deriving.readDigests = digestsWhileOpen }
+
+        let derived = Derivation.derive(snapshot: snapshot, local: deriving, previous: previous, now: now)
+        // Connection transitions are diffed here rather than in derivation: a poll that
+        // failed produces no snapshot to diff, and the model is unchanged precisely
+        // because it failed.
+        let connection = DomainEvent.connectionEvents(from: previousStatus, to: status)
+        previous = derived.model
+        previousStatus = status
+
+        panel = PanelPresentation.make(model: derived.model, status: status, now: now)
+        events.publish(
+            connection + derived.events,
+            context: EventContext(
+                model: derived.model,
+                status: status,
+                icon: IconState.resolve(
+                    github: status.github,
+                    attentionCount: derived.model.attentionCount,
+                    unreadCount: liveUnreadCount(in: derived.model)
+                )
+            )
         )
+    }
+
+    /// Unread as the *menu bar* reads it: against the authoritative digests rather than
+    /// the frozen copy an open panel renders from.
+    ///
+    /// With the panel closed the two are the same value. With it open this is zero until
+    /// something new actually lands, which is what "opening the panel clears unread"
+    /// means for the icon while the dots stay on screen underneath it.
+    private func liveUnreadCount(in model: PanelModel) -> Int {
+        model.rows.filter { row in
+            local.readDigests[row.id] != ReadDigest.make(
+                for: row.pullRequest,
+                releaseStage: row.releaseStage
+            )
+        }.count
     }
 }
 
