@@ -1,0 +1,8 @@
+header title="Pull requests" summary="2 in review" refreshing=false attention=0
+section heading="Payments" count=1 muted=false clearAll=-
+  row id=acme/web#401 title="Web feature" emphasis=normal chip=neutral/dot tint=false unread=true spine=none track=empty|empty|empty reviewers=[]+0 dismissible=false
+    meta issue(PAY-401) repo(acme/web) num(#401) phrase(in review|neutral) age(1d)
+section heading="Billing" count=1 muted=false clearAll=-
+  row id=acme/billing#400 title="Release prep" emphasis=normal chip=neutral/dot tint=false unread=true spine=none track=empty|empty|empty reviewers=[]+0 dismissible=false
+    meta issue(BIL-400) repo(acme/billing) num(#400) phrase(in review|neutral) age(1d)
+footer tone=success text="synced 34s ago" markAllRead=true

@@ -53,6 +53,12 @@ struct DumpInput: Codable {
         }
     }
 
+    /// The clock this input derives against: the override, then the file, then the
+    /// wall clock.
+    func clock(overriddenBy overridden: Date?) -> Date {
+        overridden ?? now ?? Date()
+    }
+
     /// The model this input derives to.
     func derive(now overridden: Date?) -> PanelModel {
         var local = self.local ?? .empty
@@ -63,7 +69,22 @@ struct DumpInput: Codable {
         return Derivation.derive(
             snapshot: snapshot,
             local: local,
-            now: overridden ?? now ?? Date()
+            now: clock(overriddenBy: overridden)
+        )
+    }
+
+    /// The panel as the view would show it, one layer above ``derive(now:)``.
+    ///
+    /// The clock is resolved once and passed down. Resolving it twice would read the wall
+    /// clock twice for a file with no `now` and no `--now`, so the model could be derived
+    /// in one second and its ages rendered in the next — two dumps of the same input that
+    /// do not match, which is the one property this output is for.
+    func present(now overridden: Date?) -> PanelPresentation {
+        let clock = self.clock(overriddenBy: overridden)
+        return PanelPresentation.make(
+            model: derive(now: clock),
+            status: .fixture(now: clock),
+            now: clock
         )
     }
 }

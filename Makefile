@@ -35,7 +35,7 @@ EMIT ?=
 BIN_DIR    = $(shell swift build --package-path $(APP_PACKAGE) -c $(CONFIGURATION) --show-bin-path)
 EXECUTABLE = $(BIN_DIR)/PRStackMonitorApp
 
-.PHONY: all help build bundle sign run install uninstall identity test dump fetch clean
+.PHONY: all help build bundle sign run install uninstall identity test dump panel fetch clean
 
 all: sign
 
@@ -49,6 +49,7 @@ help:
 	@echo "make identity   list the code signing identities this Mac can use"
 	@echo "make test       run the portable core's tests"
 	@echo "make dump       derive a fixture and print the panel (FIXTURE=$(FIXTURE))"
+	@echo "make panel      same fixture, rendered as the row view reads it"
 	@echo "make fetch      derive live GitHub data (REPOS='o/a o/b' PAGE_SIZE=$(PAGE_SIZE))"
 	@echo "make clean      remove build products"
 
@@ -105,6 +106,12 @@ test:
 # fixture matches that fixture's golden exactly.
 dump:
 	@swift run --package-path $(CORE_PACKAGE) prstack-dump \
+		$(CORE_PACKAGE)/Tests/PRStackCoreTests/Fixtures/$(FIXTURE).json
+
+# One layer up: the phrase, meta line, release track and headings the row view draws,
+# rather than the model behind them. Same renderer the presentation goldens compare.
+panel:
+	@swift run --package-path $(CORE_PACKAGE) prstack-dump --presentation \
 		$(CORE_PACKAGE)/Tests/PRStackCoreTests/Fixtures/$(FIXTURE).json
 
 # The same renderer against live data. Diagnostics — pages, points spent, why pagination

@@ -1,0 +1,5 @@
+header title="Pull requests" summary="" refreshing=false attention=0
+section heading="Done" count=1 muted=true clearAll="Clear all"
+  row id=acme/billing#900 title="Abandoned experiment" emphasis=dim chip=neutral/bar tint=false unread=true spine=none track=failing|empty|empty reviewers=[]+0 dismissible=true
+    meta num(#900) phrase(closed without merging|neutral) age(yesterday)
+footer tone=success text="synced 34s ago" markAllRead=true

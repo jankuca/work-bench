@@ -1,5 +1,6 @@
 import AppKit
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Held for the lifetime of the process — releasing it removes the menu bar item.
     private var statusItemController: StatusItemController?

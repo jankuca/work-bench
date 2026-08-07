@@ -1,0 +1,12 @@
+header title="Pull requests" summary="4 in review" refreshing=false attention=0
+section heading="Payments" count=1 muted=false clearAll=-
+  row id=acme/billing#650 title="An unrelated payments pull request" emphasis=normal chip=neutral/dot tint=false unread=true spine=none track=empty|empty|empty reviewers=[]+0 dismissible=false
+    meta issue(PAY-650) num(#650) phrase(in review|neutral) age(1d)
+section heading="Billing" count=3 muted=false clearAll=-
+  row id=acme/billing#602 title="Stack top, platform ticket" emphasis=dim chip=neutral/bar tint=false unread=true spine=down track=empty|empty|empty reviewers=[]+0 dismissible=false
+    meta issue(PLT-602) num(#602) phrase(waiting on #601|neutral) age(1d)
+  row id=acme/billing#601 title="Stack middle, payments ticket" emphasis=dim chip=neutral/bar tint=false unread=true spine=both track=empty|empty|empty reviewers=[]+0 dismissible=false
+    meta issue(PAY-601) num(#601) phrase(waiting on #600|neutral) age(1d)
+  row id=acme/billing#600 title="Stack base, billing ticket" emphasis=normal chip=neutral/dot tint=false unread=true spine=up track=empty|empty|empty reviewers=[]+0 dismissible=false
+    meta issue(BIL-600) num(#600) phrase(in review|neutral) age(1d)
+footer tone=success text="synced 34s ago" markAllRead=true
