@@ -32,7 +32,7 @@ let package = Package(
         .target(name: "LinearKit", dependencies: ["NetKit", "PRStackCore"]),
         .executableTarget(
             name: "PRStackDump",
-            dependencies: ["PRStackCore", "GitHubKit", "LinearKit"]
+            dependencies: ["PRStackCore", "NetKit", "GitHubKit", "LinearKit"]
         ),
         .testTarget(
             name: "PRStackCoreTests",

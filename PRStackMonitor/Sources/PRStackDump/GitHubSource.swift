@@ -1,5 +1,6 @@
 import Foundation
 import GitHubKit
+import NetKit
 import PRStackCore
 
 /// The GitHub half of a live dump: one paginated search, mapped to domain values.
