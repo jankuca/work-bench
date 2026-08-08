@@ -152,7 +152,7 @@ extension LocalState: Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         // `dismissed` is sorted here, so it alone is stable. The three maps below encode
         // as JSON objects whose key order comes from `Dictionary` iteration, which varies
-        // per process — the writing layer (M3) has to set
+        // per process — the writing layer (M6) has to set
         // `outputFormatting.insert(.sortedKeys)` for the state file to be diffable.
         // Sorting cannot be done from inside `encode(to:)` without changing the on-disk
         // schema to key/value arrays, and the readable object form is the reason
