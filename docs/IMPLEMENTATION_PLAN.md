@@ -34,17 +34,19 @@ be a signing-settings change plus enabling notifications, not a refactor.
 
 ### Environment note
 
-The repo currently has no Swift toolchain available in CI (Linux container, no `swift`). The plan
-deliberately keeps all non-UI logic in platform-neutral Swift modules so they *can* be compiled and tested
-on Linux once a toolchain is installed — see §6.
+CI is a Linux container with a Swift toolchain, and it builds and tests every portable module on every
+push. The plan deliberately keeps all non-UI logic in platform-neutral Swift modules so that this is
+possible; only the AppKit shell needs a Mac — see §6.
 
 ---
 
 ## 1. Architecture
 
-Six modules. Three of them — `PRStackCore`, `GitHubKit`, `LinearKit`, drawn at the bottom of the diagram —
-are pure Swift (Foundation only, no AppKit) and build and test off-device. `PanelUI` and `SyncEngine` are
-macOS-only and are the CI boundary: they compile on a Mac, not in a Linux container.
+Seven modules, counting `NetKit` (added at M5, see below). Four of them — `PRStackCore`, `NetKit`,
+`GitHubKit`, `LinearKit`, drawn at the bottom of the diagram — are pure Swift (Foundation only, no AppKit)
+and build and test off-device. `NetKit` counts as portable: its one macOS-specific file, the Keychain store,
+is fenced behind `canImport(Security)` rather than split out. `PanelUI` and `SyncEngine` are macOS-only and
+are the CI boundary: they compile on a Mac, not in a Linux container.
 
 ```text
 PRStackMonitor.app  (AppKit shell: NSStatusItem, NSPopover, SwiftUI views)
@@ -828,8 +830,8 @@ added without disturbing anything else.
 - **Event diffing** — assert the exact `[DomainEvent]` emitted between two consecutive snapshots. This is
   what a future notification sink depends on, so it's worth pinning before the sink exists.
 - **HTTP layer** via a `URLProtocol` stub; no network in tests.
-- **CI**: `swift test` on the three portable modules. These need no macOS, so they can run in this repo's
-  Linux container once a toolchain is added; the AppKit target builds on a Mac only.
+- **CI**: `swift test` on the four portable modules. These need no macOS, so they run in this repo's Linux
+  container; the AppKit target builds on a Mac only.
 
 ---
 

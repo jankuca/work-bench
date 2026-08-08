@@ -45,6 +45,25 @@ final class LinearResolverTests: XCTestCase {
         )
     }
 
+    /// The section a resolved pull request lands in once derivation has run over it.
+    ///
+    /// Looked up by row rather than by position, because section order is by most recent
+    /// activity and these fixtures deliberately share a timestamp — the assertion is about
+    /// *which* project a row is filed under, not where that project sorts.
+    private func section(of pullRequest: PullRequest, in model: PanelModel) -> PanelSection.Kind? {
+        model.sections.first { section in
+            section.rows.contains { $0.id == pullRequest.id }
+        }?.kind
+    }
+
+    private func derive(_ pullRequests: [PullRequest]) -> PanelModel {
+        Derivation.derive(
+            snapshot: RawSnapshot(viewerLogin: "jankuca", pullRequests: pullRequests),
+            local: .empty,
+            now: now
+        )
+    }
+
     private func cache(_ pairs: [(String, IssueRef?)], age: TimeInterval = 0) -> LinearProjectCache {
         var cache = LinearProjectCache.empty
         for (identifier, reference) in pairs {
@@ -93,6 +112,54 @@ final class LinearResolverTests: XCTestCase {
         XCTAssertEqual(fromCache.pullRequests[0].linearIssues.map(\.identifier), ["BIL-312", "SRC-97"])
         XCTAssertEqual(fromMixed.pullRequests[0].linearIssues.map(\.identifier), ["BIL-312", "SRC-97"])
         XCTAssertEqual(fromMixed.pullRequests[0].primaryIssue?.identifier, "BIL-312")
+
+        // The consequence, at the level the user sees it: the row is under Billing on both
+        // polls. A list rebuilt from arrival order would put it under Source on one of
+        // them, and the row would appear to migrate with nothing having changed.
+        let billing = PanelSection.Kind.project(id: "proj-billing", name: "Billing")
+        XCTAssertEqual(section(of: fromCache.pullRequests[0], in: derive(fromCache.pullRequests)), billing)
+        XCTAssertEqual(section(of: fromMixed.pullRequests[0], in: derive(fromMixed.pullRequests)), billing)
+    }
+
+    /// `linear-cross-team-number-collision` (IMPLEMENTATION_PLAN §2), at panel level.
+    ///
+    /// `LinearClientTests` pins the query shape — that the unsafe `issues(filter:)`
+    /// cross-product form never appears. This pins what that shape is *for*: two pull
+    /// requests naming `BIL-312` and `SRC-97` file under Billing and Source respectively,
+    /// and never under the `BIL-97` / `SRC-312` the cross-product would also have matched.
+    func testTwoTeamsWithCollidingNumbersFileUnderTheirOwnProjects() async throws {
+        let transport = StubTransport(responses: [
+            .json(
+                """
+                {"data": {
+                  "a0": {"identifier": "BIL-312", "project": {"id": "proj-billing", "name": "Billing"}},
+                  "a1": {"identifier": "SRC-97", "project": {"id": "proj-source", "name": "Source"}}
+                }}
+                """
+            )
+        ])
+        let (resolver, _) = self.resolver(transport)
+
+        let resolution = await resolver.resolve(
+            pullRequests: [
+                pullRequest(number: 4012, headRef: "jk/bil-312"),
+                pullRequest(number: 4013, headRef: "jk/src-97")
+            ],
+            now: now
+        )
+
+        XCTAssertEqual(try transport.requestedIdentifiers(0), ["BIL-312", "SRC-97"])
+
+        let model = derive(resolution.pullRequests)
+        XCTAssertEqual(
+            section(of: resolution.pullRequests[0], in: model),
+            PanelSection.Kind.project(id: "proj-billing", name: "Billing")
+        )
+        XCTAssertEqual(
+            section(of: resolution.pullRequests[1], in: model),
+            PanelSection.Kind.project(id: "proj-source", name: "Source")
+        )
+        XCTAssertEqual(model.sections.count, 2, "two projects, and no third from a phantom pairing")
     }
 
     /// One request per identifier, not per pull request: a ticket referenced by two pull
@@ -283,6 +350,28 @@ final class LinearResolverTests: XCTestCase {
         _ = await resolver.resolve(pullRequests: [pullRequest(headRef: "jk/bil-312")], now: now)
 
         XCTAssertEqual(Set(store.load().entries.keys), ["BIL-312"])
+    }
+
+    /// The other half of that rule, and the reason the prune sits *after* the failure
+    /// return: a poll that failed learned nothing, so it must not drop the entries the
+    /// fallback headings come from.
+    ///
+    /// The outage test above cannot show this on its own — its cache holds one entry and
+    /// that entry is also the one the scan references, so "wrote nothing" and "pruned to
+    /// exactly what was referenced" are indistinguishable there. The dead identifier is
+    /// what separates them.
+    func testAFailedPollPrunesNothing() async throws {
+        struct Offline: Error {}
+        let transport = StubTransport([.fail(Offline())])
+        let cached = cache([
+            ("BIL-312", issue("BIL-312", project: ("proj-billing", "Billing"))),
+            ("OLD-1", issue("OLD-1", project: ("proj-old", "Old")))
+        ], age: LinearProjectCache.refreshInterval + 60)
+        let (resolver, store) = self.resolver(transport, cache: cached)
+
+        _ = await resolver.resolve(pullRequests: [pullRequest(headRef: "jk/bil-312")], now: now)
+
+        XCTAssertEqual(Set(store.load().entries.keys), ["BIL-312", "OLD-1"])
     }
 
     func testEntriesAreReAskedOnceADay() async throws {

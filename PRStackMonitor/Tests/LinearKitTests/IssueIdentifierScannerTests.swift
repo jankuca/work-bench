@@ -186,6 +186,12 @@ final class IssueIdentifierScannerTests: XCTestCase {
             IssueIdentifierScanner.scanBody("https://linear.apple.com/acme/issue/bil-312"),
             []
         )
+        // Userinfo: the host here is `evil.example`, not Linear. This is the one shape
+        // somebody would write deliberately rather than by accident.
+        XCTAssertEqual(
+            IssueIdentifierScanner.scanBody("https://linear.app@evil.example/acme/issue/bil-312"),
+            []
+        )
         // …while the shapes that really are Linear still resolve.
         XCTAssertEqual(
             IssueIdentifierScanner.scanBody("https://linear.app/acme/issue/bil-312"),
@@ -197,6 +203,16 @@ final class IssueIdentifierScannerTests: XCTestCase {
         )
         XCTAssertEqual(
             IssueIdentifierScanner.scanBody("linear.app/acme/issue/bil-312"),
+            ["BIL-312"]
+        )
+        // Userinfo *before* the host is still a Linear URL.
+        XCTAssertEqual(
+            IssueIdentifierScanner.scanBody("https://me@linear.app/acme/issue/bil-312"),
+            ["BIL-312"]
+        )
+        // An `@` past the authority is in the path or query and means nothing.
+        XCTAssertEqual(
+            IssueIdentifierScanner.scanBody("https://linear.app/acme/issue/bil-312?from=a@b"),
             ["BIL-312"]
         )
     }

@@ -113,6 +113,13 @@ public enum IssueIdentifierScanner {
     /// - what follows it may not extend the hostname either: `/` starts the path, `:` a
     ///   port, and anything else that is not a hostname character ends the URL. A letter,
     ///   digit, `-` or `.` means something like `linear.apple.com`.
+    /// - and an `@` before the authority ends means the candidate was **userinfo**, not the
+    ///   host at all: in `https://linear.app@evil.example/acme/issue/bil-312` the host is
+    ///   `evil.example`. This is the shape that matters most, because it is the one someone
+    ///   would write on purpose — the other two are accidents of prose.
+    ///
+    /// Userinfo *before* the candidate is fine and still resolves: `https://me@linear.app/…`
+    /// is a Linear URL.
     private static func isCompleteHost(_ characters: [Character], at index: Int, length: Int) -> Bool {
         if index > 0 {
             let previous = characters[index - 1]
@@ -120,10 +127,21 @@ public enum IssueIdentifierScanner {
             // A path separator, unless it is the second slash of `https://`.
             if previous == "/", index < 2 || characters[index - 2] != "/" { return false }
         }
+
         let after = index + length
         if after < characters.count {
             let next = characters[after]
             if next.isLetter || next.isNumber || next == "-" || next == "." { return false }
+        }
+
+        // Walk the rest of the authority. `/`, `?` and `#` end it — an `@` after any of
+        // those is in the path or the query, where it means nothing.
+        var scan = after
+        while scan < characters.count, isURLCharacter(characters[scan]) {
+            let character = characters[scan]
+            if character == "/" || character == "?" || character == "#" { break }
+            if character == "@" { return false }
+            scan += 1
         }
         return true
     }
