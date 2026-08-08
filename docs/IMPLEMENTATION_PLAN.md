@@ -583,6 +583,11 @@ Linear source is marked stale.
   digests, PR→tag bindings, **unbound merged PRs with their merge commit and `mergedAt`**, Linear project
   cache, per-source last successful sync. Atomic writes, schema-versioned.
   The store that writes this file lands in **M6**, not M7 — see §7.
+  **One writer.** `LocalState` is a single value owned by the main actor and written whole, so the release
+  tracker hands its bindings back to be merged there rather than writing the file from its own task — two
+  writers holding partial copies is how a dismissal disappears behind a binding. A file that fails to decode,
+  or carries a schema version this build does not know, starts from empty rather than throwing; that is the
+  same forgiving policy `LocalState.init(from:)` already applies per key.
 - Keychain (generic password, one item per service) — GitHub token, Linear key.
 - `UserDefaults` — repo scope mode + selected repos, **per-repo tag pattern map** (`nameWithOwner` → glob,
   default `v*`), poll intervals, launch-at-login, per-event sink toggles. M6 reads the tag pattern map
