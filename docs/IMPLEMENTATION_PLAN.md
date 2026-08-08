@@ -589,9 +589,12 @@ Linear source is marked stale.
   or carries a schema version this build does not know, is **renamed aside** — `state.corrupt-<stamp>.json` —
   before the app starts from empty. Same forgiving spirit as the per-key policy in `LocalState.init(from:)`,
   but a whole-file failure has to move the original out of the way first: starting from empty and then saving
-  over the file in place would destroy the one thing here with no other source. Bindings, digests and unbound
-  merges all rebuild from GitHub on the next poll; a dismissal tombstone exists nowhere else, so losing it
-  resurrects every pull request the user has ever cleared.
+  over the file in place would destroy state nothing else can supply. Only part of it re-derives. Bindings and
+  unbound merges come back from the next poll — except a merge older than the query's 14-day cold-start floor,
+  which stays stranded (§3). `readDigests` and `snoozedUntil` are local-only: a lost digest set costs one burst
+  of false unread and self-corrects at the next open, and a lost snooze just wakes its row early. Dismissal
+  tombstones are the unbounded loss — nothing re-derives them, so every pull request the user has ever cleared
+  comes back.
 - Keychain (generic password, one item per service) — GitHub token, Linear key.
 - `UserDefaults` — repo scope mode + selected repos, **per-repo tag pattern map** (`nameWithOwner` → glob,
   default `v*`), poll intervals, launch-at-login, per-event sink toggles. M6 reads the tag pattern map
