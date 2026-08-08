@@ -192,6 +192,16 @@ final class IssueIdentifierScannerTests: XCTestCase {
             IssueIdentifierScanner.scanBody("https://linear.app@evil.example/acme/issue/bil-312"),
             []
         )
+        // `/issue/` in a query value is not a path, and the URL does not identify that
+        // issue.
+        XCTAssertEqual(
+            IssueIdentifierScanner.scanBody("https://linear.app/acme?redirect=/issue/bil-312"),
+            []
+        )
+        XCTAssertEqual(
+            IssueIdentifierScanner.scanBody("https://linear.app/acme#/issue/bil-312"),
+            []
+        )
         // …while the shapes that really are Linear still resolve.
         XCTAssertEqual(
             IssueIdentifierScanner.scanBody("https://linear.app/acme/issue/bil-312"),

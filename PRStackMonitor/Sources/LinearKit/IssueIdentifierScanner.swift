@@ -88,7 +88,11 @@ public enum IssueIdentifierScanner {
             // linear.app in one paragraph and an unrelated `/issue/` path in the next
             // would join them into an identifier neither of them names.
             let end = urlEnd(in: characters, from: match)
-            if let marker = find(Array("/issue/"), in: characters, from: match, before: end) {
+            // And bounded again to the *path*: in
+            // `https://linear.app/acme?redirect=/issue/bil-312` the `/issue/` is a query
+            // value, and the URL does not identify that issue at all.
+            let pathEnd = pathSegment(in: characters, from: match, before: end, stoppingAtSlash: false)
+            if let marker = find(Array("/issue/"), in: characters, from: match, before: pathEnd) {
                 let start = marker + "/issue/".count
                 let segment = pathSegment(in: characters, from: start, before: end)
                 if let identifier = normalised(String(characters[start..<segment]), requiringUppercase: false) {
@@ -154,9 +158,19 @@ public enum IssueIdentifierScanner {
         return end
     }
 
-    private static func pathSegment(in characters: [Character], from start: Int, before end: Int) -> Int {
+    /// Where the current path segment ends: at `/`, `?`, `#`, or `end`.
+    ///
+    /// `stoppingAtSlash: false` walks past the separators instead, which turns it into
+    /// "where the path ends and the query begins" — the bound the `/issue/` search needs.
+    private static func pathSegment(
+        in characters: [Character],
+        from start: Int,
+        before end: Int,
+        stoppingAtSlash: Bool = true
+    ) -> Int {
         var index = start
-        while index < end, characters[index] != "/", characters[index] != "?", characters[index] != "#" {
+        while index < end, characters[index] != "?", characters[index] != "#" {
+            if stoppingAtSlash, characters[index] == "/" { break }
             index += 1
         }
         return index
