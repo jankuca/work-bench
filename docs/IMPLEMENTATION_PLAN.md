@@ -586,8 +586,12 @@ Linear source is marked stale.
   **One writer.** `LocalState` is a single value owned by the main actor and written whole, so the release
   tracker hands its bindings back to be merged there rather than writing the file from its own task — two
   writers holding partial copies is how a dismissal disappears behind a binding. A file that fails to decode,
-  or carries a schema version this build does not know, starts from empty rather than throwing; that is the
-  same forgiving policy `LocalState.init(from:)` already applies per key.
+  or carries a schema version this build does not know, is **renamed aside** — `state.corrupt-<stamp>.json` —
+  before the app starts from empty. Same forgiving spirit as the per-key policy in `LocalState.init(from:)`,
+  but a whole-file failure has to move the original out of the way first: starting from empty and then saving
+  over the file in place would destroy the one thing here with no other source. Bindings, digests and unbound
+  merges all rebuild from GitHub on the next poll; a dismissal tombstone exists nowhere else, so losing it
+  resurrects every pull request the user has ever cleared.
 - Keychain (generic password, one item per service) — GitHub token, Linear key.
 - `UserDefaults` — repo scope mode + selected repos, **per-repo tag pattern map** (`nameWithOwner` → glob,
   default `v*`), poll intervals, launch-at-login, per-event sink toggles. M6 reads the tag pattern map
