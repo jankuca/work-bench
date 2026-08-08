@@ -6,10 +6,30 @@ import Foundation
 /// expiry and every other time-dependent decision is deterministic and testable without
 /// a Mac in the loop.
 ///
-/// M4 adds the `previous: PanelModel?` parameter and the `[DomainEvent]` return value
-/// described in IMPLEMENTATION_PLAN §1. Rows already publish ``PanelRow/effectiveState``,
-/// which is what that diff consumes.
+/// Derivation also returns the **transitions** it observed, not just the new state — see
+/// ``derive(snapshot:local:previous:now:)``. Those are diffed against the previous model,
+/// so they are a pure by-product of this function and equally testable.
 public enum Derivation {
+    /// The panel, plus the events that separate it from `previous`.
+    ///
+    /// `previous` is the model from the last derivation, held in memory by whoever is
+    /// polling and **never persisted**. `previous == nil` is the cold-start baseline: the
+    /// model is built normally and the event list is empty, so a relaunch never replays
+    /// history as fresh activity. Unread dots on relaunch come from the persisted read
+    /// digests, which is a separate mechanism (IMPLEMENTATION_PLAN §1).
+    public static func derive(
+        snapshot: RawSnapshot,
+        local: LocalState,
+        previous: PanelModel?,
+        now: Date
+    ) -> (model: PanelModel, events: [DomainEvent]) {
+        let model = derive(snapshot: snapshot, local: local, now: now)
+        return (model, EventDiff.events(previous: previous, current: model))
+    }
+
+    /// The panel alone, for callers with no previous model to diff against — the goldens,
+    /// the debug dump, and any one-shot rendering. Identical to passing `previous: nil`
+    /// above, which emits no events by construction.
     public static func derive(snapshot: RawSnapshot, local: LocalState, now: Date) -> PanelModel {
         // Dismissal is a permanent tombstone: the pull request leaves the model entirely
         // and can never be resurrected by a later event (PRD §5.3). Dismissal is only

@@ -93,7 +93,26 @@ why there is no entitlements file yet.
 
 The panel is real as of M3: design 2a's tokens, rows, spine, sections, header and footer,
 plus the all-clear and first-run/disconnected states. It renders live pull requests — the
-popover polls GitHub once when it opens and once per press of the refresh control.
+popover polls GitHub once at launch, once when it opens, and once per press of the refresh
+control.
+
+The menu bar icon is real as of M4. It is drawn here rather than picked from SF Symbols
+(`StatusItemIcon.swift`, geometry from design `1f`), but *which* state it draws is decided
+in `PRStackCore` by `IconState.resolve`, which is table-tested in CI. Disconnected outranks
+everything: an expired GitHub token shows the dashed glyph rather than a badge counting
+failures the app can no longer verify.
+
+Four states are reachable. The drawing code carries a fifth — the design's amber
+"deploy in flight" — which `resolve` never returns, because tags-only release tracking has
+no input for it (IMPLEMENTATION_PLAN §3). A test pins that, so the case cannot start
+appearing by accident before a deployment tracker exists to mean it.
+
+Derivation's transitions reach the icon through `Events/` — an `EventBus`, one registered
+`EventSink`, and a per-event-type toggle set (`EventPreferences`) the bus already filters
+on, though nothing sets it: the Settings checkboxes are M7.
+That is deliberate: adding "notify me when my pull request reaches production" later means
+writing a `UserNotificationSink` and registering it, with no change to core, to the panel,
+or to the bus.
 
 Almost none of *what* it shows is decided in this package. `PRStackCore`'s presentation
 layer resolves every row down to a title, an emphasis tier, a semantic tone, a meta line
@@ -106,10 +125,11 @@ Not here yet:
 - **Sync** (M8). `PanelController` polls on open and on demand. There is no interval
   table, no sleep or battery awareness, no backoff.
 - **Interactions and persistence** (M7). `Mark all read`, dismiss and `Clear all` work,
-  but only in memory — quitting forgets them. The hovered-row keyboard actions and the
-  Settings window are M7 too; `Settings` currently explains where the token is read from.
-- **The icon's four states** (M4). The SF Symbol is still a stand-in, and opening the
-  panel does not yet clear unread.
+  but only in memory — quitting forgets them, which is also why unread survives nothing
+  yet: the read digests that carry it across a relaunch have no store until M7. The
+  hovered-row keyboard actions and the Settings window are M7 too — including the
+  checkboxes that would bind to `EventPreferences`; `Settings` currently explains where
+  the token is read from.
 - **Project headings from Linear** (M5). Until then every row groups under `Other`,
   because nothing populates `linearIssues`.
 

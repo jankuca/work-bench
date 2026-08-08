@@ -1,25 +1,32 @@
 import AppKit
 import SwiftUI
+import PRStackCore
 
 /// Owns the menu bar item and the popover attached to it.
 ///
 /// `NSStatusItem` + `NSPopover` rather than `MenuBarExtra`, per
-/// docs/IMPLEMENTATION_PLAN.md §1: M4 needs per-frame control of the icon (badge count
-/// drawn into the image, dashed disconnected glyph) and predictable popover dismissal,
-/// and `MenuBarExtra(.window)` makes both awkward.
+/// docs/IMPLEMENTATION_PLAN.md §1: the icon is drawn per state — badge count composited
+/// into the image, dashed disconnected glyph — and the popover's dismissal has to be
+/// predictable. `MenuBarExtra(.window)` makes both awkward.
 ///
-/// ``makeIcon()`` becomes the drawn four-state glyph at M4.
+/// What the icon shows is decided in core (``IconState``) and drawn by ``StatusItemIcon``.
+/// This class only routes: it is the ``IconPresenter`` the event bus's one sink pushes to.
 @MainActor
 final class StatusItemController: NSObject {
     private let statusItem: NSStatusItem
     private let popover: NSPopover
     private let controller: PanelController
+    private let events: EventBus
 
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         popover = NSPopover()
-        controller = PanelController(source: GitHubPanelSource())
+        events = EventBus()
+        controller = PanelController(source: GitHubPanelSource(), events: events)
         super.init()
+        // One sink today, and the list is what makes a `UserNotificationSink` a drop-in
+        // later (IMPLEMENTATION_PLAN §1). Registered before anything can publish.
+        events.register(IconSink(presenter: self))
         configure()
     }
 
@@ -35,11 +42,17 @@ final class StatusItemController: NSObject {
         popover.delegate = self
 
         guard let button = statusItem.button else { return }
-        button.image = StatusItemController.makeIcon()
         button.imagePosition = .imageOnly
         button.target = self
         button.action = #selector(togglePopover(_:))
-        button.setAccessibilityLabel("Pull requests")
+        // Nothing has been derived yet, so the honest first frame is the first-run one:
+        // not connected, nothing verified, dashed.
+        show(.disconnected)
+
+        // One poll at launch, so the icon means something before the panel has ever been
+        // opened. This is not the scheduler: the interval table, sleep and battery are
+        // M8, and they replace this call rather than being bolted onto it.
+        controller.refresh()
     }
 
     @objc private func togglePopover(_ sender: Any?) {
@@ -58,16 +71,18 @@ final class StatusItemController: NSObject {
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         controller.panelDidOpen()
     }
+}
 
-    /// A template SF Symbol stands in until M4 draws the glyph and its four states.
-    /// Template rendering is what makes it invert correctly on dark menu bars.
-    private static func makeIcon() -> NSImage? {
-        let image = NSImage(
-            systemSymbolName: "square.stack.3d.up",
-            accessibilityDescription: "Pull requests"
-        )
-        image?.isTemplate = true
-        return image
+extension StatusItemController: IconPresenter {
+    /// The one place an ``IconState`` becomes something on screen.
+    func show(_ state: IconState) {
+        guard let button = statusItem.button else { return }
+        button.image = StatusItemIcon.image(for: state)
+        // The badge is drawn into the image, so it is not an accessibility element of its
+        // own — the button's label has to carry the state or VoiceOver reads a bare
+        // "Pull requests" whatever the icon says.
+        button.setAccessibilityLabel(state.accessibilityLabel)
+        button.toolTip = state.accessibilityLabel
     }
 }
 
