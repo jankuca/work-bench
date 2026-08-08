@@ -593,8 +593,8 @@ Linear source is marked stale.
   unbound merges come back from the next poll — except a merge older than the query's 14-day cold-start floor,
   which stays stranded (§3). `readDigests` and `snoozedUntil` are local-only: a lost digest set costs one burst
   of false unread and self-corrects at the next open, and a lost snooze just wakes its row early. Dismissal
-  tombstones are the unbounded loss — nothing re-derives them, so every pull request the user has ever cleared
-  comes back.
+  tombstones are the one loss nothing re-derives: every dismissed pull request the queries still return —
+  anything still open, and merges inside the window — stops being suppressed, and the set cannot be rebuilt.
 - Keychain (generic password, one item per service) — GitHub token, Linear key.
 - `UserDefaults` — repo scope mode + selected repos, **per-repo tag pattern map** (`nameWithOwner` → glob,
   default `v*`), poll intervals, launch-at-login, per-event sink toggles. M6 reads the tag pattern map
