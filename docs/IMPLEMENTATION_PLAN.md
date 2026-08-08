@@ -592,9 +592,23 @@ Linear source is marked stale.
 - `~/Library/Application Support/PRStackMonitor/state.json` — dismissed set, snooze deadlines, read
   digests, PR→tag bindings, **unbound merged PRs with their merge commit and `mergedAt`**, Linear project
   cache, per-source last successful sync. Atomic writes, schema-versioned.
+  The store that writes this file lands in **M6**, not M7 — see §7.
+  **One writer.** `LocalState` is a single value owned by the main actor and written whole, so the release
+  tracker hands its bindings back to be merged there rather than writing the file from its own task — two
+  writers holding partial copies is how a dismissal disappears behind a binding. A file that fails to decode,
+  or carries a schema version this build does not know, is **renamed aside** — `state.corrupt-<stamp>.json` —
+  before the app starts from empty. Same forgiving spirit as the per-key policy in `LocalState.init(from:)`,
+  but a whole-file failure has to move the original out of the way first: starting from empty and then saving
+  over the file in place would destroy state nothing else can supply. Only part of it re-derives. Bindings and
+  unbound merges come back from the next poll — except a merge older than the query's 14-day cold-start floor,
+  which stays stranded (§3). `readDigests` and `snoozedUntil` are local-only: a lost digest set costs one burst
+  of false unread and self-corrects at the next open, and a lost snooze just wakes its row early. Dismissal
+  tombstones are the one loss nothing re-derives: every dismissed pull request the queries still return —
+  anything still open, and merges inside the window — stops being suppressed, and the set cannot be rebuilt.
 - Keychain (generic password, one item per service) — GitHub token, Linear key.
 - `UserDefaults` — repo scope mode + selected repos, **per-repo tag pattern map** (`nameWithOwner` → glob,
-  default `v*`), poll intervals, launch-at-login, per-event sink toggles.
+  default `v*`), poll intervals, launch-at-login, per-event sink toggles. M6 reads the tag pattern map
+  directly, with `v*` as the default; M7 adds the editor for it.
 
 ---
 
@@ -847,13 +861,35 @@ Each is independently demoable. Estimates assume one engineer working in focused
 | **M3** | Panel UI | Tokens, `PRRow`, spine, sections, header/footer, needs-attention + all-clear states | Panel is pixel-comparable to 2a against real data |
 | **M4** | Icon + unread + events | Status item drawing (4 states, disconnected outranking), effective-state event diffing against `previous`, `EventSink` bus, digest-based unread, open/mark-all-read | Icon tracks the priority table, and an expired GitHub token shows dashed rather than a cached badge; a relaunch emits no events but preserves unread |
 | **M5** | Linear grouping | Multi-identifier extraction, primary-issue selection, per-identifier `issue(id:)` resolution, cache, `Other` fallback | Rows group under real project headings; a multi-ticket PR shows `+N` and groups under its primary; a Linear outage keeps cached headings and marks the source stale |
-| **M6** | Release tracking | Merge-commit capture, unbound-merge persistence, paginated tag polling by per-repo pattern, containment via `compare` with durable negatives and a per-poll budget, binding cache, third segment + Done section | A merged PR flips to shipped when a matching tag appears — including a tag cut weeks later, and one found past the first page |
-| **M7** | Interactions & persistence | Click-through, issue link, dismiss, `Clear all`, snooze, refresh, hovered-row keyboard actions with monitor teardown, Settings (tokens, repo scope, per-repo tag pattern) | Every row in PRD §8 works by pointer *and* by key; ten open/close cycles fire each action exactly once; state survives relaunch |
+| **M6** | Release tracking & persistence | The `state.json` store (atomic, schema-versioned), merge-commit capture, unbound-merge persistence, paginated tag polling by per-repo pattern, containment via `compare` with durable negatives and a per-poll budget, binding cache, third segment + Done section | A merged PR flips to shipped when a matching tag appears — including a tag cut weeks later, and one found past the first page; the binding, and everything else in `LocalState`, survives a relaunch |
+| **M7** | Interactions & settings | Click-through, issue link, dismiss, `Clear all`, snooze, refresh, hovered-row keyboard actions with monitor teardown, Settings (tokens, repo scope, per-repo tag pattern editor, per-event toggles) | Every row in PRD §8 works by pointer *and* by key; ten open/close cycles fire each action exactly once; a dismissal and a snooze set before a relaunch are still in force after it |
 | **M8** | Sync & resilience | Ordered interval table, display *and* system sleep, battery, staleness, per-source connection state and reconnect banners, backoff | Laptop sleeps overnight and wakes to correct, visibly-fresh state; an expired Linear key leaves GitHub rows intact |
 | **M9** | Polish | Dark appearance, accessibility pass, long-list scroll performance | VoiceOver reads each row's state; contrast and reduced-colour verified; 25-PR fixture scrolls at 60fps |
 
 M0–M4 is the useful core: an app that tells you when something needs you. M6 is the other half of the
 product's promise and shouldn't slip past M8.
+
+### Why persistence sits in M6 rather than M7
+
+The milestones run in the order above, sequentially. The one adjustment against the obvious reading is that
+the `state.json` store belongs to **M6**, even though the rest of what it holds — dismissals, snoozes, read
+digests — is M7's material.
+
+M6's headline behaviour requires it. "A tag cut weeks later still binds" means the unbound merge has to
+survive relaunches, and the merged-PR query's lower bound is *dynamic*: it starts at the oldest unbound
+merged PR still in local state (§3). Without a store, every launch falls back to the 14-day default, the
+unbound merge ages out of the query, its merge commit is lost, and the row strands at
+`merged · awaiting release` permanently — the exact failure the dynamic bound exists to prevent. Durable
+`comparedTags` degrades more gently, costing rate limit rather than data, but it wants the same file.
+
+So M6 builds the store and persists what it needs; M7 writes its own keys through the store that already
+exists. Nothing else moves. In particular the **Settings window stays in M7**: the per-repo tag pattern is a
+`UserDefaults` map with `v*` as the default, so M6 reads the key and M7 adds the editor. Confirm early that
+the target repos actually tag `v*` (§8) — without the editor, that assumption is what keeps M6 demoable.
+
+One consequence for scheduling: M6 and M7 cannot be built in parallel *until* the store lands, since both
+write `LocalState` and its `Codable`. Once it has, the remainder of M7 is pure app-layer work — panel views,
+row affordances, the hover key monitor — and touches neither `GitHubKit` nor `PRStackCore`.
 
 ---
 

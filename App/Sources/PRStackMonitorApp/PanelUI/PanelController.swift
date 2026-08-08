@@ -130,8 +130,9 @@ final class PanelController: ObservableObject {
 
     // MARK: - Actions
 
-    /// In memory only at M3. Persisting these, and reaching them from the keyboard, is
-    /// M7 — which is also where `LocalState` gets a store to be written to.
+    /// In memory only at M3. `LocalState` gets the store that makes these survive a
+    /// relaunch at M6, which needs it for unbound merges; reaching them from the keyboard
+    /// is M7.
     func markAllRead() {
         local.markAllRead(in: snapshot)
         // Unlike opening, this one is asked for explicitly, so the dots go now rather than
