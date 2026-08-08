@@ -46,6 +46,16 @@ Live GitHub
                         `-`. The file is dumpable again, so a live fetch can become a
                         fixture once it has been anonymised.
 
+Linear (with --github)
+
+  --linear-token <v>    The Linear API key. Otherwise $PRSTACK_LINEAR_KEY, then
+                        $LINEAR_API_KEY, then the login keychain on macOS.
+  --no-linear           Skip resolution entirely. Every row falls under `Other`, which is
+                        what the panel looks like with no Linear key configured.
+  --linear-cache <p>    Read and write the identifier → project cache at <p>. Without it
+                        the cache is in memory and every run resolves from scratch; with
+                        it, running twice shows the second run answering from cache.
+
 Both
 
   --now <timestamp>     Override the clock. Snooze expiry and everything else
@@ -69,6 +79,9 @@ struct DumpOptions {
     var token: String?
     var emitSnapshotPath: String?
     var rendersPresentation = false
+    var linearToken: String?
+    var linearCachePath: String?
+    var resolvesLinear = true
 
     /// No `--repo` means every repository, which is the `all` mode from
     /// IMPLEMENTATION_PLAN §3 rather than an empty selection.
@@ -121,6 +134,12 @@ struct DumpOptions {
                 options.pointBudget = try nextInt("--point-budget")
             case "--token":
                 options.token = try next("--token")
+            case "--linear-token":
+                options.linearToken = try next("--linear-token")
+            case "--linear-cache":
+                options.linearCachePath = try next("--linear-cache")
+            case "--no-linear":
+                options.resolvesLinear = false
             case "--emit-snapshot":
                 options.emitSnapshotPath = try next("--emit-snapshot")
             case "--presentation":
@@ -162,7 +181,12 @@ struct DumpOptions {
                 options.repositories.isEmpty ? nil : "--repo",
                 options.qualifiers.isEmpty ? nil : "--qualifier",
                 options.token == nil ? nil : "--token",
-                options.emitSnapshotPath == nil ? nil : "--emit-snapshot"
+                options.emitSnapshotPath == nil ? nil : "--emit-snapshot",
+                options.linearToken == nil ? nil : "--linear-token",
+                options.linearCachePath == nil ? nil : "--linear-cache",
+                // A fixture carries its issues already resolved, so there is nothing for
+                // this to switch off — quietly accepting it would suggest otherwise.
+                options.resolvesLinear ? nil : "--no-linear"
             ].compactMap { $0 }
             if !liveOnly.isEmpty {
                 throw DumpFailure("\(liveOnly.joined(separator: ", ")) only applies with --github")

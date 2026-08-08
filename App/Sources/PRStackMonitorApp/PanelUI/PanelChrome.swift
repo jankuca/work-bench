@@ -146,6 +146,15 @@ struct PanelFooterView: View {
                 .font(Tokens.text(11))
                 .foregroundStyle(Tokens.textTertiary.color)
                 .help(footer.detail ?? footer.syncText)
+            if let note = footer.linearNote {
+                // Tertiary and unaccented on purpose. Linear being down does not make the
+                // rows wrong, only their headings possibly behind, so it reads as a
+                // footnote rather than as the amber the sync dot uses (§4).
+                Text("· " + note)
+                    .font(Tokens.text(11))
+                    .foregroundStyle(Tokens.textTertiary.color)
+                    .help(footer.detail ?? note)
+            }
             Spacer(minLength: 0)
             if footer.showsMarkAllRead {
                 Button("Mark all read", action: onMarkAllRead)

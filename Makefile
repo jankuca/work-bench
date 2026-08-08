@@ -18,14 +18,20 @@ BUNDLE       := build/$(APP_NAME).app
 # PRStackMonitor/Tests/PRStackCoreTests/Fixtures works.
 FIXTURE ?= panel-2a
 
-# `make fetch` talks to GitHub. REPOS empty means the All scope; listing repositories
-# switches to Selected. PAGE_SIZE is deliberately exposed: setting it low is how you watch
-# pagination run past the first page on an account that does not have 50 open pull
-# requests. Credentials come from $PRSTACK_GITHUB_TOKEN, then $GITHUB_TOKEN, then the
-# login keychain.
+# `make fetch` talks to GitHub and then to Linear. REPOS empty means the All scope; listing
+# repositories switches to Selected. PAGE_SIZE is deliberately exposed: setting it low is
+# how you watch pagination run past the first page on an account that does not have 50 open
+# pull requests. Credentials come from $PRSTACK_GITHUB_TOKEN / $PRSTACK_LINEAR_KEY, then
+# $GITHUB_TOKEN / $LINEAR_API_KEY, then the login keychain.
+#
+# LINEAR_CACHE points the identifier → project cache at a file, so running `make fetch`
+# twice shows the second run answering from cache. NO_LINEAR=1 skips resolution entirely,
+# which is what the panel looks like with no Linear key configured.
 REPOS ?=
 PAGE_SIZE ?= 50
 EMIT ?=
+LINEAR_CACHE ?=
+NO_LINEAR ?=
 
 # Ask SwiftPM where it put the binary rather than assuming `.build/$(CONFIGURATION)`.
 # That path is an internal detail — it varies by architecture and by build system, and
@@ -50,7 +56,7 @@ help:
 	@echo "make test       run the portable core's tests"
 	@echo "make dump       derive a fixture and print the panel (FIXTURE=$(FIXTURE))"
 	@echo "make panel      same fixture, rendered as the row view reads it"
-	@echo "make fetch      derive live GitHub data (REPOS='o/a o/b' PAGE_SIZE=$(PAGE_SIZE))"
+	@echo "make fetch      derive live GitHub + Linear data (REPOS='o/a o/b' PAGE_SIZE=$(PAGE_SIZE))"
 	@echo "make clean      remove build products"
 
 build:
@@ -120,7 +126,9 @@ fetch:
 	@swift run --package-path $(CORE_PACKAGE) prstack-dump --github \
 		--page-size $(PAGE_SIZE) \
 		$(foreach repo,$(REPOS),--repo $(repo)) \
-		$(if $(EMIT),--emit-snapshot $(EMIT),)
+		$(if $(EMIT),--emit-snapshot $(EMIT),) \
+		$(if $(LINEAR_CACHE),--linear-cache $(LINEAR_CACHE),) \
+		$(if $(NO_LINEAR),--no-linear,)
 
 clean:
 	rm -rf build

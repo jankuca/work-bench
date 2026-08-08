@@ -1,30 +1,5 @@
 import Foundation
-
-/// One error returned in a GraphQL response's `errors` array.
-///
-/// GitHub answers `200` with a partly-filled `data` and a populated `errors` for a
-/// surprising number of conditions, so these have to survive as far as the caller rather
-/// than being flattened into a generic failure.
-public struct GraphQLError: Decodable, Equatable, Sendable, CustomStringConvertible {
-    public var message: String
-    /// GitHub's own classification — `RATE_LIMITED`, `NOT_FOUND`, `FORBIDDEN`, …
-    public var type: String?
-
-    public init(message: String, type: String? = nil) {
-        self.message = message
-        self.type = type
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case message
-        case type
-    }
-
-    public var description: String {
-        guard let type else { return message }
-        return "\(type): \(message)"
-    }
-}
+import NetKit
 
 public enum GitHubError: Error, Equatable, CustomStringConvertible {
     /// No token configured at all — the first-run state, not a failure to authenticate.

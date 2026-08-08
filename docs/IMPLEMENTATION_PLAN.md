@@ -34,17 +34,19 @@ be a signing-settings change plus enabling notifications, not a refactor.
 
 ### Environment note
 
-The repo currently has no Swift toolchain available in CI (Linux container, no `swift`). The plan
-deliberately keeps all non-UI logic in platform-neutral Swift modules so they *can* be compiled and tested
-on Linux once a toolchain is installed — see §6.
+CI is a Linux container with a Swift toolchain, and it builds and tests every portable module on every
+push. The plan deliberately keeps all non-UI logic in platform-neutral Swift modules so that this is
+possible; only the AppKit shell needs a Mac — see §6.
 
 ---
 
 ## 1. Architecture
 
-Six modules. Three of them — `PRStackCore`, `GitHubKit`, `LinearKit`, drawn at the bottom of the diagram —
-are pure Swift (Foundation only, no AppKit) and build and test off-device. `PanelUI` and `SyncEngine` are
-macOS-only and are the CI boundary: they compile on a Mac, not in a Linux container.
+Seven modules, counting `NetKit` (added at M5, see below). Four of them — `PRStackCore`, `NetKit`,
+`GitHubKit`, `LinearKit`, drawn at the bottom of the diagram — are pure Swift (Foundation only, no AppKit)
+and build and test off-device. `NetKit` counts as portable: its one macOS-specific file, the Keychain store,
+is fenced behind `canImport(Security)` rather than split out. `PanelUI` and `SyncEngine` are macOS-only and
+are the CI boundary: they compile on a Mac, not in a Linux container.
 
 ```text
 PRStackMonitor.app  (AppKit shell: NSStatusItem, NSPopover, SwiftUI views)
@@ -54,8 +56,16 @@ PRStackMonitor.app  (AppKit shell: NSStatusItem, NSPopover, SwiftUI views)
         │
         ├── GitHubKit          GraphQL + REST clients, DTOs           (portable)
         ├── LinearKit          GraphQL client, issue→project          (portable)
+        ├── NetKit             HTTP transport, GraphQL envelope, credentials  (portable)
         └── PRStackCore        domain model + all derivation logic    (portable, no I/O)
 ```
+
+`NetKit` was added at M5 and is the one module here that is not a layer of the product. The
+two service kits are siblings, and both need the same cancellation-aware transport behind a
+stubable protocol, the same `{ data, errors }` envelope, and the same credential providers.
+Duplicating the transport in both would let two subtle copies diverge; having `LinearKit`
+import `GitHubKit` for it would invert the layering. It holds **no policy** — every rule
+about status codes, rate limits and retries stays in the kit that owns the API.
 
 `PRStackCore` owns every decision the UI renders: what a row's status is, what the icon shows, what counts
 as unread, how stacks are ordered. It takes snapshots in and produces a `PanelModel` out. It performs no
@@ -804,6 +814,13 @@ added without disturbing anything else.
   `release-annotated-tag-on-older-commit`, `pr-body-only-identifier`, and the two closed PR variants from the
   precedence table. Rollback-after-Done is not fixtured — it's undetectable under
   tags-only tracking (§3).
+  Three of these are **not** derivation inputs and live in `LinearKitTests` instead, by the
+  rule the rest of the suite follows — a case belongs where the decision it pins is made.
+  `linear-cross-team-number-collision` and `linear-resolve-order-cache-vs-fresh` are about
+  the query and the resolver, and `pr-body-only-identifier` is about the scan; a derivation
+  fixture for any of them would only re-state its own `linearIssues` back at itself, since
+  fixtures arrive already resolved. Each still runs its resolved pull requests through
+  `derive` and asserts the section, so the panel-level consequence is pinned too.
 - **Golden panel models.** Assert the full derived `PanelModel` against a checked-in snapshot — catches
   ordering regressions, which are the ones a human reviewer will miss.
 - **Invariant tests.** Attention ⇒ tinted ⇒ non-green icon. Section order stable across re-derivation with
@@ -813,8 +830,8 @@ added without disturbing anything else.
 - **Event diffing** — assert the exact `[DomainEvent]` emitted between two consecutive snapshots. This is
   what a future notification sink depends on, so it's worth pinning before the sink exists.
 - **HTTP layer** via a `URLProtocol` stub; no network in tests.
-- **CI**: `swift test` on the three portable modules. These need no macOS, so they can run in this repo's
-  Linux container once a toolchain is added; the AppKit target builds on a Mac only.
+- **CI**: `swift test` on the four portable modules. These need no macOS, so they run in this repo's Linux
+  container; the AppKit target builds on a Mac only.
 
 ---
 
@@ -865,14 +882,17 @@ release" indefinitely, which per PRD §10 is quiet by design and not an error st
 
 ```text
 PRStackMonitor/
-  Package.swift                 # PRStackCore, GitHubKit, LinearKit (+ tests)
+  Package.swift                 # PRStackCore, NetKit, GitHubKit, LinearKit (+ tests)
   Sources/
     PRStackCore/                # models, derivation, ordering, unread, snooze
+    NetKit/                     # HTTP transport, GraphQL envelope, credentials
     GitHubKit/                  # GraphQL + REST, DTOs, rate limiting
-    LinearKit/                  # issue → project
+    LinearKit/                  # identifier scan, issue → project, cache
   Tests/
     PRStackCoreTests/           # fixtures + golden panel models
+    NetKitTests/                # transport seam and credential providers
     GitHubKitTests/             # URLProtocol-stubbed
+    LinearKitTests/             # scan, batched resolution, cache, outage
   App/
     PRStackMonitor.xcodeproj    # signing: "Sign to Run Locally", team: None
     Sources/

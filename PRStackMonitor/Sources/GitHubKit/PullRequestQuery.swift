@@ -1,4 +1,5 @@
 import Foundation
+import NetKit
 
 /// The one search query per poll (IMPLEMENTATION_PLAN §3), paginated to completion.
 enum PullRequestQuery {

@@ -6,11 +6,25 @@ for the whole design; this README covers only how to work in this package.
 | Target | Milestone | Notes |
 | --- | --- | --- |
 | `PRStackCore` | M1, M3, M4 | Domain model and all derivation logic, plus the presentation layer the panel view reads, the event diff, and the menu bar icon's state machine. Foundation only, no I/O, no clock reads |
-| `GitHubKit` | M2 | GraphQL + REST clients, DTOs, rate limiting. One macOS-only file, fenced |
-| `LinearKit` | M5 | Not yet present |
-| `prstack-dump` | M1–M2 | Debug tool: derive a fixture, or a live GitHub poll, and print the panel |
+| `NetKit` | M5 | The seam under both service kits: HTTP transport, GraphQL envelope, credential providers. One macOS-only file, fenced. No policy |
+| `GitHubKit` | M2 | GraphQL + REST clients, DTOs, rate limiting |
+| `LinearKit` | M5 | Identifier scan, batched `issue(id:)` resolution, the project cache |
+| `prstack-dump` | M1–M5 | Debug tool: derive a fixture, or a live GitHub + Linear poll, and print the panel |
 
 The AppKit shell (`App/`) is a separate Swift package and is not part of this one.
+
+### Why `NetKit` exists
+
+It is not one of the plan's six modules. `GitHubKit` and `LinearKit` are drawn as siblings
+(§1), and both need the same three things: a cancellation-aware `URLSession` wrapper behind
+a stubable protocol, the `{ data, errors }` envelope, and somewhere for a pasted credential
+to come from. The alternatives were duplicating that transport in both — it is subtle
+enough that two copies would diverge — or having `LinearKit` import `GitHubKit`, which
+inverts the layering for a `URLRequest`.
+
+`NetKit` holds **no policy**. Every rule about what a status code means, what a rate limit
+costs, or when to retry lives in the kit that owns the API. That is what keeps it from
+quietly becoming a third service.
 
 ## Running the tests
 
@@ -20,7 +34,7 @@ swift test
 ```
 
 No macOS required — nothing here has an AppKit dependency, which is what lets CI run it in
-a Linux container. `GitHubKit/KeychainTokenStore.swift` is the one file that needs Apple's
+a Linux container. `NetKit/KeychainTokenStore.swift` is the one file that needs Apple's
 `Security` framework, and it is fenced behind `#if canImport(Security)` rather than split
 into its own module.
 
@@ -126,3 +140,49 @@ panel. Stopping short is normal and always reported: `pageCap`, `pointBudget` an
 `--emit-snapshot` writes the fetched snapshot in the fixture shape above, so a live poll
 can be replayed offline. **Anonymise it before committing it** — a raw one carries real
 repository names, branch names and pull request titles.
+
+## Talking to Linear
+
+Linear runs after GitHub in the same poll — sequential, not parallel, because on a cold
+start there are no identifiers to resolve until GitHub has answered:
+
+```sh
+export PRSTACK_LINEAR_KEY=lin_api_…             # or store it in the login keychain
+
+swift run prstack-dump --github                        # rows group under real projects
+swift run prstack-dump --github --no-linear            # everything falls to Other
+swift run prstack-dump --github --linear-cache /tmp/linear.json   # run twice to see it cache
+swift run prstack-dump --github --presentation --linear-token bad # `Linear stale` in the footer
+```
+
+The key is a **personal API key** from Linear → Settings → API, used read-only. It goes in
+`Authorization` bare — the `Bearer` prefix is for OAuth tokens, and sending it with a
+personal key is answered with an authentication error.
+
+What the diagnostics on stderr report is the shape of the work: how many issues were
+attached, how many came from cache, how many were fetched, and every identifier Linear did
+not recognise. That last line is expected to be non-empty — see below.
+
+### Identifiers that are not identifiers
+
+The scan cannot tell `UTF-8`, `SHA-256` or `RELEASE-2026` from a real team key; they have
+the same shape, and only the workspace's team list settles it. So they are scanned, asked
+about once, and answered "no such issue" — which is **cached**, negatively, so the same
+junk identifier is never re-queried. An identifier with nothing behind it is dropped from
+the row entirely: it never reaches the meta line, and it never affects which project the
+row is grouped under.
+
+The alternative was a hard-coded deny list that goes stale, or a length cap on team keys
+that Linear does not actually publish.
+
+### The project cache
+
+`LinearProjectCache` maps identifier → issue, is refreshed once a day, and is kept
+**indefinitely**. Those are two different things and the distinction is load-bearing: the
+refresh interval decides what gets re-asked, never what gets used. A Linear outage leaves
+every cached heading in place and only marks the source stale in the footer — it must never
+make project sections appear to empty out.
+
+It lives in its own file for now
+(`~/Library/Application Support/PRStackMonitor/linear-cache.json`). The plan puts it inside
+`state.json`, and M7 — where the rest of `LocalState` gains a store — is where it moves.

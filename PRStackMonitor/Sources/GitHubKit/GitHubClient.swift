@@ -1,4 +1,5 @@
 import Foundation
+import NetKit
 import PRStackCore
 
 /// Why a fetch stopped paginating.
@@ -83,8 +84,13 @@ public struct PullRequestFetch: Equatable, Sendable {
         self.warnings = warnings
     }
 
-    /// What ``PRStackCore`` derives from. Linear resolution (M5) fills in `linearIssues`
-    /// between here and there.
+    /// What ``PRStackCore`` derives from, **before** Linear resolution.
+    ///
+    /// Every `linearIssues` here is empty. `LinearKit.LinearResolver` fills them in between
+    /// this and derivation, so the live callers build their snapshot from
+    /// `resolution.pullRequests` rather than from this. It remains because a GitHub-only
+    /// poll is still a valid panel — that is what the app shows with no Linear key — and
+    /// because the tests derive from it directly.
     public var snapshot: RawSnapshot {
         RawSnapshot(viewerLogin: viewerLogin, pullRequests: pullRequests)
     }

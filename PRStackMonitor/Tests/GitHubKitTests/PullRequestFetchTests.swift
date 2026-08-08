@@ -1,4 +1,5 @@
 import Foundation
+import NetKit
 import PRStackCore
 import XCTest
 @testable import GitHubKit

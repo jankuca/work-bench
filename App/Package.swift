@@ -25,7 +25,9 @@ let package = Package(
             name: "PRStackMonitorApp",
             dependencies: [
                 .product(name: "PRStackCore", package: "PRStackMonitor"),
-                .product(name: "GitHubKit", package: "PRStackMonitor")
+                .product(name: "NetKit", package: "PRStackMonitor"),
+                .product(name: "GitHubKit", package: "PRStackMonitor"),
+                .product(name: "LinearKit", package: "PRStackMonitor")
             ]
         )
     ]

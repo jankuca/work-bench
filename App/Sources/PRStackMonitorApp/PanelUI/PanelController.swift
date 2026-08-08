@@ -2,6 +2,8 @@ import AppKit
 import Combine
 import SwiftUI
 import GitHubKit
+import LinearKit
+import NetKit
 import PRStackCore
 
 /// What the panel is bound to: one snapshot, the local state over it, and the health of
@@ -104,10 +106,13 @@ final class PanelController: ObservableObject {
         switch outcome {
         case .cancelled:
             break
-        case .fetched(let fetched):
+        case .fetched(let fetched, let linear):
             snapshot = fetched
             status.github = .connected
             status.lastSyncedAt = clock()
+            // Nil means the Linear half learned nothing this poll, so the footer keeps
+            // whatever it was already saying rather than being reset to healthy.
+            if let linear { status.linear = linear }
             // A poll that lands while the panel is open has been seen, so it is read.
             // `digestsWhileOpen` stays frozen at the open, so the dots for it still appear
             // on screen — what this clears is the menu bar, which would otherwise light up
@@ -164,6 +169,9 @@ final class PanelController: ObservableObject {
         alert.informativeText = """
         Until then PRStackMonitor reads its GitHub token from $PRSTACK_GITHUB_TOKEN, then \
         $GITHUB_TOKEN, then the login keychain under \(KeychainTokenStore.defaultService).
+
+        The Linear API key comes from $PRSTACK_LINEAR_KEY, then $LINEAR_API_KEY, then the \
+        same keychain. Without one, every row is grouped under Other.
         """
         alert.alertStyle = .informational
         alert.runModal()
@@ -220,7 +228,15 @@ final class PanelController: ObservableObject {
 
 /// What one poll produced.
 enum PollOutcome: Sendable {
-    case fetched(RawSnapshot)
+    /// The snapshot, plus what the poll learned about Linear.
+    ///
+    /// Linear health is nil when the poll learned nothing about it: no request was sent —
+    /// nothing to resolve, or every identifier already cached — or the one that was sent
+    /// was cancelled. The footer then keeps whatever it was already saying, rather than
+    /// being reset to healthy by a poll that never checked.
+    case fetched(RawSnapshot, linear: SourceHealth?)
+    /// GitHub failed. Linear is not reported here: this poll never got far enough to ask
+    /// it, and marking it stale for GitHub's failure would blame the wrong source.
     case failed(SourceHealth)
     /// The panel closed mid-poll. Distinct from a failure: nothing is known to be wrong,
     /// so neither the banner nor the footer should claim anything.
@@ -234,20 +250,41 @@ protocol PanelSource: Sendable {
 }
 
 /// One GraphQL poll, mapped to an outcome the panel can render.
+///
+/// Two requests, in that order: GitHub for the pull requests, then Linear for the issues
+/// the identifiers in them name. Sequential rather than parallel because on a cold start
+/// there are no identifiers to resolve until GitHub has answered (IMPLEMENTATION_PLAN §1).
 struct GitHubPanelSource: PanelSource {
     var scope: RepoScope = .all
 
+    /// One transport for the life of the source, shared by both requests.
+    ///
+    /// Not per poll. Each `URLSession` brings its own connection pool that outlives the
+    /// object, so building one per poll — at 30 s with the panel open, 120 an hour — leaks
+    /// pools rather than reusing connections. Apple's guidance is explicit about reusing a
+    /// session, and the panel controller holds this source for its whole life.
+    let transport = URLSessionTransport.standard()
+
     func load() async -> PollOutcome {
         let client = GitHubClient(
-            transport: URLSessionTransport.standard(),
-            tokenProvider: FirstAvailableTokenProvider([
-                EnvironmentTokenProvider(),
-                KeychainTokenStore(account: .github)
-            ])
+            transport: transport,
+            tokenProvider: CredentialChain.standard(
+                environment: .github(),
+                keychain: .github,
+                service: "GitHub"
+            )
         )
 
         do {
-            return .fetched(try await client.fetchPullRequests(scope: scope).snapshot)
+            let fetch = try await client.fetchPullRequests(scope: scope)
+            // Linear never fails the poll. It cannot: every row is already complete without
+            // it, and losing it costs only the project headings for identifiers that have
+            // never been cached (IMPLEMENTATION_PLAN §4).
+            let resolution = await LinearPanelSource.resolve(fetch.pullRequests, over: transport)
+            return .fetched(
+                RawSnapshot(viewerLogin: fetch.viewerLogin, pullRequests: resolution.pullRequests),
+                linear: resolution.health
+            )
         } catch is CancellationError {
             return .cancelled
         } catch let error as URLError where error.code == .cancelled {
@@ -266,6 +303,46 @@ struct GitHubPanelSource: PanelSource {
         } catch {
             return .failed(.unreachable(error.localizedDescription))
         }
+    }
+}
+
+/// The Linear half of a poll, and where its cache lives.
+enum LinearPanelSource {
+    /// Shares the caller's transport — see ``GitHubPanelSource/transport``. The two
+    /// integrations talk to different hosts, so they do not contend for a connection, and
+    /// one session for the app is what the pooling is for.
+    static func resolve(
+        _ pullRequests: [PullRequest],
+        over transport: any HTTPTransport
+    ) async -> LinearResolution {
+        let resolver = LinearResolver(
+            client: LinearClient(
+                transport: transport,
+                tokenProvider: CredentialChain.standard(
+                    environment: .linear(),
+                    keychain: .linear,
+                    service: "Linear"
+                )
+            ),
+            store: FileLinearProjectCacheStore(url: cacheURL)
+        )
+        return await resolver.resolve(pullRequests: pullRequests, now: Date())
+    }
+
+    /// `~/Library/Application Support/PRStackMonitor/linear-cache.json`.
+    ///
+    /// Its own file for now. IMPLEMENTATION_PLAN §3 puts the Linear project cache inside
+    /// `state.json`, and M7 — which is where the rest of `LocalState` gains a store — is
+    /// where it moves. Writing it there today would mean inventing the state file's
+    /// reader, writer and schema version a milestone early, for the one field that already
+    /// knows how to look after itself.
+    private static var cacheURL: URL {
+        let base = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        return base
+            .appendingPathComponent("PRStackMonitor", isDirectory: true)
+            .appendingPathComponent("linear-cache.json")
     }
 }
 

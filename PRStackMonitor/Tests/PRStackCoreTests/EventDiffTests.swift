@@ -299,6 +299,25 @@ final class EventDiffTests: XCTestCase {
         XCTAssertEqual(DomainEvent.connectionEvents(from: nil, to: lost), [])
     }
 
+    /// The two sources are diffed independently. Losing Linear is a real transition — the
+    /// bus is what a notification sink would read (§1) — even though the panel's only
+    /// response to it is a footer note and the icon never moves (§4).
+    func testEachSourceIsDiffedOnItsOwn() {
+        let both = PanelStatus(github: .connected, linear: .connected)
+        let linearGone = PanelStatus(github: .connected, linear: .unauthorized("key expired"))
+        let githubGone = PanelStatus(github: .unreachable("timed out"), linear: .connected)
+        let neither = PanelStatus(github: .unreachable("timed out"), linear: .unreachable("timed out"))
+
+        XCTAssertEqual(DomainEvent.connectionEvents(from: both, to: linearGone), [.connectionLost(.linear)])
+        XCTAssertEqual(DomainEvent.connectionEvents(from: both, to: githubGone), [.connectionLost(.github)])
+        // GitHub first: it is the source the panel's contents actually depend on.
+        XCTAssertEqual(
+            DomainEvent.connectionEvents(from: both, to: neither),
+            [.connectionLost(.github), .connectionLost(.linear)]
+        )
+        XCTAssertEqual(DomainEvent.connectionEvents(from: linearGone, to: neither), [.connectionLost(.github)])
+    }
+
     // MARK: - Event metadata
 
     /// Every event carries the row it is about, except the one that is not about a row.

@@ -1,9 +1,13 @@
 import Foundation
+import NetKit
 
 /// Endpoints and the header set both clients share.
 public enum GitHubAPI {
     public static let graphQLEndpoint = URL(string: "https://api.github.com/graphql")!
     public static let restBaseURL = URL(string: "https://api.github.com")!
+
+    /// Where the dump tool and CI look for a token, in order.
+    public static let tokenEnvironmentNames = ["PRSTACK_GITHUB_TOKEN", "GITHUB_TOKEN"]
 
     /// GitHub rejects requests without one, so it is not optional decoration.
     public static let userAgent = "PRStackMonitor/1.0 (+https://github.com/jankuca/work-bench)"
@@ -77,6 +81,33 @@ public enum GitHubAPI {
         }
     }
 
+    /// Reads a credential, translating "nothing configured" into the error the panel
+    /// shows the connect prompt for. Every credentialed call goes through here.
+    static func token(from provider: any TokenProvider) throws -> String {
+        do {
+            return try provider.token()
+        } catch is MissingCredential {
+            throw GitHubError.missingToken
+        }
+    }
+
+    /// Sends `request`, translating a transport failure into a ``GitHubError`` so callers
+    /// of this package only ever have one error family to switch over.
+    ///
+    /// Cancellation is rethrown untouched: a poll cancelled by the panel closing is not a
+    /// connection failure, and the caller distinguishes the two (`PollOutcome.cancelled`).
+    static func send(_ request: HTTPRequest, over transport: any HTTPTransport) async throws -> HTTPResponse {
+        do {
+            return try await transport.send(request)
+        } catch let error as GitHubError {
+            throw error
+        } catch where Cancellation.matches(error) {
+            throw error
+        } catch {
+            throw GitHubError.transport(String(describing: error))
+        }
+    }
+
     /// GitHub's error bodies are JSON with a `message`; anything else is echoed back
     /// truncated so a stray HTML error page cannot flood a log line.
     private static func summarise(_ body: Data) -> String {
@@ -88,6 +119,19 @@ public enum GitHubAPI {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if text.isEmpty { return "no response body" }
         return text.count > 200 ? String(text.prefix(200)) + "…" : text
+    }
+}
+
+extension EnvironmentTokenProvider {
+    /// `$PRSTACK_GITHUB_TOKEN`, then `$GITHUB_TOKEN`.
+    public static func github(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> EnvironmentTokenProvider {
+        EnvironmentTokenProvider(
+            names: GitHubAPI.tokenEnvironmentNames,
+            service: "GitHub",
+            environment: environment
+        )
     }
 }
 
@@ -118,7 +162,7 @@ public struct RESTClient {
 
     /// `GET path`, sending `If-None-Match` when this path has been fetched before.
     public func get(path: String, queryItems: [URLQueryItem] = []) async throws -> RESTResult {
-        let token = try tokenProvider.token()
+        let token = try GitHubAPI.token(from: tokenProvider)
         let url = try makeURL(path: path, queryItems: queryItems)
         let key = url.absoluteString
 
@@ -127,7 +171,10 @@ public struct RESTClient {
             headers["If-None-Match"] = etag
         }
 
-        let response = try await transport.send(HTTPRequest(method: "GET", url: url, headers: headers))
+        let response = try await GitHubAPI.send(
+            HTTPRequest(method: "GET", url: url, headers: headers),
+            over: transport
+        )
         let limit = RESTRateLimit.from(response)
 
         if response.isNotModified {

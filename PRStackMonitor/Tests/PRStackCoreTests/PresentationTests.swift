@@ -354,6 +354,7 @@ final class PanelPresentationTests: XCTestCase {
     private func panel(
         _ name: String,
         github: SourceHealth = .connected,
+        linear: SourceHealth = .connected,
         syncedAgo: TimeInterval? = 34
     ) throws -> PanelPresentation {
         let fixture = try Fixtures.load(name)
@@ -361,6 +362,7 @@ final class PanelPresentationTests: XCTestCase {
             model: fixture.derive(),
             status: PanelStatus(
                 github: github,
+                linear: linear,
                 lastSyncedAt: syncedAgo.map { fixture.now.addingTimeInterval(-$0) }
             ),
             now: fixture.now
@@ -522,5 +524,47 @@ final class PanelPresentationTests: XCTestCase {
         // cached failures asserts something the app cannot currently verify, and how the
         // connection broke does not change that (§5).
         XCTAssertEqual(try panel("panel-2a", github: .unreachable("timed out")).attentionCount, 0)
+    }
+
+    // MARK: - Linear (M5)
+
+    /// Linear is a **footer condition and nothing more**. Losing it costs the panel its
+    /// project headings for identifiers it has never cached; every row still renders, with
+    /// its status, its checks and its reviewers. So: a note, never a banner, and never the
+    /// badge (IMPLEMENTATION_PLAN §4/§5).
+    func testLinearBeingUnreachableIsAFooterNoteAndNothingElse() throws {
+        let presented = try panel("panel-2a", linear: .unreachable("could not reach Linear: timed out"))
+
+        XCTAssertEqual(presented.footer.linearNote, "Linear stale")
+        XCTAssertNil(presented.banner, "Linear must never raise the reconnect banner")
+        XCTAssertEqual(presented.attentionCount, 4, "and must never touch the badge")
+        // The sync tone still reports GitHub, which is healthy. The rows are current.
+        XCTAssertEqual(presented.footer.syncTone, .success)
+        XCTAssertEqual(presented.footer.syncText, "synced 34s ago")
+        XCTAssertEqual(presented.footer.detail, "could not reach Linear: timed out")
+    }
+
+    func testAnExpiredLinearKeyReadsAsDisconnectedInTheFooter() throws {
+        let presented = try panel("panel-2a", linear: .unauthorized("Linear rejected the API key"))
+        XCTAssertEqual(presented.footer.linearNote, "Linear disconnected")
+        XCTAssertNil(presented.banner)
+    }
+
+    /// A source the user has never connected is not stale. Linear is optional, and the
+    /// panel says nothing about it until there is something to say.
+    func testAHealthyOrUnconfiguredLinearAddsNoNote() throws {
+        XCTAssertNil(try panel("panel-2a").footer.linearNote)
+        XCTAssertNil(try panel("panel-2a", linear: .unconfigured).footer.linearNote)
+    }
+
+    /// Both sources' messages reach the hover detail, GitHub first — it is the one whose
+    /// failure the rows depend on.
+    func testTheFooterDetailCarriesBothSources() throws {
+        let presented = try panel(
+            "panel-2a",
+            github: .unauthorized("bad credentials"),
+            linear: .unreachable("timed out")
+        )
+        XCTAssertEqual(presented.footer.detail, "bad credentials · timed out")
     }
 }

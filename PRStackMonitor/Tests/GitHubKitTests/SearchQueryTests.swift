@@ -1,3 +1,4 @@
+import NetKit
 import XCTest
 @testable import GitHubKit
 
