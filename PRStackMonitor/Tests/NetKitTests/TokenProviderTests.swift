@@ -73,6 +73,40 @@ final class TokenProviderTests: XCTestCase {
             XCTAssertEqual(error as? MissingCredential, MissingCredential(service: "GitHub"))
         }
     }
+
+    /// The shared chain: an explicit value beats the environment, and both beat the
+    /// Keychain. The Keychain link is only present on a platform that has one, which is why
+    /// this asserts the *order* of what it finds rather than the length of the chain.
+    func testCredentialChainPrefersTheExplicitValueThenTheEnvironment() throws {
+        let environment = EnvironmentTokenProvider(names: names, environment: ["PRIMARY": "from-env"])
+
+        let explicit = CredentialChain.standard(
+            explicit: "from-flag",
+            environment: environment,
+            keychain: .github,
+            service: "GitHub"
+        )
+        XCTAssertEqual(try explicit.token(), "from-flag")
+
+        let fromEnvironment = CredentialChain.standard(
+            environment: environment,
+            keychain: .github,
+            service: "GitHub"
+        )
+        XCTAssertEqual(try fromEnvironment.token(), "from-env")
+    }
+
+    /// An explicit value of whitespace is not a credential, and must fall through rather
+    /// than short-circuiting the chain with an empty string.
+    func testCredentialChainFallsThroughAnEmptyExplicitValue() throws {
+        let chain = CredentialChain.standard(
+            explicit: "  \n",
+            environment: EnvironmentTokenProvider(names: names, environment: ["PRIMARY": "from-env"]),
+            keychain: .linear,
+            service: "Linear"
+        )
+        XCTAssertEqual(try chain.token(), "from-env")
+    }
 }
 
 final class GraphQLErrorTests: XCTestCase {
@@ -93,6 +127,37 @@ final class GraphQLErrorTests: XCTestCase {
         XCTAssertEqual(errors[0].path, ["a3"])
         XCTAssertEqual(errors[1].path, ["search", "nodes", "2"])
         XCTAssertNil(errors[2].path)
+    }
+
+    /// `path` says which field failed; `code` says why. Only the pair together makes a
+    /// batched failure recoverable rather than merely attributable — one classification is
+    /// cacheable ("no such entity") and the other is not.
+    func testCodeReadsExtensionsCodeThenExtensionsType() {
+        let body = Data(
+            """
+            {"errors": [
+              {"message": "a", "path": ["a0"], "extensions": {"code": "ENTITY_NOT_FOUND"}},
+              {"message": "b", "path": ["a1"], "extensions": {"type": "not_found"}},
+              {"message": "c", "path": ["a2"], "extensions": {"code": "X", "type": "Y"}},
+              {"message": "d", "path": ["a3"], "extensions": {"userPresentableMessage": "nope"}},
+              {"message": "e", "path": ["a4"]}
+            ]}
+            """.utf8
+        )
+        XCTAssertEqual(
+            GraphQLErrorsOnly.read(body).map { $0.code },
+            ["ENTITY_NOT_FOUND", "not_found", "X", nil, nil]
+        )
+    }
+
+    /// `extensions` is free-form, so a shape we did not expect must not fail the decode of
+    /// the error carrying it — an error we cannot classify is still one the caller has to
+    /// see.
+    func testAnUnexpectedExtensionsShapeStillYieldsTheError() {
+        let body = Data(#"{"errors": [{"message": "boom", "extensions": ["not", "an", "object"]}]}"#.utf8)
+        let errors = GraphQLErrorsOnly.read(body)
+        XCTAssertEqual(errors.map(\.message), ["boom"])
+        XCTAssertNil(errors.first?.code)
     }
 
     /// A body whose `data` is unrelated to the query's own result type still has to give

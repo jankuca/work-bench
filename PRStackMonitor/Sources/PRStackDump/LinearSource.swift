@@ -32,18 +32,15 @@ enum LinearSource {
         return (resolution.pullRequests, resolution.health)
     }
 
-    /// `--linear-token`, then the environment, then the login keychain — the same order,
-    /// and for the same reasons, as the GitHub credential.
+    /// `--linear-token`, then the environment, then the login keychain — the same shared
+    /// chain the GitHub credential uses, with a different variable set and Keychain item.
     private static func tokenProvider(options: DumpOptions) -> any TokenProvider {
-        var providers: [any TokenProvider] = []
-        if let token = options.linearToken {
-            providers.append(StaticTokenProvider(token, service: "Linear"))
-        }
-        providers.append(EnvironmentTokenProvider.linear())
-        #if canImport(Security)
-        providers.append(KeychainTokenStore(account: .linear))
-        #endif
-        return FirstAvailableTokenProvider(providers, service: "Linear")
+        CredentialChain.standard(
+            explicit: options.linearToken,
+            environment: .linear(),
+            keychain: .linear,
+            service: "Linear"
+        )
     }
 
     /// A file store only when one is asked for. The dump is a one-shot tool, so an
@@ -68,7 +65,9 @@ enum LinearSource {
     }
 
     private static func describe(_ health: SourceHealth?) -> String {
-        guard let health else { return "unchanged (cancelled)" }
+        guard let health else {
+            return "not checked this run — no request was sent, or it was cancelled"
+        }
         switch health {
         case .connected: return "connected"
         case .unconfigured: return "not configured — every row falls to Other"

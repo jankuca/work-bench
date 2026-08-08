@@ -228,9 +228,12 @@ final class PanelController: ObservableObject {
 
 /// What one poll produced.
 enum PollOutcome: Sendable {
-    /// The snapshot, plus what the poll learned about Linear. Linear health is nil when
-    /// the poll learned nothing about it — the request was cancelled, or there was nothing
-    /// to resolve.
+    /// The snapshot, plus what the poll learned about Linear.
+    ///
+    /// Linear health is nil when the poll learned nothing about it: no request was sent —
+    /// nothing to resolve, or every identifier already cached — or the one that was sent
+    /// was cancelled. The footer then keeps whatever it was already saying, rather than
+    /// being reset to healthy by a poll that never checked.
     case fetched(RawSnapshot, linear: SourceHealth?)
     /// GitHub failed. Linear is not reported here: this poll never got far enough to ask
     /// it, and marking it stale for GitHub's failure would blame the wrong source.
@@ -254,13 +257,22 @@ protocol PanelSource: Sendable {
 struct GitHubPanelSource: PanelSource {
     var scope: RepoScope = .all
 
+    /// One transport for the life of the source, shared by both requests.
+    ///
+    /// Not per poll. Each `URLSession` brings its own connection pool that outlives the
+    /// object, so building one per poll — at 30 s with the panel open, 120 an hour — leaks
+    /// pools rather than reusing connections. Apple's guidance is explicit about reusing a
+    /// session, and the panel controller holds this source for its whole life.
+    let transport = URLSessionTransport.standard()
+
     func load() async -> PollOutcome {
         let client = GitHubClient(
-            transport: URLSessionTransport.standard(),
-            tokenProvider: FirstAvailableTokenProvider([
-                EnvironmentTokenProvider.github(),
-                KeychainTokenStore(account: .github)
-            ], service: "GitHub")
+            transport: transport,
+            tokenProvider: CredentialChain.standard(
+                environment: .github(),
+                keychain: .github,
+                service: "GitHub"
+            )
         )
 
         do {
@@ -268,7 +280,7 @@ struct GitHubPanelSource: PanelSource {
             // Linear never fails the poll. It cannot: every row is already complete without
             // it, and losing it costs only the project headings for identifiers that have
             // never been cached (IMPLEMENTATION_PLAN §4).
-            let resolution = await LinearPanelSource.resolve(fetch.pullRequests)
+            let resolution = await LinearPanelSource.resolve(fetch.pullRequests, over: transport)
             return .fetched(
                 RawSnapshot(viewerLogin: fetch.viewerLogin, pullRequests: resolution.pullRequests),
                 linear: resolution.health
@@ -296,14 +308,21 @@ struct GitHubPanelSource: PanelSource {
 
 /// The Linear half of a poll, and where its cache lives.
 enum LinearPanelSource {
-    static func resolve(_ pullRequests: [PullRequest]) async -> LinearResolution {
+    /// Shares the caller's transport — see ``GitHubPanelSource/transport``. The two
+    /// integrations talk to different hosts, so they do not contend for a connection, and
+    /// one session for the app is what the pooling is for.
+    static func resolve(
+        _ pullRequests: [PullRequest],
+        over transport: any HTTPTransport
+    ) async -> LinearResolution {
         let resolver = LinearResolver(
             client: LinearClient(
-                transport: URLSessionTransport.standard(),
-                tokenProvider: FirstAvailableTokenProvider([
-                    EnvironmentTokenProvider.linear(),
-                    KeychainTokenStore(account: .linear)
-                ], service: "Linear")
+                transport: transport,
+                tokenProvider: CredentialChain.standard(
+                    environment: .linear(),
+                    keychain: .linear,
+                    service: "Linear"
+                )
             ),
             store: FileLinearProjectCacheStore(url: cacheURL)
         )

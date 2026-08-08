@@ -21,10 +21,11 @@ public struct KeychainTokenStore: TokenProvider {
     public static let defaultService = "com.jankuca.PRStackMonitor"
 
     /// One item per integration, so revoking Linear cannot disturb GitHub.
-    public enum Account: String, Sendable {
-        case github
-        case linear
-    }
+    ///
+    /// The type itself lives outside this file's `canImport(Security)` fence
+    /// (``KeychainAccount``) so that ``CredentialChain`` — which is portable — can name an
+    /// account on a platform that has no Keychain to read it from.
+    public typealias Account = KeychainAccount
 
     public enum Failure: Error, Equatable, CustomStringConvertible {
         case unexpectedStatus(OSStatus)

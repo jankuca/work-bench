@@ -10,8 +10,11 @@ public struct IssueBatchResult: Equatable, Sendable {
     /// cannot tell `UTF-8` from a team key, and without a negative answer on record the
     /// same junk identifier is re-queried on every poll, forever.
     public var unknown: Set<String>
-    /// Identifiers no answer was obtained for — the request failed, or the batch was
-    /// abandoned. **Not** cached either way; nothing is known about them.
+    /// Identifiers no *usable* answer was obtained for: the batch was abandoned, or Linear
+    /// failed the field for a reason other than the issue not existing — a permission
+    /// error, a resolver fault. **Not** cached either way, so they are asked again next
+    /// poll. Caching one as `unknown` would strip a real ticket's project heading for a day
+    /// over a transient fault.
     public var unresolved: Set<String>
     public var errors: [GraphQLError]
 
@@ -95,10 +98,11 @@ public struct LinearClient {
     /// heading.
     ///
     /// What makes it recoverable is `errors[].path`: it names the aliases that failed. So a
-    /// wholly-nulled response is not abandoned — the named aliases are recorded as unknown,
-    /// and the rest are asked for again. Exactly once: a second failure means the response
-    /// is not telling us which field is at fault, and retrying a shrinking batch until it
-    /// empties would turn one bad poll into forty requests.
+    /// wholly-nulled response is not abandoned — the named aliases are set aside, classified
+    /// by what the error says went wrong, and the rest are asked for again. Exactly once: a
+    /// second failure means the response is not telling us which field is at fault, and
+    /// retrying a shrinking batch until it empties would turn one bad poll into forty
+    /// requests.
     private func resolveBatch(_ identifiers: [String]) async throws -> IssueBatchResult {
         var result = IssueBatchResult()
         var pending = identifiers
@@ -119,23 +123,40 @@ public struct LinearClient {
                 }
             }
 
-            // Aliases the errors blame. A field that both errored and came back is trusted
-            // as answered — GitHub and Linear both attach warnings to results that arrived.
-            let blamed = Set(
-                response.errors
-                    .compactMap { $0.path?.first }
-                    .compactMap { batch.identifiers[$0] }
-            )
-            result.unknown.formUnion(blamed.subtracting(answered))
+            // Aliases the errors blame, split by *why*. `path` says which field failed; it
+            // says nothing about the cause, and the difference decides whether the answer
+            // is cacheable. "No such issue" is a fact that will hold tomorrow. A permission
+            // failure or a resolver error is not: caching one as `unknown` would strip a
+            // real ticket's project heading for a day over a transient fault.
+            //
+            // A field that both errored and came back is trusted as answered — Linear
+            // attaches warnings to results that did arrive.
+            var notFound: Set<String> = []
+            var failed: Set<String> = []
+            for error in response.errors {
+                guard let alias = error.path?.first,
+                      let identifier = batch.identifiers[alias],
+                      !answered.contains(identifier) else { continue }
+                if isNotFound(error) {
+                    notFound.insert(identifier)
+                } else {
+                    failed.insert(identifier)
+                }
+            }
+            result.unknown.formUnion(notFound)
+            result.unresolved.formUnion(failed)
             result.errors.append(contentsOf: response.errors)
 
-            let settled = answered.union(blamed)
+            // Both kinds are settled for *this* poll: neither would answer differently on
+            // an immediate retry. The unresolved ones are asked again next poll, because
+            // nothing was cached about them.
+            let settled = answered.union(notFound).union(failed)
             pending = pending.filter { !settled.contains($0) }
 
             attempt += 1
             if pending.isEmpty { break }
-            if attempt > 1 || blamed.isEmpty {
-                // Either the retry has been spent, or the response blamed nothing and a
+            if attempt > 1 || settled.isEmpty {
+                // Either the retry has been spent, or the response settled nothing and a
                 // retry would send the identical request. Leave the rest unresolved: no
                 // answer is a worse thing to cache than a wrong one.
                 result.unresolved.formUnion(pending)
@@ -201,6 +222,20 @@ public struct LinearClient {
             throw LinearError.malformedResponse("response carried neither data nor errors")
         }
         return BatchResponse(payload: envelope.data, errors: errors)
+    }
+
+    /// Whether this error means "there is no such issue" as opposed to "I could not answer".
+    ///
+    /// Linear reports the first as an `ENTITY_NOT_FOUND` extension code, a `not_found`
+    /// type, or an "Entity not found" message, depending on which of those the response
+    /// carries. All three are matched, and **nothing else is**: the default is the
+    /// conservative one. An unrecognised failure becomes `unresolved` and is asked again
+    /// next poll, which costs a request; misreading it as `unknown` would cache a wrong
+    /// answer and cost a row its project heading until the entry expired.
+    private func isNotFound(_ error: GraphQLError) -> Bool {
+        if let code = error.code?.uppercased(), code.contains("NOT_FOUND") { return true }
+        if let type = error.type?.uppercased(), type.contains("NOT_FOUND") { return true }
+        return error.message.range(of: "entity not found", options: .caseInsensitive) != nil
     }
 
     private func isAuthentication(_ error: GraphQLError) -> Bool {

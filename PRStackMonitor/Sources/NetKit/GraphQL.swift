@@ -54,17 +54,33 @@ public struct GraphQLError: Decodable, Equatable, Sendable, CustomStringConverti
     /// flattened to their decimal spelling, because nothing here needs to tell an index
     /// from a field named `0`.
     public var path: [String]?
+    /// `extensions.code`, falling back to `extensions.type` — servers use both spellings,
+    /// and Linear's `ENTITY_NOT_FOUND` arrives this way.
+    ///
+    /// The whole `extensions` object is not carried, because it is free-form and nothing
+    /// here wants to switch over a dictionary of unknown JSON. What callers actually need
+    /// is the classification: `path` says *which* field failed and this says *why*, and
+    /// only the pair together makes a batched failure recoverable rather than merely
+    /// attributable.
+    public var code: String?
 
-    public init(message: String, type: String? = nil, path: [String]? = nil) {
+    public init(message: String, type: String? = nil, path: [String]? = nil, code: String? = nil) {
         self.message = message
         self.type = type
         self.path = path
+        self.code = code
     }
 
     private enum CodingKeys: String, CodingKey {
         case message
         case type
         case path
+        case extensions
+    }
+
+    private enum ExtensionKeys: String, CodingKey {
+        case code
+        case type
     }
 
     public init(from decoder: any Decoder) throws {
@@ -72,6 +88,20 @@ public struct GraphQLError: Decodable, Equatable, Sendable, CustomStringConverti
         message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
         type = try container.decodeIfPresent(String.self, forKey: .type)
         path = try container.decodeIfPresent([PathComponent].self, forKey: .path)?.map(\.text)
+
+        // `extensions` is free-form, so a value of an unexpected shape — an array, a
+        // number, a code that is not a string — must not fail the decode of the error that
+        // carries it. An error we cannot classify is still an error the caller has to see.
+        if let extensions = try? container.nestedContainer(
+            keyedBy: ExtensionKeys.self,
+            forKey: .extensions
+        ) {
+            let extensionCode = try? extensions.decodeIfPresent(String.self, forKey: .code)
+            let extensionType = try? extensions.decodeIfPresent(String.self, forKey: .type)
+            code = extensionCode.flatMap { $0 } ?? extensionType.flatMap { $0 }
+        } else {
+            code = nil
+        }
     }
 
     /// A path component is a field name or a list index, so the array is heterogeneous.

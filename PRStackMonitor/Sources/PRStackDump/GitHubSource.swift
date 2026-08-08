@@ -33,19 +33,15 @@ enum GitHubSource {
         return fetch
     }
 
-    /// `--token`, then the environment, then the login keychain. The keychain is last
-    /// because an explicit flag or an exported variable is always the more deliberate
-    /// intent, and it is absent entirely off macOS.
+    /// `--token`, then the environment, then the login keychain — the shared chain, so the
+    /// order and the `canImport(Security)` fence live in one place (``CredentialChain``).
     private static func tokenProvider(options: DumpOptions) -> any TokenProvider {
-        var providers: [any TokenProvider] = []
-        if let token = options.token {
-            providers.append(StaticTokenProvider(token, service: "GitHub"))
-        }
-        providers.append(EnvironmentTokenProvider.github())
-        #if canImport(Security)
-        providers.append(KeychainTokenStore(account: .github))
-        #endif
-        return FirstAvailableTokenProvider(providers, service: "GitHub")
+        CredentialChain.standard(
+            explicit: options.token,
+            environment: .github(),
+            keychain: .github,
+            service: "GitHub"
+        )
     }
 
     /// Diagnostics go to stderr so `prstack-dump --github > panel.txt` still captures only

@@ -90,6 +90,17 @@ public struct EnvironmentTokenProvider: TokenProvider {
     }
 }
 
+/// Which Keychain item a credential lives in — one per integration, so revoking Linear
+/// cannot disturb GitHub.
+///
+/// Declared here rather than inside ``KeychainTokenStore`` because that type is fenced
+/// behind `canImport(Security)`, and ``CredentialChain`` has to be able to name an account
+/// on Linux, where there is no Keychain to read it from.
+public enum KeychainAccount: String, Sendable {
+    case github
+    case linear
+}
+
 /// Tries each provider in turn and returns the first token found.
 ///
 /// Used to express "the Keychain, or the environment if the Keychain has nothing" without
@@ -103,6 +114,14 @@ public struct FirstAvailableTokenProvider: TokenProvider {
         self.service = service
     }
 
+    /// A real failure is remembered but does not stop the search.
+    ///
+    /// The two outcomes it separates: a Keychain that is present but refuses to answer,
+    /// with nothing else configured, must surface as *that* failure and not as "not
+    /// connected" — so the error is rethrown once the chain is exhausted. But if a later
+    /// provider does hold a credential, the credential wins: the app's job is to poll, and
+    /// failing the poll to report a broken Keychain the user has already worked around
+    /// would be choosing the diagnosis over the diagnosis's purpose.
     public func token() throws -> String {
         var lastError: (any Error)?
         for provider in providers {
@@ -111,12 +130,36 @@ public struct FirstAvailableTokenProvider: TokenProvider {
             } catch is MissingCredential {
                 continue
             } catch {
-                // A Keychain that is present but refuses to answer is a real failure and
-                // must not be masked by a later provider that happens to have nothing.
                 lastError = error
             }
         }
         if let lastError { throw lastError }
         throw MissingCredential(service: service)
+    }
+}
+
+/// The credential chain every integration uses: an explicit value, then the environment,
+/// then the login Keychain.
+///
+/// The Keychain is last because an explicit flag or an exported variable is always the more
+/// deliberate intent — and because it is absent entirely off macOS, which is the reason the
+/// `canImport(Security)` fence lives here, once, rather than at each of the four call sites
+/// that would otherwise repeat it.
+public enum CredentialChain {
+    public static func standard(
+        explicit: String? = nil,
+        environment: EnvironmentTokenProvider,
+        keychain account: KeychainAccount,
+        service: String
+    ) -> FirstAvailableTokenProvider {
+        var providers: [any TokenProvider] = []
+        if let explicit {
+            providers.append(StaticTokenProvider(explicit, service: service))
+        }
+        providers.append(environment)
+        #if canImport(Security)
+        providers.append(KeychainTokenStore(account: account))
+        #endif
+        return FirstAvailableTokenProvider(providers, service: service)
     }
 }

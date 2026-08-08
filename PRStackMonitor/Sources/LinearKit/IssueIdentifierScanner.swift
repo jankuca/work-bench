@@ -71,15 +71,24 @@ public enum IssueIdentifierScanner {
     /// Matched case-insensitively: the path Linear generates is upper-case, but a
     /// hand-typed or lower-cased URL still points at the same issue.
     private static func scanIssueURLs(_ characters: [Character]) -> [Hit] {
+        let host = Array("linear.app")
         var hits: [Hit] = []
         var index = 0
 
-        while let host = find(Array("linear.app"), in: characters, from: index) {
-            // Bounded to the URL that host belongs to. Without this, a body mentioning
+        while let match = find(host, in: characters, from: index) {
+            guard isCompleteHost(characters, at: match, length: host.count) else {
+                // `notlinear.app/acme/issue/bil-312` and
+                // `example.com/linear.app/acme/issue/bil-312` both contain the string and
+                // neither is a Linear URL. Advance by one rather than to the end of the
+                // URL, so a real linear.app later in the same token is still found.
+                index = match + 1
+                continue
+            }
+            // Bounded to the URL the host belongs to. Without this, a body mentioning
             // linear.app in one paragraph and an unrelated `/issue/` path in the next
             // would join them into an identifier neither of them names.
-            let end = urlEnd(in: characters, from: host)
-            if let marker = find(Array("/issue/"), in: characters, from: host, before: end) {
+            let end = urlEnd(in: characters, from: match)
+            if let marker = find(Array("/issue/"), in: characters, from: match, before: end) {
                 let start = marker + "/issue/".count
                 let segment = pathSegment(in: characters, from: start, before: end)
                 if let identifier = normalised(String(characters[start..<segment]), requiringUppercase: false) {
@@ -89,6 +98,34 @@ public enum IssueIdentifierScanner {
             index = end
         }
         return hits
+    }
+
+    /// Whether the match at `index` is the URL's whole host rather than a fragment of a
+    /// longer hostname or a path segment that happens to spell it.
+    ///
+    /// This is worth being strict about: a URL that merely *contains* `linear.app` resolves
+    /// to a real Linear issue whose project then groups somebody else's pull request. The
+    /// two rules are what a host boundary actually is —
+    ///
+    /// - what precedes it may not extend the hostname: a letter, a digit or a `-` means
+    ///   `notlinear.app`, and a single `/` not part of `//` means it is a path segment;
+    ///   a `.` is allowed, so `www.linear.app` still counts.
+    /// - what follows it may not extend the hostname either: `/` starts the path, `:` a
+    ///   port, and anything else that is not a hostname character ends the URL. A letter,
+    ///   digit, `-` or `.` means something like `linear.apple.com`.
+    private static func isCompleteHost(_ characters: [Character], at index: Int, length: Int) -> Bool {
+        if index > 0 {
+            let previous = characters[index - 1]
+            if previous.isLetter || previous.isNumber || previous == "-" { return false }
+            // A path separator, unless it is the second slash of `https://`.
+            if previous == "/", index < 2 || characters[index - 2] != "/" { return false }
+        }
+        let after = index + length
+        if after < characters.count {
+            let next = characters[after]
+            if next.isLetter || next.isNumber || next == "-" || next == "." { return false }
+        }
+        return true
     }
 
     /// How far the URL starting at or before `index` runs: to the first character that

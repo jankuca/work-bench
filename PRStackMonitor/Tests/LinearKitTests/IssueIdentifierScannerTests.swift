@@ -168,6 +168,39 @@ final class IssueIdentifierScannerTests: XCTestCase {
         )
     }
 
+    /// A URL that merely *contains* `linear.app` is not a Linear URL, and reading one as
+    /// though it were resolves a real ticket whose project then groups somebody else's
+    /// pull request under it. The host has to be the whole host.
+    func testOnlyACompleteLinearHostIsReadAsALinearURL() {
+        // Lower case throughout, because the URL pass is case-insensitive and these would
+        // otherwise be caught by the case-sensitive bare-identifier scan instead.
+        XCTAssertEqual(
+            IssueIdentifierScanner.scanBody("https://notlinear.app/acme/issue/bil-312"),
+            []
+        )
+        XCTAssertEqual(
+            IssueIdentifierScanner.scanBody("https://example.com/linear.app/acme/issue/bil-312"),
+            []
+        )
+        XCTAssertEqual(
+            IssueIdentifierScanner.scanBody("https://linear.apple.com/acme/issue/bil-312"),
+            []
+        )
+        // …while the shapes that really are Linear still resolve.
+        XCTAssertEqual(
+            IssueIdentifierScanner.scanBody("https://linear.app/acme/issue/bil-312"),
+            ["BIL-312"]
+        )
+        XCTAssertEqual(
+            IssueIdentifierScanner.scanBody("https://www.linear.app/acme/issue/bil-312"),
+            ["BIL-312"]
+        )
+        XCTAssertEqual(
+            IssueIdentifierScanner.scanBody("linear.app/acme/issue/bil-312"),
+            ["BIL-312"]
+        )
+    }
+
     /// A `linear.app` mention in one paragraph and an `/issue/` path in another are not
     /// one URL, and joining them would invent an identifier neither of them names.
     func testAnIssuePathInADifferentURLIsNotJoinedToLinear() {

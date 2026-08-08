@@ -54,7 +54,7 @@ PRStackMonitor.app  (AppKit shell: NSStatusItem, NSPopover, SwiftUI views)
         │
         ├── GitHubKit          GraphQL + REST clients, DTOs           (portable)
         ├── LinearKit          GraphQL client, issue→project          (portable)
-        │      └── NetKit      HTTP transport, GraphQL envelope, credentials  (portable)
+        ├── NetKit             HTTP transport, GraphQL envelope, credentials  (portable)
         └── PRStackCore        domain model + all derivation logic    (portable, no I/O)
 ```
 

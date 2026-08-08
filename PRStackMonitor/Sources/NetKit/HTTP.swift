@@ -134,7 +134,13 @@ private final class DataTaskBox: @unchecked Sendable {
 }
 
 /// The production transport.
-public struct URLSessionTransport: HTTPTransport {
+///
+/// `@unchecked Sendable` because `URLSession` is documented as safe to use from multiple
+/// threads and this holds nothing else. That matters for more than tidiness: Apple's own
+/// guidance is to **reuse** a session rather than create one per request, since each new
+/// session brings its own connection pool that outlives it. Being `Sendable` is what lets
+/// a caller hold one transport for the life of the app instead of building one per poll.
+public struct URLSessionTransport: HTTPTransport, @unchecked Sendable {
     private let session: URLSession
 
     public init(session: URLSession = .shared) {

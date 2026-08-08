@@ -191,19 +191,59 @@ final class LinearClientTests: XCTestCase {
         XCTAssertEqual(transport.requestCount, 1)
     }
 
-    /// Two failing aliases, blamed one per round: the second failure has spent the retry,
+    /// Two missing aliases, blamed one per round: the second failure has spent the retry,
     /// so what is left comes back unresolved rather than driving a third request.
     func testTheRetryIsSpentOnceEvenIfMoreAliasesFail() async throws {
-        let transport = StubTransport(responses: [
-            .json(#"{"data": null, "errors": [{"message": "nope", "path": ["a1"]}]}"#),
-            .json(#"{"data": null, "errors": [{"message": "nope", "path": ["a1"]}]}"#)
-        ])
+        let missing = #"{"data": null, "errors": [{"message": "Entity not found: Issue", "path": ["a1"]}]}"#
+        let transport = StubTransport(responses: [.json(missing), .json(missing)])
 
         let result = try await client(transport).resolve(identifiers: ["BIL-312", "UTF-8", "SHA-256"])
 
         XCTAssertEqual(result.unknown, ["UTF-8", "SHA-256"])
         XCTAssertEqual(result.unresolved, ["BIL-312"])
         XCTAssertEqual(transport.requestCount, 2)
+    }
+
+    /// `path` names the field that failed; it says nothing about *why*, and the difference
+    /// decides whether the answer may be cached. "No such issue" holds tomorrow. A
+    /// permission failure does not — caching it as unknown would strip a real ticket's
+    /// project heading for a day over a transient fault.
+    func testOnlyANotFoundIsCacheableAndEverythingElseIsUnresolved() async throws {
+        let transport = StubTransport(responses: [
+            .json(
+                """
+                {"data": null,
+                 "errors": [
+                   {"message": "Entity not found: Issue", "path": ["a0"],
+                    "extensions": {"code": "ENTITY_NOT_FOUND"}},
+                   {"message": "You do not have access to this resource", "path": ["a1"],
+                    "extensions": {"code": "FEATURE_NOT_ACCESSIBLE"}},
+                   {"message": "Something went wrong", "path": ["a2"]}
+                 ]}
+                """
+            )
+        ])
+
+        let result = try await client(transport).resolve(identifiers: ["UTF-8", "SEC-1", "OPS-2"])
+
+        XCTAssertEqual(result.unknown, ["UTF-8"], "only the not-found may be remembered")
+        XCTAssertEqual(result.unresolved, ["SEC-1", "OPS-2"], "asked again next poll")
+        XCTAssertEqual(transport.requestCount, 1, "every alias was settled, so there is nothing to retry")
+    }
+
+    /// The classification reads `extensions.code`, the error `type`, or the message — Linear
+    /// carries the answer in whichever of those the response has.
+    func testANotFoundIsRecognisedFromCodeTypeOrMessage() async throws {
+        for error in [
+            #"{"message": "boom", "path": ["a0"], "extensions": {"code": "ENTITY_NOT_FOUND"}}"#,
+            #"{"message": "boom", "path": ["a0"], "type": "not_found"}"#,
+            #"{"message": "Entity not found: Issue", "path": ["a0"]}"#
+        ] {
+            let transport = StubTransport(responses: [.json(#"{"data": null, "errors": [\#(error)]}"#)])
+            let result = try await client(transport).resolve(identifiers: ["UTF-8"])
+            XCTAssertEqual(result.unknown, ["UTF-8"], error)
+            XCTAssertTrue(result.unresolved.isEmpty, error)
+        }
     }
 
     // MARK: - Failures

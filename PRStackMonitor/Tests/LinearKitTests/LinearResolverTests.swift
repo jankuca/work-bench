@@ -238,6 +238,51 @@ final class LinearResolverTests: XCTestCase {
         XCTAssertEqual(second.requestCount, 0)
         XCTAssertEqual(resolution.cacheHits, 2)
         XCTAssertEqual(resolution.pullRequests[0].linearIssues.map(\.identifier), ["BIL-312"])
+        XCTAssertNil(resolution.health, "a poll that sent no request verified no connection")
+    }
+
+    /// The same rule for a snapshot with no identifiers at all: no request, so nothing was
+    /// learned, so the caller keeps the health it had.
+    ///
+    /// Reporting `.connected` here is the bug this pins. A quiet poll would clear a
+    /// standing outage — the footer would go quiet while Linear was still down — and the
+    /// *next* real loss would emit no `connectionLost`, because the previous status had
+    /// already been reset to healthy.
+    func testAPollWithNothingToResolveLeavesHealthUnchanged() async throws {
+        let transport = StubTransport(responses: [])
+        let (resolver, _) = self.resolver(transport)
+
+        let resolution = await resolver.resolve(
+            pullRequests: [pullRequest(title: "No ticket here", headRef: "jk/tidy")],
+            now: now
+        )
+
+        XCTAssertEqual(transport.requestCount, 0)
+        XCTAssertNil(resolution.health)
+        XCTAssertTrue(resolution.pullRequests[0].linearIssues.isEmpty)
+    }
+
+    /// The cache is pruned to what the current scan references, so it cannot grow across
+    /// the life of the app — a retitled pull request leaves dead identifiers behind, and
+    /// negatives like `UTF-8` accumulate from every pull request that ever mentioned one.
+    func testASuccessfulPollPrunesIdentifiersNothingReferencesAnyMore() async throws {
+        let transport = StubTransport(responses: [
+            .json(
+                """
+                {"data": {"a0": {"identifier": "BIL-312",
+                                 "project": {"id": "proj-billing", "name": "Billing"}}}}
+                """
+            )
+        ])
+        let stale = cache([
+            ("OLD-1", issue("OLD-1", project: ("proj-old", "Old"))),
+            ("UTF-8", nil)
+        ], age: LinearProjectCache.refreshInterval * 10)
+        let (resolver, store) = self.resolver(transport, cache: stale)
+
+        _ = await resolver.resolve(pullRequests: [pullRequest(headRef: "jk/bil-312")], now: now)
+
+        XCTAssertEqual(Set(store.load().entries.keys), ["BIL-312"])
     }
 
     func testEntriesAreReAskedOnceADay() async throws {

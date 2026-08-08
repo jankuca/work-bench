@@ -87,10 +87,16 @@ public struct LinearResolver {
             // With no key configured there is nothing to attach and nothing to be stale
             // about; with no identifiers there is nothing to ask. Either way the cache is
             // left exactly as it was.
+            //
+            // "Nothing to ask" is reported as `nil`, not as `.connected`. A poll that sent
+            // no request verified no connection, and claiming one would silently clear a
+            // standing outage: the footer would go quiet while Linear was still down, and
+            // the *next* real loss would emit no `connectionLost` event because the
+            // previous status had already been reset to healthy.
             let cache = client == nil ? LinearProjectCache.empty : store.load()
             return LinearResolution(
                 pullRequests: attach(scanned: scanned, to: pullRequests, using: cache),
-                health: client == nil ? .unconfigured : .connected
+                health: client == nil ? .unconfigured : nil
             )
         }
 
@@ -99,9 +105,11 @@ public struct LinearResolver {
         let cacheHits = identifiers.count - toFetch.count
 
         guard !toFetch.isEmpty else {
+            // Every identifier was fresh in cache. Same rule as above: no request, so
+            // nothing was learned about the connection.
             return LinearResolution(
                 pullRequests: attach(scanned: scanned, to: pullRequests, using: cache),
-                health: .connected,
+                health: nil,
                 cacheHits: cacheHits
             )
         }
@@ -123,6 +131,13 @@ public struct LinearResolver {
 
         for (identifier, issue) in batch.found { cache.record(issue, for: identifier, at: now) }
         for identifier in batch.unknown { cache.recordUnknown(identifier, at: now) }
+        // Prune to what this scan actually references, so the file cannot grow across the
+        // life of the app — a pull request retitled twice leaves two dead identifiers
+        // behind, and negatives like `UTF-8` accumulate from every PR that ever mentioned
+        // one. Only on a poll that reached this far: a failed or cancelled poll returned
+        // above, so an outage never prunes the cache it is meant to be falling back on.
+        // The cost of pruning something still wanted is one lookup on a later poll.
+        cache.retainOnly(identifiers)
         store.save(cache)
 
         if !batch.unknown.isEmpty { warnings.append(.unknownIdentifiers(Array(batch.unknown))) }
