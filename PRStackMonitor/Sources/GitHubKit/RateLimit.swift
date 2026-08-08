@@ -1,4 +1,5 @@
 import Foundation
+import NetKit
 
 /// GitHub's own accounting for a GraphQL call, read from the `rateLimit` field every
 /// query selects.

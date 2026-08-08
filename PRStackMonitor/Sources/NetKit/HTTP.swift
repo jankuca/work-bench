@@ -70,6 +70,41 @@ public protocol HTTPTransport {
     func send(_ request: HTTPRequest) async throws -> HTTPResponse
 }
 
+/// A failure below the level any one API knows about.
+///
+/// Each service kit wraps these into its own error type, so nothing above `GitHubKit` or
+/// `LinearKit` has to switch over two error families to find out that the network is down.
+public enum TransportError: Error, Equatable, CustomStringConvertible {
+    case noResponse
+    case notHTTP(String)
+
+    public var description: String {
+        switch self {
+        case .noResponse: return "the request completed with no response and no error"
+        case .notHTTP(let kind): return "expected an HTTP response, got \(kind)"
+        }
+    }
+}
+
+extension TransportError: LocalizedError {
+    public var errorDescription: String? { description }
+}
+
+/// Whether an error is this task being cancelled rather than something going wrong.
+///
+/// Cancellation reaches a caller in two shapes: `CancellationError` when the suspension
+/// point itself was cancelled, and `URLError.cancelled` when the in-flight `URLSession`
+/// task was. Both have to survive the wrapping each service kit does — a poll cancelled by
+/// the panel closing is not a connection failure, and reporting it as one would raise a
+/// footer warning for the user's own click.
+public enum Cancellation {
+    public static func matches(_ error: any Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+        return false
+    }
+}
+
 /// Holds the in-flight data task so the cancellation handler can reach it.
 ///
 /// `onCancel` runs in a different isolation domain from the closure that creates the task,
@@ -145,7 +180,7 @@ public struct URLSessionTransport: HTTPTransport {
                     } else if let response {
                         continuation.resume(returning: (data ?? Data(), response))
                     } else {
-                        continuation.resume(throwing: GitHubError.transport("no response and no error"))
+                        continuation.resume(throwing: TransportError.noResponse)
                     }
                 }
                 inFlight.store(task)
@@ -156,7 +191,7 @@ public struct URLSessionTransport: HTTPTransport {
         }
 
         guard let http = response as? HTTPURLResponse else {
-            throw GitHubError.transport("expected an HTTP response, got \(type(of: response))")
+            throw TransportError.notHTTP(String(describing: type(of: response)))
         }
 
         var headers: [String: String] = [:]

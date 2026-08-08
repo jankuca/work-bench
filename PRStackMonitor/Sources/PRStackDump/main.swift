@@ -17,11 +17,24 @@ do {
     let options = try DumpOptions.parse(Array(CommandLine.arguments.dropFirst()))
 
     let input: DumpInput
+    // A fixture arrives with its issues already resolved, so it has no Linear source to be
+    // stale about and renders as connected.
+    var linearHealth = SourceHealth.connected
+
     switch options.source {
     case .file(let path):
         input = try DumpInput.read(path: path)
     case .github:
-        input = try await GitHubSource.load(options: options, now: options.now ?? Date())
+        // Sequential, not parallel: on a cold start there are no identifiers to resolve
+        // until GitHub has answered (IMPLEMENTATION_PLAN §1).
+        let now = options.now ?? Date()
+        let fetch = try await GitHubSource.fetch(options: options)
+        let resolved = await LinearSource.resolve(fetch.pullRequests, options: options, now: now)
+        linearHealth = resolved.health ?? .connected
+        input = DumpInput(
+            now: now,
+            snapshot: RawSnapshot(viewerLogin: fetch.viewerLogin, pullRequests: resolved.pullRequests)
+        )
     }
 
     if let path = options.emitSnapshotPath {
@@ -29,7 +42,7 @@ do {
     }
 
     let rendered = options.rendersPresentation
-        ? PanelPresentationReport.render(input.present(now: options.now))
+        ? PanelPresentationReport.render(input.present(now: options.now, linear: linearHealth))
         : PanelModelReport.render(input.derive(now: options.now))
     print(rendered, terminator: "")
 } catch let failure as DumpFailure {

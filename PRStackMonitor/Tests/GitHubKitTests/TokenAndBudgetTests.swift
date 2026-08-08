@@ -1,54 +1,38 @@
 import Foundation
+import NetKit
 import XCTest
 @testable import GitHubKit
 
-final class TokenProviderTests: XCTestCase {
+/// The generic credential providers are `NetKit`'s and are tested there. What belongs
+/// here is the GitHub-specific part: which variables are read, in which order.
+final class GitHubTokenTests: XCTestCase {
     func testEnvironmentProviderPrefersTheProjectSpecificName() throws {
-        let provider = EnvironmentTokenProvider(
+        let provider = EnvironmentTokenProvider.github(
             environment: ["PRSTACK_GITHUB_TOKEN": "project", "GITHUB_TOKEN": "generic"]
         )
         XCTAssertEqual(try provider.token(), "project")
     }
 
     func testEnvironmentProviderFallsThroughEmptyValues() throws {
-        let provider = EnvironmentTokenProvider(
+        let provider = EnvironmentTokenProvider.github(
             environment: ["PRSTACK_GITHUB_TOKEN": "  ", "GITHUB_TOKEN": "generic\n"]
         )
         XCTAssertEqual(try provider.token(), "generic")
     }
 
-    func testAbsentTokenIsMissingTokenNotAnEmptyString() {
-        let provider = EnvironmentTokenProvider(environment: [:])
-        XCTAssertThrowsError(try provider.token()) { error in
-            XCTAssertEqual(error as? GitHubError, GitHubError.missingToken)
-        }
-    }
-
-    func testFirstAvailableTakesTheFirstProviderThatHasOne() throws {
-        let provider = FirstAvailableTokenProvider([
-            EnvironmentTokenProvider(environment: [:]),
-            StaticTokenProvider("from-keychain")
-        ])
-        XCTAssertEqual(try provider.token(), "from-keychain")
-    }
-
-    /// A store that is present but refuses to answer is a real failure. Masking it with a
-    /// later provider that happens to have nothing would report "not connected" for what
-    /// is actually a broken keychain.
-    func testFirstAvailableSurfacesARealFailureRatherThanMaskingIt() {
-        struct Broken: TokenProvider {
-            struct Failure: Error {}
-            func token() throws -> String { throw Failure() }
-        }
-        let provider = FirstAvailableTokenProvider([Broken(), EnvironmentTokenProvider(environment: [:])])
-        XCTAssertThrowsError(try provider.token()) { error in
-            XCTAssertTrue(error is Broken.Failure)
-        }
-    }
-
-    func testFirstAvailableWithNothingConfiguredIsMissingToken() {
-        let provider = FirstAvailableTokenProvider([EnvironmentTokenProvider(environment: [:])])
-        XCTAssertThrowsError(try provider.token()) { error in
+    /// The one place `MissingCredential` becomes `GitHubError.missingToken`. That
+    /// translation is what the panel's connect prompt keys off, so it is worth pinning
+    /// rather than trusting: a raw `MissingCredential` reaching `GitHubPanelSource` falls
+    /// through to `.unreachable` and shows a network failure for an unconfigured app.
+    func testAnAbsentTokenBecomesMissingTokenAtTheClientBoundary() async {
+        let client = GitHubClient(
+            transport: StubTransport([]),
+            tokenProvider: EnvironmentTokenProvider.github(environment: [:])
+        )
+        do {
+            _ = try await client.fetchPullRequests(scope: .all)
+            XCTFail("expected the fetch to fail with no token configured")
+        } catch {
             XCTAssertEqual(error as? GitHubError, GitHubError.missingToken)
         }
     }

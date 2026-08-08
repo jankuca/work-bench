@@ -2,10 +2,12 @@ import Foundation
 import GitHubKit
 import PRStackCore
 
-/// The live half of the dump: one poll against GitHub, mapped to the same input the
-/// fixture path produces.
+/// The GitHub half of a live dump: one paginated search, mapped to domain values.
+///
+/// Linear resolution runs after it and separately (``LinearSource``), which is the plan's
+/// sequential fetch — there are no identifiers to resolve until GitHub has answered.
 enum GitHubSource {
-    static func load(options: DumpOptions, now: Date) async throws -> DumpInput {
+    static func fetch(options: DumpOptions) async throws -> PullRequestFetch {
         let client = GitHubClient(
             transport: URLSessionTransport.standard(),
             tokenProvider: tokenProvider(options: options),
@@ -27,7 +29,7 @@ enum GitHubSource {
         }
 
         report(fetch)
-        return DumpInput(now: now, snapshot: fetch.snapshot)
+        return fetch
     }
 
     /// `--token`, then the environment, then the login keychain. The keychain is last
@@ -36,13 +38,13 @@ enum GitHubSource {
     private static func tokenProvider(options: DumpOptions) -> any TokenProvider {
         var providers: [any TokenProvider] = []
         if let token = options.token {
-            providers.append(StaticTokenProvider(token))
+            providers.append(StaticTokenProvider(token, service: "GitHub"))
         }
-        providers.append(EnvironmentTokenProvider())
+        providers.append(EnvironmentTokenProvider.github())
         #if canImport(Security)
         providers.append(KeychainTokenStore(account: .github))
         #endif
-        return FirstAvailableTokenProvider(providers)
+        return FirstAvailableTokenProvider(providers, service: "GitHub")
     }
 
     /// Diagnostics go to stderr so `prstack-dump --github > panel.txt` still captures only
@@ -62,7 +64,7 @@ enum GitHubSource {
             lines.append("more results remain; resume after cursor \(cursor)")
         }
         lines.append(contentsOf: fetch.warnings.map { "warning: " + $0.description })
-        write(lines.joined(separator: "\n") + "\n")
+        Diagnostics.write(lines.joined(separator: "\n"))
     }
 
     private static func describe(_ error: GitHubError) -> String {
@@ -79,8 +81,12 @@ enum GitHubSource {
             return error.description
         }
     }
+}
 
-    private static func write(_ text: String) {
-        FileHandle.standardError.write(Data(text.utf8))
+/// Diagnostics go to stderr so `prstack-dump --github > panel.txt` still captures only the
+/// panel.
+enum Diagnostics {
+    static func write(_ text: String) {
+        FileHandle.standardError.write(Data((text + "\n").utf8))
     }
 }

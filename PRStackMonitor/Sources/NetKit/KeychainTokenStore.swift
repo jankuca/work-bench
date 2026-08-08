@@ -8,6 +8,9 @@ import Security
 /// rather than split into its own module: `canImport(Security)` is false on Linux, so CI
 /// compiles everything around it and skips this.
 ///
+/// It lives in `NetKit` rather than in either service kit because both integrations store
+/// a credential the same way, and the item's `account` is the only thing that differs.
+///
 /// Why the app has to be signed with a *stable* identity (IMPLEMENTATION_PLAN §0): the
 /// item's ACL records the designated requirement of the process that created it. An
 /// ad-hoc signature changes on every rebuild, so every rebuild looks like a different
@@ -69,10 +72,10 @@ public struct KeychainTokenStore: TokenProvider {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             // An item holding an empty string is indistinguishable, to every caller, from
             // no item at all — so report it the same way and let the connect prompt appear.
-            guard !trimmed.isEmpty else { throw GitHubError.missingToken }
+            guard !trimmed.isEmpty else { throw MissingCredential(service: account.rawValue) }
             return trimmed
         case errSecItemNotFound:
-            throw GitHubError.missingToken
+            throw MissingCredential(service: account.rawValue)
         default:
             throw Failure.unexpectedStatus(status)
         }

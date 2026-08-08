@@ -79,12 +79,16 @@ struct DumpInput: Codable {
     /// clock twice for a file with no `now` and no `--now`, so the model could be derived
     /// in one second and its ages rendered in the next — two dumps of the same input that
     /// do not match, which is the one property this output is for.
-    func present(now overridden: Date?) -> PanelPresentation {
+    ///
+    /// `linear` is the live path's only departure from the fixture status: a fixture
+    /// arrives with its issues already resolved and has no source to be stale, while a
+    /// live poll may have found Linear unreachable and the footer has to say so. Defaulted
+    /// to `connected` so the fixture rendering — and every presentation golden — is
+    /// unchanged by this.
+    func present(now overridden: Date?, linear: SourceHealth = .connected) -> PanelPresentation {
         let clock = self.clock(overriddenBy: overridden)
-        return PanelPresentation.make(
-            model: derive(now: clock),
-            status: .fixture(now: clock),
-            now: clock
-        )
+        var status = PanelStatus.fixture(now: clock)
+        status.linear = linear
+        return PanelPresentation.make(model: derive(now: clock), status: status, now: clock)
     }
 }

@@ -113,13 +113,24 @@ extension DomainEvent {
     ///
     /// `previous == nil` emits nothing, for the same reason a cold-start derivation does:
     /// a relaunch must not replay history as fresh activity.
+    /// Both sources are diffed, and independently. Losing Linear is a real transition even
+    /// though it changes neither the icon nor the rows — the bus exists so a notification
+    /// sink can be added without touching core (§1), and "your Linear key expired" is
+    /// exactly the kind of thing such a sink would say. What the *panel* does about it is
+    /// still only a footer note (§4).
     public static func connectionEvents(from previous: PanelStatus?, to current: PanelStatus) -> [DomainEvent] {
         guard let previous else { return [] }
         // Only a *loss* is an event. Starting up unconfigured, or staying unreachable
         // across a dozen polls, is a state the footer already reports; announcing it on
         // every poll would make the one transition worth hearing about indistinguishable
         // from the steady state.
-        guard previous.github.isConnected, !current.github.isConnected else { return [] }
-        return [.connectionLost(.github)]
+        var events: [DomainEvent] = []
+        if previous.github.isConnected, !current.github.isConnected {
+            events.append(.connectionLost(.github))
+        }
+        if previous.linear.isConnected, !current.linear.isConnected {
+            events.append(.connectionLost(.linear))
+        }
+        return events
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import NetKit
 
 /// Recorded response shapes, read from the source tree rather than a bundle resource so
 /// they stay editable and diffable — the same arrangement `PRStackCoreTests` uses.

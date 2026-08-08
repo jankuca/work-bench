@@ -41,22 +41,34 @@ public enum SourceHealth: Equatable, Sendable {
 
 /// Everything outside the snapshot that the panel chrome reads.
 ///
-/// `SyncEngine` owns this at M8; M3 sets it from a single fetch. Linear joins at M5 —
-/// its health is a footer staleness condition, never a banner, because Linear being
-/// unreachable costs the panel its project headings and nothing else (§5).
+/// `SyncEngine` owns this at M8; M3 sets it from a single fetch.
 public struct PanelStatus: Equatable, Sendable {
     public var github: SourceHealth
+    /// Linear's health is a **footer condition, never a banner and never an icon state**.
+    ///
+    /// Losing Linear costs the panel its project headings for identifiers it has never
+    /// cached, and nothing else: every row still renders, with its status, its checks and
+    /// its reviewers, and cached headings stay put (IMPLEMENTATION_PLAN §2/§4). Raising
+    /// the reconnect banner over that would be claiming the list is untrustworthy when
+    /// only its section titles are.
+    public var linear: SourceHealth
     public var lastSyncedAt: Date?
     /// A poll in flight. The header's refresh control spins on it.
     public var isRefreshing: Bool
 
-    public init(github: SourceHealth, lastSyncedAt: Date? = nil, isRefreshing: Bool = false) {
+    public init(
+        github: SourceHealth,
+        linear: SourceHealth = .unconfigured,
+        lastSyncedAt: Date? = nil,
+        isRefreshing: Bool = false
+    ) {
         self.github = github
+        self.linear = linear
         self.lastSyncedAt = lastSyncedAt
         self.isRefreshing = isRefreshing
     }
 
-    public static let unconfigured = PanelStatus(github: .unconfigured)
+    public static let unconfigured = PanelStatus(github: .unconfigured, linear: .unconfigured)
 
     /// The status a fixture renders under: connected, synced 34 seconds ago — the footer
     /// design 2a shows.
@@ -67,7 +79,7 @@ public struct PanelStatus: Equatable, Sendable {
     /// agree byte for byte, and two copies of the same constant is how that quietly stops
     /// being true.
     public static func fixture(now: Date) -> PanelStatus {
-        PanelStatus(github: .connected, lastSyncedAt: now.addingTimeInterval(-34))
+        PanelStatus(github: .connected, linear: .connected, lastSyncedAt: now.addingTimeInterval(-34))
     }
 
     /// Data older than this reads as stale rather than current. Five minutes is two
@@ -141,14 +153,29 @@ public struct FooterPresentation: Equatable, Sendable {
     /// but it is the first thing wanted once the glance has raised a question, and the
     /// panel is the only place it exists.
     public var detail: String?
+    /// `Linear stale`, `Linear disconnected`. Nil while Linear is healthy, and nil while
+    /// no key is configured at all — a source the user has never connected is not stale.
+    ///
+    /// This is the whole of Linear's presence in the chrome, and deliberately so: an
+    /// expired Linear key must not raise the reconnect banner or change the menu bar icon,
+    /// because every row on screen is still true (IMPLEMENTATION_PLAN §4). What the user
+    /// needs to know is that project headings may be behind, which is a footnote.
+    public var linearNote: String?
     /// Hidden when there is nothing unread, so the panel does not offer an action that
     /// would do nothing.
     public var showsMarkAllRead: Bool
 
-    public init(syncTone: StatusTone, syncText: String, detail: String? = nil, showsMarkAllRead: Bool) {
+    public init(
+        syncTone: StatusTone,
+        syncText: String,
+        detail: String? = nil,
+        linearNote: String? = nil,
+        showsMarkAllRead: Bool
+    ) {
         self.syncTone = syncTone
         self.syncText = syncText
         self.detail = detail
+        self.linearNote = linearNote
         self.showsMarkAllRead = showsMarkAllRead
     }
 }
@@ -311,11 +338,28 @@ public struct PanelPresentation: Equatable, Sendable {
         return FooterPresentation(
             syncTone: sync.tone,
             syncText: sync.text,
-            detail: status.github.message,
+            // Both sources' messages, so the hover detail explains whichever of them the
+            // footer is complaining about. GitHub first: it is the one whose failure the
+            // rows depend on.
+            detail: [status.github.message, status.linear.message]
+                .compactMap { $0 }
+                .joined(separator: " · ")
+                .nonEmpty,
+            linearNote: linearNote(for: status.linear),
             // Offering `Mark all read` with nothing unread is offering an action that
             // does nothing.
             showsMarkAllRead: model.unreadCount > 0
         )
+    }
+
+    private static func linearNote(for health: SourceHealth) -> String? {
+        switch health {
+        // Not connected is not a failure. Linear is optional — the panel groups everything
+        // under `Other` and says nothing about it, which is what the connect prompt is for.
+        case .unconfigured, .connected: return nil
+        case .unauthorized: return "Linear disconnected"
+        case .unreachable: return "Linear stale"
+        }
     }
 
     private static func syncState(status: PanelStatus, now: Date) -> (tone: StatusTone, text: String) {
@@ -339,4 +383,9 @@ public struct PanelPresentation: Equatable, Sendable {
         }
         return (.success, "synced " + RelativeTime.past(since: synced, now: now))
     }
+}
+
+private extension String {
+    /// Nil rather than `""`, so an absent detail is absent rather than an empty tooltip.
+    var nonEmpty: String? { isEmpty ? nil : self }
 }
