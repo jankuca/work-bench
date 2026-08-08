@@ -116,9 +116,15 @@ final class LinearResolverTests: XCTestCase {
         // The consequence, at the level the user sees it: the row is under Billing on both
         // polls. A list rebuilt from arrival order would put it under Source on one of
         // them, and the row would appear to migrate with nothing having changed.
-        let billing = PanelSection.Kind.project(id: "proj-billing", name: "Billing")
-        XCTAssertEqual(section(of: fromCache.pullRequests[0], in: derive(fromCache.pullRequests)), billing)
-        XCTAssertEqual(section(of: fromMixed.pullRequests[0], in: derive(fromMixed.pullRequests)), billing)
+        let billingSection = PanelSection.Kind.project(id: "proj-billing", name: "Billing")
+        XCTAssertEqual(
+            section(of: fromCache.pullRequests[0], in: derive(fromCache.pullRequests)),
+            billingSection
+        )
+        XCTAssertEqual(
+            section(of: fromMixed.pullRequests[0], in: derive(fromMixed.pullRequests)),
+            billingSection
+        )
     }
 
     /// `linear-cross-team-number-collision` (IMPLEMENTATION_PLAN §2), at panel level.
