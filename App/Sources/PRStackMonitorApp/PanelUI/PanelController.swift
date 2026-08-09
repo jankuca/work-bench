@@ -361,7 +361,10 @@ struct GitHubPanelSource: PanelSource {
                 // comparison then costs a 304 instead of a request against the REST
                 // allowance.
                 etagStore: etags
-            )
+            ),
+            // Costs nothing unless a merged pull request arrives without a merge commit,
+            // which is rare and otherwise permanent.
+            recovery: MergeCommitRecovery(transport: transport, tokenProvider: credentials)
         )
 
         do {

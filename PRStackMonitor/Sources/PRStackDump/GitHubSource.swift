@@ -59,7 +59,8 @@ enum GitHubSource {
                     tagPatterns: TagPatterns(options.tagPatterns),
                     comparisonBudget: options.comparisonBudget
                 )
-            )
+            ),
+            recovery: MergeCommitRecovery(transport: transport, tokenProvider: credentials)
         )
 
         let result: GitHubPollResult
@@ -71,6 +72,12 @@ enum GitHubSource {
 
         report(result.open, label: "open")
         report(result.closed, label: "closed")
+        if !result.recovery.commits.isEmpty {
+            Diagnostics.write(
+                "recovered \(result.recovery.commits.count) merge commit(s) from trunk"
+                    + " for pull requests GitHub reported none for"
+            )
+        }
         reportReleases(result.release)
         return result
     }

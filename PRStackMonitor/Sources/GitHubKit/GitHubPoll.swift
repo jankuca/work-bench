@@ -15,13 +15,20 @@ import PRStackCore
 public struct GitHubPoll {
     private let client: GitHubClient
     private let tracker: (any ReleaseTracker)?
+    private let recovery: MergeCommitRecovery?
 
     /// `tracker` is optional so a poll can run without release tracking — that is what the
     /// debug dump does by default, and what a build with no `Contents: read` scope would
-    /// have to do.
-    public init(client: GitHubClient, tracker: (any ReleaseTracker)? = nil) {
+    /// have to do. `recovery` is the §3 fallback for a merged pull request GitHub reports no
+    /// merge commit for; it costs nothing when there is none.
+    public init(
+        client: GitHubClient,
+        tracker: (any ReleaseTracker)? = nil,
+        recovery: MergeCommitRecovery? = nil
+    ) {
         self.client = client
         self.tracker = tracker
+        self.recovery = recovery
     }
 
     public func run(scope: RepoScope, local: LocalState, now: Date) async throws -> GitHubPollResult {
@@ -40,6 +47,23 @@ public struct GitHubPoll {
             // otherwise appear in both, and derivation would draw it twice.
             guard seen.insert(pullRequest.id).inserted else { continue }
             pullRequests.append(pullRequest)
+        }
+
+        // A merged pull request with no merge commit has nothing for a tag to contain, and
+        // that does not self-correct: the row would sit at `merged · awaiting release` for
+        // good. Recovering the commit from trunk before the merges are recorded is what
+        // keeps it bindable (IMPLEMENTATION_PLAN §3).
+        var recovered = MergeCommitRecoveryResult.empty
+        if let recovery, !MergeCommitRecovery.candidates(among: pullRequests).isEmpty {
+            recovered = try await recovery.recover(pullRequests)
+            if !recovered.commits.isEmpty {
+                pullRequests = pullRequests.map { pullRequest in
+                    guard let oid = recovered.commits[pullRequest.id] else { return pullRequest }
+                    var repaired = pullRequest
+                    repaired.mergeCommit = oid
+                    return repaired
+                }
+            }
         }
 
         // A copy, so the tracker sees the merges this poll found without anything here
@@ -70,7 +94,8 @@ public struct GitHubPoll {
             pullRequests: pullRequests,
             open: open,
             closed: closed,
-            release: release
+            release: release,
+            recovery: recovered
         )
     }
 }
@@ -85,19 +110,24 @@ public struct GitHubPollResult: Equatable, Sendable {
     public var open: PullRequestFetch
     public var closed: PullRequestFetch
     public var release: ReleaseTrackerResult
+    /// Merge commits recovered from trunk. Already applied to ``pullRequests`` — this is
+    /// here so the dump and the footer can say that it happened.
+    public var recovery: MergeCommitRecoveryResult
 
     public init(
         viewerLogin: String,
         pullRequests: [PullRequest],
         open: PullRequestFetch,
         closed: PullRequestFetch,
-        release: ReleaseTrackerResult = .empty
+        release: ReleaseTrackerResult = .empty,
+        recovery: MergeCommitRecoveryResult = .empty
     ) {
         self.viewerLogin = viewerLogin
         self.pullRequests = pullRequests
         self.open = open
         self.closed = closed
         self.release = release
+        self.recovery = recovery
     }
 
     public var snapshot: RawSnapshot {
@@ -105,12 +135,12 @@ public struct GitHubPollResult: Equatable, Sendable {
     }
 
     public var warnings: [FetchWarning] {
-        open.warnings + closed.warnings + release.warnings
+        open.warnings + closed.warnings + recovery.warnings + release.warnings
     }
 
     /// GraphQL points across both searches and the tag queries.
     public var pointsSpent: Int {
-        open.pointsSpent + closed.pointsSpent + release.pointsSpent
+        open.pointsSpent + closed.pointsSpent + recovery.pointsSpent + release.pointsSpent
     }
 
     /// The most recent accounting either search reported.
