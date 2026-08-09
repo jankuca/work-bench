@@ -75,9 +75,9 @@ public struct LinearProjectCache: Equatable, Sendable {
 }
 
 extension LinearProjectCache: Codable {
-    /// Schema-versioned, like the state file it will eventually live inside
-    /// (IMPLEMENTATION_PLAN §3 puts the Linear project cache in `state.json`; M7 moves it
-    /// there and this shape goes with it). An unrecognised version is treated as an empty
+    /// Schema-versioned, like the state file beside it. (IMPLEMENTATION_PLAN §3 originally
+    /// drew this cache inside `state.json`; it stays in its own file because the two have
+    /// different writers — see the note in §3.) An unrecognised version is treated as an empty
     /// cache rather than as an error: the worst it costs is one poll's worth of requests,
     /// where throwing would leave the app unable to read its own state file at all.
     public static let schemaVersion = 1
@@ -106,8 +106,8 @@ extension LinearProjectCache: Codable {
 
 /// Where the cache is read from and written to.
 ///
-/// A protocol rather than a concrete file, because M7 folds this into `state.json` and the
-/// resolver should not have to change when it does.
+/// A protocol rather than a concrete file, so where the cache lives stays the app's
+/// decision and not the resolver's — tests pass an in-memory one.
 ///
 /// `Sendable` because the panel's poll runs off the main actor and the store outlives it.
 /// Both implementations below take a lock that never spans a suspension point, which is

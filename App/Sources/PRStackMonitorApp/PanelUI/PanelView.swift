@@ -10,9 +10,6 @@ import PRStackCore
 struct PanelView: View {
     @ObservedObject var controller: PanelController
 
-    /// The row under the pointer. M7 makes this the target of the keyboard actions; at
-    /// M3 it drives the hover lift only.
-    @State private var hovered: PRID?
     @State private var contentHeight: CGFloat = Tokens.Panel.minBodyHeight
 
     var body: some View {
@@ -89,22 +86,30 @@ struct PanelView: View {
         ForEach(Array(section.rows.enumerated()), id: \.offset) { item in
             PRRowView(
                 row: item.element,
-                isHovered: hovered == item.element.id,
+                isHovered: controller.hovered == item.element.id,
                 fieldColor: Tokens.field.color,
-                onOpen: { controller.open(item.element.url) },
+                onOpen: { controller.open(row: item.element) },
                 onOpenIssue: { controller.open($0.url) },
+                onMarkRead: { controller.markRead(item.element.id) },
+                onSnooze: { controller.snooze(item.element.id, for: $0) },
+                onWake: { controller.wake(item.element.id) },
                 onDismiss: { controller.dismiss(item.element.id) }
             )
+            // The hovered row lives on the controller, not in this view: it is the target
+            // of the key monitor, which is an AppKit object outside the view tree.
             .onContinuousHover { phase in
                 switch phase {
                 case .active:
-                    hovered = item.element.id
+                    // `.active` arrives on every pointer move inside the row, and the
+                    // hovered id is published — assigning the same value again would
+                    // re-render the whole panel per mouse move.
+                    if controller.hovered != item.element.id { controller.hovered = item.element.id }
                 case .ended:
                     // Only clear what this row set. As the pointer crosses a boundary the
                     // two rows' `ended` and `active` can arrive in either order, and
                     // clearing unconditionally would drop the highlight the row below
                     // just claimed.
-                    if hovered == item.element.id { hovered = nil }
+                    if controller.hovered == item.element.id { controller.hovered = nil }
                 }
             }
         }

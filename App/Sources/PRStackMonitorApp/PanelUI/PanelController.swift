@@ -18,6 +18,19 @@ import PRStackCore
 final class PanelController: ObservableObject {
     @Published private(set) var panel: PanelPresentation
 
+    /// The row under the pointer, and the target of every keyboard action (§5).
+    ///
+    /// Held here rather than as `@State` in the view because the key monitor is an AppKit
+    /// object outside the view tree: it has to be able to ask what the pointer is on
+    /// without owning the answer.
+    @Published var hovered: PRID?
+
+    /// What the `Settings` buttons and the reconnect banner call.
+    ///
+    /// A closure rather than a reference to the window controller, so the panel keeps
+    /// knowing nothing about windows — and so a preview can pass an empty one.
+    var onOpenSettings: () -> Void = {}
+
     private var snapshot: RawSnapshot
     private var local: LocalState
     private var status: PanelStatus
@@ -98,6 +111,9 @@ final class PanelController: ObservableObject {
         pollTask?.cancel()
         pollTask = nil
         digestsWhileOpen = nil
+        // The pointer is not over anything once there is nothing to be over. Left set, the
+        // next open would begin with a keyboard target the user cannot see.
+        hovered = nil
         status.isRefreshing = false
         rebuild()
     }
@@ -144,6 +160,14 @@ final class PanelController: ObservableObject {
             // rather than writing the file from its own task.
             local.recordMerges(from: snapshot.pullRequests)
             local.apply(product.release)
+            // Deadlines that have passed are already awake as far as derivation is
+            // concerned; dropping them here is what stops the file accumulating an entry
+            // per pull request the user has ever silenced.
+            local.pruneSnoozes(before: clock())
+            // What Settings offers as the repository checklist. Recorded from the poll
+            // rather than asked for separately — these are exactly the repositories the
+            // user authors pull requests in (IMPLEMENTATION_PLAN §3).
+            AppDefaults.noteRepositories(snapshot.pullRequests.map(\.repo))
             // A poll that lands while the panel is open has been seen, so it is read.
             // `digestsWhileOpen` stays frozen at the open, so the dots for it still appear
             // on screen — what this clears is the menu bar, which would otherwise light up
@@ -165,8 +189,11 @@ final class PanelController: ObservableObject {
 
     // MARK: - Actions
 
-    /// Reaching these from the keyboard is M7; since M6 every one of them survives a
-    /// relaunch, because each writes `state.json` through ``persist()``.
+    /// Every one of these survives a relaunch: each writes `state.json` through
+    /// ``persist()`` immediately, so a crash costs at most the change in flight.
+    ///
+    /// Each is reachable three ways — pointer, key, and VoiceOver rotor — and all three
+    /// land here rather than each growing its own copy of the rule.
     func markAllRead() {
         local.markAllRead(in: snapshot)
         persist()
@@ -178,10 +205,40 @@ final class PanelController: ObservableObject {
         rebuild()
     }
 
+    /// One row, on demand — the `R` key and the row menu.
+    ///
+    /// Unlike ``markAllRead()`` this is about a row the user is looking at, so it also
+    /// rewrites the frozen copy the open panel derives from: leaving the dot on a row the
+    /// user just marked read is the same failure as an action that visibly does nothing.
+    func markRead(_ id: PRID) {
+        local.markRead(CollectionOfOne(id), in: snapshot)
+        persist()
+        if digestsWhileOpen != nil { digestsWhileOpen = local.readDigests }
+        rebuild()
+    }
+
     func dismiss(_ id: PRID) {
         // Tombstone plus release cleanup, in `LocalState` so the two cannot drift apart
         // here and in `clearDone`.
         local.dismiss(id)
+        persist()
+        rebuild()
+    }
+
+    /// Suppresses a row's attention state until the duration's wake time.
+    ///
+    /// The deadline is resolved here, from the injected clock, rather than in the menu —
+    /// so "until Monday" means the same thing whichever of the three paths asked for it.
+    func snooze(_ id: PRID, for duration: SnoozeDuration) {
+        local.snooze(id, until: duration.wakeTime(from: clock()))
+        persist()
+        rebuild()
+    }
+
+    /// Ends a snooze early. The row resumes full derivation on the next rebuild, which is
+    /// this one.
+    func wake(_ id: PRID) {
+        local.wake(id)
         persist()
         rebuild()
     }
@@ -216,23 +273,42 @@ final class PanelController: ObservableObject {
         NSWorkspace.shared.open(url)
     }
 
-    /// M7 builds the settings window. Until then the panel says where the token comes
-    /// from rather than silently doing nothing when the button is pressed.
+    /// Clicking a row opens the pull request **and marks it read** (PRD §8).
+    ///
+    /// The two belong together: the dot means "changed since you last looked", and having
+    /// just looked is exactly what a click is. Opening the URL without this leaves a dot on
+    /// the one row the user can be certain has been seen.
+    func open(row: RowPresentation) {
+        open(row.url)
+        markRead(row.id)
+    }
+
+    /// The row as the panel currently presents it, for the callers that hold only an id —
+    /// the key monitor, and the menu it pops up.
+    func row(_ id: PRID) -> RowPresentation? {
+        guard case .sections(let sections) = panel.body else { return nil }
+        for section in sections {
+            if let row = section.rows.first(where: { $0.id == id }) { return row }
+        }
+        return nil
+    }
+
+    /// The row under the pointer, when there is one and it is still on screen.
+    var hoveredRow: RowPresentation? {
+        hovered.flatMap(row)
+    }
+
     func openSettings() {
-        let alert = NSAlert()
-        alert.messageText = "Settings arrive with M7"
-        alert.informativeText = """
-        Until then PRStackMonitor reads its GitHub token from $PRSTACK_GITHUB_TOKEN, then \
-        $GITHUB_TOKEN, then the login keychain under \(KeychainTokenStore.defaultService).
+        onOpenSettings()
+    }
 
-        The Linear API key comes from $PRSTACK_LINEAR_KEY, then $LINEAR_API_KEY, then the \
-        same keychain. Without one, every row is grouped under Other.
-
-        Releases are tags matching \(TagPatterns.defaultPattern) unless a repository is \
-        listed under the `\(AppDefaults.tagPatternsKey)` default; M7 adds the editor for it.
-        """
-        alert.alertStyle = .informational
-        alert.runModal()
+    /// Called when Settings closes or changes something a poll reads — the repository
+    /// scope, a tag pattern, a credential.
+    ///
+    /// A plain refresh: the scope and the patterns are read from `UserDefaults` at the top
+    /// of every poll, so there is nothing to invalidate, only a poll to bring forward.
+    func settingsDidChange() {
+        refresh()
     }
 
     // MARK: - Derivation
@@ -325,7 +401,10 @@ protocol PanelSource: Sendable {
 /// the identifiers in them name. Sequential rather than parallel because on a cold start
 /// there are no identifiers to resolve until GitHub has answered (IMPLEMENTATION_PLAN §1).
 struct GitHubPanelSource: PanelSource {
-    var scope: RepoScope = .all
+    /// Read per poll rather than held, like the tag patterns below: Settings writes
+    /// `UserDefaults` and the next poll picks the change up, so there is no second copy to
+    /// keep in step and no invalidation to get wrong.
+    var scope: RepoScope { AppDefaults.repoScope() }
 
     /// One transport for the life of the source, shared by both requests.
     ///
@@ -352,8 +431,8 @@ struct GitHubPanelSource: PanelSource {
                 transport: transport,
                 tokenProvider: credentials,
                 configuration: TagContainmentTracker.Configuration(
-                    // M6 reads the per-repository pattern map; M7 adds the editor for it,
-                    // so until then everything takes the `v*` default.
+                    // The map Settings edits. A repository without an entry takes the `v*`
+                    // default, which is most of them.
                     tagPatterns: AppDefaults.tagPatterns()
                 ),
                 // Held for the life of the source, like the transport: a repeated
@@ -429,11 +508,14 @@ enum LinearPanelSource {
 
     /// `~/Library/Application Support/PRStackMonitor/linear-cache.json`.
     ///
-    /// Its own file for now. IMPLEMENTATION_PLAN §3 puts the Linear project cache inside
-    /// `state.json`, and M7 — which is where the rest of `LocalState` gains a store — is
-    /// where it moves. Writing it there today would mean inventing the state file's
-    /// reader, writer and schema version a milestone early, for the one field that already
-    /// knows how to look after itself.
+    /// Its own file, and staying that way. IMPLEMENTATION_PLAN §3 lists the Linear project
+    /// cache among `state.json`'s contents, but the two have different writers: `LocalState`
+    /// is a single value owned by the main actor and written whole, while the cache is
+    /// written from the resolver's own task on a background poll. Folding it in would either
+    /// make the resolver a second writer of the state file — the exact hazard §3's
+    /// single-writer rule exists to prevent — or route every cache hit through the main actor
+    /// to be merged. Nothing derivation reads lives in it, so keeping it beside the state
+    /// file costs one extra path and no correctness.
     private static var cacheURL: URL {
         let base = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)

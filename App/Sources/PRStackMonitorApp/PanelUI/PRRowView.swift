@@ -18,6 +18,9 @@ struct PRRowView: View {
 
     var onOpen: () -> Void = {}
     var onOpenIssue: (IssueRef) -> Void = { _ in }
+    var onMarkRead: () -> Void = {}
+    var onSnooze: (SnoozeDuration) -> Void = { _ in }
+    var onWake: () -> Void = {}
     var onDismiss: () -> Void = {}
 
     var body: some View {
@@ -35,6 +38,9 @@ struct PRRowView: View {
         .padding(.horizontal, Tokens.Row.horizontalMargin)
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpen)
+        // Right-click reaches the same list the ⋯ button and the `S`/`R`/`X` keys do.
+        // Three paths, one builder — a case added to `RowAction` shows up in all of them.
+        .contextMenu { rowMenuItems }
         // One element per row, not one per control. A panel of 25 rows is 100+ views;
         // exposing each separately turns a glanceable list into a long walk by ear. The
         // named actions below are what keeps that from hiding anything — VoiceOver
@@ -53,8 +59,53 @@ struct PRRowView: View {
             ForEach(Array(row.issues.enumerated()), id: \.offset) { item in
                 Button("Open \(item.element.identifier)") { onOpenIssue(item.element) }
             }
+            // The rest of the row's actions, by the same rule and for the same reason: the
+            // ⋯ menu and the right-click menu are both pointer targets, and combining the
+            // row's children is what put them out of reach by ear.
+            if row.supports(.markRead) {
+                Button(RowAction.markRead.title, action: onMarkRead)
+            }
+            if row.isSnoozed {
+                Button("Wake now", action: onWake)
+            }
+            if row.supports(.snooze) {
+                ForEach(SnoozeDuration.allCases, id: \.self) { duration in
+                    Button("Snooze \(duration.title.lowercased())") { onSnooze(duration) }
+                }
+            }
         }
-        .accessibilityAction(named: "Dismiss", when: row.isDismissible, perform: onDismiss)
+        .accessibilityAction(named: RowAction.dismiss.title, when: row.isDismissible, perform: onDismiss)
+    }
+
+    // MARK: - The row menu
+
+    /// Every action this row offers, in `RowAction`'s order. Shared verbatim by the ⋯
+    /// button and the right-click menu.
+    ///
+    /// `Open` is not here: the row itself is the affordance for it, and a menu entry for
+    /// "what clicking already does" is a line of noise on every row.
+    @ViewBuilder
+    private var rowMenuItems: some View {
+        if row.supports(.markRead) {
+            Button(RowAction.markRead.title, action: onMarkRead)
+        }
+        ForEach(Array(row.issues.enumerated()), id: \.offset) { item in
+            Button("Open \(item.element.identifier)") { onOpenIssue(item.element) }
+        }
+        if row.supports(.snooze) {
+            if row.isSnoozed {
+                Button("Wake now", action: onWake)
+            }
+            Menu(RowAction.snooze.title) {
+                ForEach(SnoozeDuration.allCases, id: \.self) { duration in
+                    Button(duration.title) { onSnooze(duration) }
+                }
+            }
+        }
+        if row.isDismissible {
+            Divider()
+            Button(RowAction.dismiss.title, action: onDismiss)
+        }
     }
 
     // MARK: - Background
@@ -138,6 +189,50 @@ struct PRRowView: View {
             }
         }
         .fixedSize()
+        .overlay(alignment: .trailing) { menuButton }
+    }
+
+    /// The ⋯ that opens the row menu: the discoverable path to the actions `R`, `S` and `L`
+    /// accelerate, since a right-click menu is not something a panel advertises.
+    ///
+    /// Drawn as an **overlay over the release track**, not as a column of its own. In the
+    /// flow it would need a slot reserved on every row — the pointer running down the list
+    /// must not shuffle the tracks sideways — and that slot would widen every row in design
+    /// 2a to make room for a control 2a does not draw. Covering the track while the pointer
+    /// is on the row is the trade design `1d` already makes, where the hovered row's trailing
+    /// slot reads `snooze`, and the track is back the moment the pointer leaves.
+    ///
+    /// Done rows keep the ✕ instead: dismissal is the whole of what they offer, and it is
+    /// already in the flow.
+    @ViewBuilder
+    private var menuButton: some View {
+        if isHovered, !row.isDismissible {
+            Menu {
+                rowMenuItems
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Tokens.textSecondary.color)
+                    .frame(width: 18, height: 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            // Opaque, and the hovered row's own two layers in order: what
+                            // it covers has to stop showing through.
+                            .fill(haloColor)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(Tokens.rowHover.color)
+                            }
+                    )
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            // The row is one accessibility element and its rotor already carries every
+            // entry this menu holds; exposing the menu as well would offer each action
+            // twice by ear.
+            .accessibilityHidden(true)
+        }
     }
 }
 

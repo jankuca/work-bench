@@ -17,6 +17,23 @@ final class StatusItemController: NSObject {
     private let popover: NSPopover
     private let controller: PanelController
     private let events: EventBus
+    /// The hovered-row key handler. One instance for the life of the process, started when
+    /// the popover opens and stopped when it closes — never re-created, so there is one
+    /// monitor to own rather than one per open.
+    private let keys = HoverKeyMonitor()
+    /// Built the first time Settings is asked for, and kept from then on.
+    ///
+    /// Lazily, because building it reads the Keychain to say where each credential is
+    /// coming from, and a menu bar app that never has its settings opened should not do
+    /// that at launch on top of the poll that already does.
+    private lazy var settings: SettingsWindowController = {
+        let window = SettingsWindowController(events: events)
+        // Settings can change what a poll covers — the repository scope, a tag pattern, a
+        // credential — so an edit brings the next poll forward instead of leaving the panel
+        // on data gathered under the old settings.
+        window.onChange = { [weak self] in self?.controller.settingsDidChange() }
+        return window
+    }()
 
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -27,6 +44,7 @@ final class StatusItemController: NSObject {
         // One sink today, and the list is what makes a `UserNotificationSink` a drop-in
         // later (IMPLEMENTATION_PLAN §1). Registered before anything can publish.
         events.register(IconSink(presenter: self))
+        controller.onOpenSettings = { [weak self] in self?.showSettings() }
         configure()
     }
 
@@ -65,11 +83,26 @@ final class StatusItemController: NSObject {
 
         // A status-item popover does not receive key events unless the app is active.
         // Activating on open and letting `.transient` close it on resign is the standard
-        // arrangement, and it is what makes the hovered-row keyboard actions possible at
-        // M7 without changing how dismissal feels.
+        // arrangement, and it is what makes the hovered-row keyboard actions work without
+        // changing how dismissal feels.
         NSApp.activate()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         controller.panelDidOpen()
+        // After `show`, because the popover has no window before it. Scoping the monitor to
+        // that window is what keeps a keystroke aimed at Settings from dismissing a row
+        // behind it.
+        keys.start(on: popover.contentViewController?.view.window, controller: controller)
+    }
+
+    /// Settings is a window, so it needs the app in front — with `.accessory` there is no
+    /// Dock icon to bring it there.
+    private func showSettings() {
+        // The popover is transient and would close on its own the moment the window takes
+        // over; closing it explicitly means the monitor comes down through the same path as
+        // every other dismissal rather than on a resign nobody routed.
+        if popover.isShown { popover.performClose(nil) }
+        NSApp.activate()
+        settings.show()
     }
 }
 
@@ -88,6 +121,9 @@ extension StatusItemController: IconPresenter {
 
 extension StatusItemController: NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
+        // Both halves of the same dismissal, and both idempotent: a close and a resign
+        // fire for one user action, and `stop()` is written to survive being called twice.
+        keys.stop()
         controller.panelDidClose()
     }
 }

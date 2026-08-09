@@ -198,6 +198,10 @@ public struct RowPresentation: Equatable, Sendable {
     public var segments: [SegmentState]
     /// Done rows carry a ✕. Every keyboard action needs a pointer affordance (§5).
     public var isDismissible: Bool
+    /// Snoozed, with a wake time still ahead of it. The meta line already carries the
+    /// remaining time; this is what turns the row menu's `Snooze` into `Wake now`, so the
+    /// view does not have to read a display token back to find out.
+    public var isSnoozed: Bool
     /// The primary issue's URL, for the `L` key and the identifier click.
     public var issueURL: URL?
     /// Every linked issue, primary first — what `+N` opens and what repeated `L` cycles.
@@ -218,6 +222,7 @@ public struct RowPresentation: Equatable, Sendable {
         overflowReviewers: Int,
         segments: [SegmentState],
         isDismissible: Bool,
+        isSnoozed: Bool,
         issueURL: URL?,
         issues: [IssueRef]
     ) {
@@ -235,6 +240,7 @@ public struct RowPresentation: Equatable, Sendable {
         self.overflowReviewers = overflowReviewers
         self.segments = segments
         self.isDismissible = isDismissible
+        self.isSnoozed = isSnoozed
         self.issueURL = issueURL
         self.issues = issues
     }
@@ -268,6 +274,9 @@ public struct RowPresentation: Equatable, Sendable {
             overflowReviewers: max(0, reviewers.count - avatarLimit),
             segments: segments(for: row),
             isDismissible: row.status.belongsInDone,
+            // `snoozedUntil` is already nil once the deadline has passed, so this is
+            // "asleep now" rather than "has ever been snoozed".
+            isSnoozed: row.snoozedUntil != nil,
             issueURL: row.primaryIssue?.url,
             issues: orderedIssues(of: pullRequest)
         )
@@ -427,7 +436,7 @@ public struct RowPresentation: Equatable, Sendable {
     }
 
     /// Primary first, then the rest in the pull request's own order. This is the order
-    /// `+N` lists and repeated `L` presses cycle through at M7.
+    /// `+N` lists and repeated `L` presses cycle through (``IssueCycle``).
     private static func orderedIssues(of pullRequest: PullRequest) -> [IssueRef] {
         guard let primary = pullRequest.primaryIssue else { return [] }
         var rest = pullRequest.linearIssues

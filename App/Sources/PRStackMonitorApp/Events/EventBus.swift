@@ -35,8 +35,8 @@ protocol EventSink: AnyObject {
 /// Which event types are allowed through to the sinks.
 ///
 /// Kept from M4 even though the only sink ignores them, so the notification extension is a
-/// drop-in rather than a retrofit. Stored in `UserDefaults` per IMPLEMENTATION_PLAN §3;
-/// M7's Settings window binds a checkbox per ``DomainEventKind`` and needs nothing else.
+/// drop-in rather than a retrofit. Stored in `UserDefaults` per IMPLEMENTATION_PLAN §3, and
+/// bound to a checkbox per ``DomainEventKind`` in Settings' third tab.
 struct EventPreferences: Equatable {
     /// Absent means enabled. Storing only the *exceptions* is what makes an event type
     /// added in a later version default to on rather than silently off for everyone who
@@ -55,7 +55,7 @@ struct EventPreferences: Equatable {
         !disabled.contains(kind)
     }
 
-    /// What M7's Settings checkbox calls.
+    /// What the Settings checkbox calls.
     mutating func setEnabled(_ enabled: Bool, for kind: DomainEventKind) {
         if enabled {
             disabled.remove(kind)

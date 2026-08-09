@@ -88,8 +88,8 @@ public enum DomainEventKind: String, Hashable, Sendable, CaseIterable {
         }
     }
 
-    /// The wording of the per-event toggle. Settings is M7; the strings live here so the
-    /// toggle list is derived from the event set rather than hand-maintained beside it.
+    /// The wording of the per-event toggle. The strings live here so Settings' list is
+    /// derived from the event set rather than hand-maintained beside it.
     public var settingsTitle: String {
         switch self {
         case .reachedProduction: return "A pull request reaches production"
