@@ -40,12 +40,19 @@ enum SearchPage {
         remaining: Int = 4_900,
         limit: Int = 5_000,
         viewer: String = "avery",
+        /// `OPEN`, `MERGED` or `CLOSED`. The merged half of a poll (M6) needs the second,
+        /// and a merged node is only useful with the two fields below.
+        state: String = "OPEN",
+        mergedAt: String? = nil,
+        mergeCommit: String? = nil,
         /// A GraphQL `errors` array to send alongside the data, as GitHub does when one
         /// repository in a search is inaccessible.
         errors: String? = nil
     ) -> String {
         let nodes = numbers.map { number in
-            """
+            let merged = mergedAt.map { "\n  \"mergedAt\": \"\($0)\"," } ?? ""
+            let commit = mergeCommit.map { "\n  \"mergeCommit\": { \"oid\": \"\($0)-\(number)\" }," } ?? ""
+            return """
             {
               "__typename": "PullRequest",
               "number": \(number),
@@ -54,7 +61,7 @@ enum SearchPage {
               "headRefName": "avery/branch-\(number)",
               "baseRefName": "main",
               "isDraft": false,
-              "state": "OPEN",
+              "state": "\(state)",\(merged)\(commit)
               "createdAt": "2026-01-05T08:00:00Z",
               "updatedAt": "2026-01-09T08:00:00Z",
               "repository": { "nameWithOwner": "\(repo)", "defaultBranchRef": { "name": "main" } }

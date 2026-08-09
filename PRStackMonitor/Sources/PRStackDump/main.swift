@@ -1,4 +1,5 @@
 import Foundation
+import GitHubKit
 import PRStackCore
 
 // A debug dump for the derivation: read a snapshot, derive it, print the panel.
@@ -28,12 +29,31 @@ do {
         // Sequential, not parallel: on a cold start there are no identifiers to resolve
         // until GitHub has answered (IMPLEMENTATION_PLAN §1).
         let now = options.now ?? Date()
-        let fetch = try await GitHubSource.fetch(options: options)
-        let resolved = await LinearSource.resolve(fetch.pullRequests, options: options, now: now)
+        let store = StateSource.store(options: options)
+        var local = StateSource.load(store)
+
+        let viewerLogin: String
+        let pullRequests: [PullRequest]
+        if options.tracksReleases {
+            let polled = try await GitHubSource.poll(options: options, local: local, now: now)
+            // The single writer, here as in the app: the poll hands back what it found and
+            // this is the one place it is merged and saved (IMPLEMENTATION_PLAN §3).
+            polled.apply(to: &local)
+            try StateSource.save(local, to: store)
+            viewerLogin = polled.viewerLogin
+            pullRequests = polled.pullRequests
+        } else {
+            let fetch = try await GitHubSource.fetch(options: options)
+            viewerLogin = fetch.viewerLogin
+            pullRequests = fetch.pullRequests
+        }
+
+        let resolved = await LinearSource.resolve(pullRequests, options: options, now: now)
         linearHealth = resolved.health ?? .connected
         input = DumpInput(
             now: now,
-            snapshot: RawSnapshot(viewerLogin: fetch.viewerLogin, pullRequests: resolved.pullRequests)
+            snapshot: RawSnapshot(viewerLogin: viewerLogin, pullRequests: resolved.pullRequests),
+            local: local
         )
     }
 

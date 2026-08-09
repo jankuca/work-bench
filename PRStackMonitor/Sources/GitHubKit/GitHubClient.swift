@@ -30,6 +30,17 @@ public enum FetchWarning: Equatable, Sendable, CustomStringConvertible {
     case repositoryDropped(String)
     case nodeSkipped(String)
     case graphQL(GraphQLError)
+    /// Release tracking (M6) — the tag list for one repository was truncated.
+    case tagPageCapReached(repository: String, pages: Int)
+    /// The per-poll `compare` budget. The remainder resumes next poll, and nothing is
+    /// re-tested because every negative is persisted.
+    case comparisonBudgetExhausted(spent: Int, limit: Int)
+    /// One repository's release tracking failed. Only that repository's merges are
+    /// affected; every other row, and every other repository, is unchanged.
+    case releaseTrackingFailed(repository: String, reason: String)
+    /// Release tracking was not attempted, or was cut short. A merge that has waited weeks
+    /// can wait for the allowance to reset; the open list cannot.
+    case releaseTrackingDeferred(reason: String)
 
     public var description: String {
         switch self {
@@ -37,6 +48,15 @@ public enum FetchWarning: Equatable, Sendable, CustomStringConvertible {
             return "stopped at the \(pages)-page cap with \(fetched) pull requests; more remain"
         case .pointBudgetExhausted(let spent, let limit):
             return "spent \(spent) of \(limit) GraphQL points this poll; the rest resumes next poll"
+        case .tagPageCapReached(let repository, let pages):
+            return "stopped reading \(repository)'s tags at the \(pages)-page cap; "
+                + "a release cut before those may not be found yet"
+        case .comparisonBudgetExhausted(let spent, let limit):
+            return "spent \(spent) of \(limit) release comparisons this poll; the rest resumes next poll"
+        case .releaseTrackingFailed(let repository, let reason):
+            return "could not check \(repository)'s releases: \(reason)"
+        case .releaseTrackingDeferred(let reason):
+            return "deferred release tracking: \(reason)"
         case .rateLimitFloorReached(let remaining, let limit, let resetAt):
             let when = resetAt.map { ISO8601DateFormatter().string(from: $0) } ?? "unknown"
             return "GitHub allowance low (\(remaining) of \(limit) left, resets \(when)); backing off"

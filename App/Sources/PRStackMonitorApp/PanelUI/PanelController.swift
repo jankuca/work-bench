@@ -44,14 +44,34 @@ final class PanelController: ObservableObject {
     private let source: any PanelSource
     private let clock: () -> Date
     private let events: EventBus
+    /// The single writer of `state.json`. Everything that mutates `local` goes through
+    /// ``persist()`` immediately afterwards, so a crash costs at most the change in flight
+    /// (IMPLEMENTATION_PLAN §3).
+    private let store: any StateStore
 
-    init(source: any PanelSource, events: EventBus, clock: @escaping () -> Date = { Date() }) {
+    init(
+        source: any PanelSource,
+        events: EventBus,
+        store: any StateStore = FileStateStore(url: FileStateStore.defaultURL()),
+        clock: @escaping () -> Date = { Date() }
+    ) {
         self.source = source
         self.events = events
+        self.store = store
         self.clock = clock
         snapshot = RawSnapshot(viewerLogin: "", pullRequests: [])
-        local = .empty
         status = .unconfigured
+
+        // Dismissals, snoozes, read digests, release bindings and the merges still waiting
+        // for a tag, as the last launch left them. A file that could not be read has already
+        // been moved aside by the store, so this is empty rather than half-read.
+        let loaded = store.load()
+        local = loaded.state
+        if let failure = loaded.failure {
+            let moved = loaded.quarantinedTo.map { " It was moved to \($0.lastPathComponent)." } ?? ""
+            NSLog("PRStackMonitor: starting from empty local state — %@.%@", failure, moved)
+        }
+
         panel = PanelPresentation.make(model: .empty, status: .unconfigured, now: clock())
     }
 
@@ -67,6 +87,7 @@ final class PanelController: ObservableObject {
         // never drops out of action-needed, which only the pull requests can clear.
         digestsWhileOpen = local.readDigests
         local.markAllRead(in: snapshot)
+        persist()
         rebuild()
         refresh()
     }
@@ -88,9 +109,14 @@ final class PanelController: ObservableObject {
         status.isRefreshing = true
         rebuild()
 
+        // The state the poll reads — its unbound merges bound the closed search and give the
+        // release tracker its work list. A value copy: the poll never writes local state,
+        // it hands back what it found and this actor merges it (IMPLEMENTATION_PLAN §3).
+        let local = self.local
+        let now = clock()
         pollTask = Task { [weak self] in
             guard let self else { return }
-            let outcome = await self.source.load()
+            let outcome = await self.source.load(local: local, now: now)
             self.apply(outcome, from: generation)
         }
     }
@@ -106,19 +132,28 @@ final class PanelController: ObservableObject {
         switch outcome {
         case .cancelled:
             break
-        case .fetched(let fetched, let linear):
-            snapshot = fetched
+        case .fetched(let product):
+            snapshot = product.snapshot
             status.github = .connected
             status.lastSyncedAt = clock()
             // Nil means the Linear half learned nothing this poll, so the footer keeps
             // whatever it was already saying rather than being reset to healthy.
-            if let linear { status.linear = linear }
+            if let linear = product.linear { status.linear = linear }
+            // The merge commits this poll saw, then the releases they were found in. Both
+            // are written here and nowhere else — the tracker hands its bindings back
+            // rather than writing the file from its own task.
+            local.recordMerges(from: snapshot.pullRequests)
+            local.apply(product.release)
             // A poll that lands while the panel is open has been seen, so it is read.
             // `digestsWhileOpen` stays frozen at the open, so the dots for it still appear
             // on screen — what this clears is the menu bar, which would otherwise light up
             // for activity the user is looking straight at.
             if digestsWhileOpen != nil {
                 local.markAllRead(in: snapshot)
+            }
+            persist()
+            for warning in product.warnings {
+                NSLog("PRStackMonitor: %@", warning.description)
             }
         case .failed(let health):
             // The rows stay. Losing the connection does not make what was fetched untrue,
@@ -130,11 +165,11 @@ final class PanelController: ObservableObject {
 
     // MARK: - Actions
 
-    /// In memory only at M3. `LocalState` gets the store that makes these survive a
-    /// relaunch at M6, which needs it for unbound merges; reaching them from the keyboard
-    /// is M7.
+    /// Reaching these from the keyboard is M7; since M6 every one of them survives a
+    /// relaunch, because each writes `state.json` through ``persist()``.
     func markAllRead() {
         local.markAllRead(in: snapshot)
+        persist()
         // Unlike opening, this one is asked for explicitly, so the dots go now rather than
         // at the next open — an action that visibly does nothing has been pressed twice.
         // Only while the panel is open: with it closed there is nothing frozen to update,
@@ -144,7 +179,10 @@ final class PanelController: ObservableObject {
     }
 
     func dismiss(_ id: PRID) {
-        local.dismissed.insert(id)
+        // Tombstone plus release cleanup, in `LocalState` so the two cannot drift apart
+        // here and in `clearDone`.
+        local.dismiss(id)
+        persist()
         rebuild()
     }
 
@@ -154,8 +192,24 @@ final class PanelController: ObservableObject {
             .first { $0.kind == .done }?
             .rows
             .map(\.id) ?? []
-        local.dismissed.formUnion(done)
+        local.dismiss(done)
+        persist()
         rebuild()
+    }
+
+    /// Writes `state.json`. Called after every mutation of `local`, and from nowhere else.
+    ///
+    /// A failed write is logged rather than surfaced: the panel is still correct for this
+    /// session, and there is nothing the user can do about a full disk from inside a popover.
+    /// The one failure that matters — a file that could not be read *and* could not be moved
+    /// aside — is refused by the store itself, so this never overwrites state it could not
+    /// read.
+    private func persist() {
+        do {
+            try store.save(local)
+        } catch {
+            NSLog("PRStackMonitor: could not save local state — %@", String(describing: error))
+        }
     }
 
     func open(_ url: URL) {
@@ -173,6 +227,9 @@ final class PanelController: ObservableObject {
 
         The Linear API key comes from $PRSTACK_LINEAR_KEY, then $LINEAR_API_KEY, then the \
         same keychain. Without one, every row is grouped under Other.
+
+        Releases are tags matching \(TagPatterns.defaultPattern) unless a repository is \
+        listed under the `\(AppDefaults.tagPatternsKey)` default; M7 adds the editor for it.
         """
         alert.alertStyle = .informational
         alert.runModal()
@@ -229,13 +286,7 @@ final class PanelController: ObservableObject {
 
 /// What one poll produced.
 enum PollOutcome: Sendable {
-    /// The snapshot, plus what the poll learned about Linear.
-    ///
-    /// Linear health is nil when the poll learned nothing about it: no request was sent —
-    /// nothing to resolve, or every identifier already cached — or the one that was sent
-    /// was cancelled. The footer then keeps whatever it was already saying, rather than
-    /// being reset to healthy by a poll that never checked.
-    case fetched(RawSnapshot, linear: SourceHealth?)
+    case fetched(PollProduct)
     /// GitHub failed. Linear is not reported here: this poll never got far enough to ask
     /// it, and marking it stale for GitHub's failure would blame the wrong source.
     case failed(SourceHealth)
@@ -244,10 +295,28 @@ enum PollOutcome: Sendable {
     case cancelled
 }
 
+/// A successful poll: the rows, what it learned about Linear, and what it learned about
+/// releases.
+struct PollProduct: Sendable {
+    var snapshot: RawSnapshot
+    /// Nil when the poll learned nothing about Linear: no request was sent — nothing to
+    /// resolve, or every identifier already cached — or the one that was sent was
+    /// cancelled. The footer then keeps whatever it was already saying, rather than being
+    /// reset to healthy by a poll that never checked.
+    var linear: SourceHealth?
+    /// Bindings and durable negatives, for the main actor to merge into `LocalState`.
+    var release: ReleaseTrackerResult = .empty
+    var warnings: [FetchWarning] = []
+}
+
 /// Where a panel's rows come from. One implementation talks to GitHub; a preview passes
 /// a fixture.
+///
+/// `local` goes in because two things depend on it: the closed search's lower bound, and
+/// the release tracker's work list. It comes back untouched — the source returns findings,
+/// the panel controller is the only writer.
 protocol PanelSource: Sendable {
-    func load() async -> PollOutcome
+    func load(local: LocalState, now: Date) async -> PollOutcome
 }
 
 /// One GraphQL poll, mapped to an outcome the panel can render.
@@ -266,25 +335,53 @@ struct GitHubPanelSource: PanelSource {
     /// session, and the panel controller holds this source for its whole life.
     let transport = URLSessionTransport.standard()
 
-    func load() async -> PollOutcome {
-        let client = GitHubClient(
-            transport: transport,
-            tokenProvider: CredentialChain.standard(
-                environment: .github(),
-                keychain: .github,
-                service: "GitHub"
-            )
+    /// The validators for the release tracker's `compare` calls, for the same reason and
+    /// with the same lifetime as the transport. Losing them on relaunch costs one
+    /// uncached request per pair, which the persisted negatives keep to a handful.
+    let etags: any ETagStore = InMemoryETagStore()
+
+    func load(local: LocalState, now: Date) async -> PollOutcome {
+        let credentials = CredentialChain.standard(
+            environment: .github(),
+            keychain: .github,
+            service: "GitHub"
+        )
+        let poll = GitHubPoll(
+            client: GitHubClient(transport: transport, tokenProvider: credentials),
+            tracker: TagContainmentTracker(
+                transport: transport,
+                tokenProvider: credentials,
+                configuration: TagContainmentTracker.Configuration(
+                    // M6 reads the per-repository pattern map; M7 adds the editor for it,
+                    // so until then everything takes the `v*` default.
+                    tagPatterns: AppDefaults.tagPatterns()
+                ),
+                // Held for the life of the source, like the transport: a repeated
+                // comparison then costs a 304 instead of a request against the REST
+                // allowance.
+                etagStore: etags
+            ),
+            // Costs nothing unless a merged pull request arrives without a merge commit,
+            // which is rare and otherwise permanent.
+            recovery: MergeCommitRecovery(transport: transport, tokenProvider: credentials)
         )
 
         do {
-            let fetch = try await client.fetchPullRequests(scope: scope)
+            let fetched = try await poll.run(scope: scope, local: local, now: now)
             // Linear never fails the poll. It cannot: every row is already complete without
             // it, and losing it costs only the project headings for identifiers that have
             // never been cached (IMPLEMENTATION_PLAN §4).
-            let resolution = await LinearPanelSource.resolve(fetch.pullRequests, over: transport)
+            let resolution = await LinearPanelSource.resolve(fetched.pullRequests, over: transport)
             return .fetched(
-                RawSnapshot(viewerLogin: fetch.viewerLogin, pullRequests: resolution.pullRequests),
-                linear: resolution.health
+                PollProduct(
+                    snapshot: RawSnapshot(
+                        viewerLogin: fetched.viewerLogin,
+                        pullRequests: resolution.pullRequests
+                    ),
+                    linear: resolution.health,
+                    release: fetched.release,
+                    warnings: fetched.warnings
+                )
             )
         } catch is CancellationError {
             return .cancelled
