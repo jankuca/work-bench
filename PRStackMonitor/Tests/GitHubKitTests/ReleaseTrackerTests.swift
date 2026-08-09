@@ -24,6 +24,8 @@ final class ReleaseStubTransport: HTTPTransport {
     private(set) var tagQueries: [HTTPRequest] = []
     /// Every `<tag>...<sha>` asked for, in order.
     private(set) var compared: [String] = []
+    /// The comparison requests themselves, so a conditional header can be asserted.
+    private(set) var comparisonRequests: [HTTPRequest] = []
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         if request.method == "POST" {
@@ -34,6 +36,7 @@ final class ReleaseStubTransport: HTTPTransport {
 
         let basehead = request.url.lastPathComponent
         compared.append(basehead)
+        comparisonRequests.append(request)
         if let failure = comparisonFailures[basehead] { return failure }
         let status = comparisons[basehead] ?? "ahead"
         return .json(#"{"status":"\#(status)"}"#, headers: comparisonHeaders)
@@ -108,6 +111,24 @@ final class ReleaseTrackerTests: XCTestCase {
         XCTAssertEqual(transport.compared, ["v1.0.0...\(commit)", "v1.1.0...\(commit)"])
         XCTAssertEqual(result.comparisons[pullRequest], ["v1.0.0"])
         XCTAssertEqual(result.comparisonsMade, 2)
+    }
+
+    /// A lightweight tag carries its target commit's date, so a tag cut directly on the
+    /// merge commit reports exactly `mergedAt`. A strict `>` would drop it every poll and
+    /// never record it as compared — the row would strand at `merged · awaiting release`,
+    /// which is the failure this milestone exists to prevent.
+    func testATagCutOnTheMergeCommitIsStillACandidate() async throws {
+        let transport = ReleaseStubTransport()
+        transport.tagPages = [
+            .json(TagPage.json(tags: [
+                TagPage.Tag.lightweight("v1.4.0", commit: commit, date: ReleaseTrackerTests.day(4))
+            ]))
+        ]
+        transport.comparisons = ["v1.4.0...\(commit)": "identical"]
+
+        let result = try await tracker(transport).poll(unbound: unbound(), now: now)
+
+        XCTAssertEqual(result.bindings, [pullRequest: "v1.4.0"])
     }
 
     /// A tag cut before the merge cannot contain it, so it is never worth a request.
@@ -332,8 +353,36 @@ final class ReleaseTrackerTests: XCTestCase {
 
         let result = try await tracker(transport, etags: etags).poll(unbound: unbound(), now: now)
 
+        XCTAssertEqual(transport.comparisonRequests.first?.header("If-None-Match"), "W/\"cached\"")
         XCTAssertTrue(result.bindings.isEmpty)
         XCTAssertEqual(result.comparisons[pullRequest], ["v1.0.0"])
+    }
+
+    /// A repository answering with errors is left for the next poll whole. Its merges share
+    /// the candidate list that just failed, so trying the next one only spends more budget
+    /// on the same failure.
+    func testAComparisonFailureStopsThatRepositoryForThePoll() async throws {
+        let second = PRID(repo: repository, number: 4013)
+        let transport = ReleaseStubTransport()
+        transport.tagPages = [
+            .json(TagPage.json(tags: [
+                TagPage.Tag.lightweight("v1.0.0", commit: "c1", date: ReleaseTrackerTests.day(5))
+            ]))
+        ]
+        transport.comparisonFailures = [
+            "v1.0.0...\(commit)": .json(#"{"message":"Not Found"}"#, status: 404)
+        ]
+
+        var merges = unbound()
+        // Merged a minute later, so the failing one is reached first — merges are taken
+        // oldest first.
+        merges[second] = UnboundMerge(mergeCommit: "another", mergedAt: mergedAt.addingTimeInterval(60))
+
+        let result = try await tracker(transport).poll(unbound: merges, now: now)
+
+        XCTAssertEqual(transport.compared, ["v1.0.0...\(commit)"])
+        XCTAssertEqual(result.comparisonsMade, 1)
+        XCTAssertTrue(result.comparisons.isEmpty, "a failure is not a durable negative")
     }
 
     /// M6's headline behaviour, end to end: a merge from six weeks ago, a tag cut today,

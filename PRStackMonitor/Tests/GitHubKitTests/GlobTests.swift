@@ -27,6 +27,9 @@ final class GlobTests: XCTestCase {
         XCTAssertEqual(Glob("v?.*").literalPrefix, "v")
         XCTAssertEqual(Glob("v[0-9]*").literalPrefix, "v")
         XCTAssertEqual(Glob("v1.4.0").literalPrefix, "v1.4.0")
+        // An escaped wildcard is a literal, so it belongs in the prefilter — and the
+        // prefilter decides which tags the local matcher ever sees.
+        XCTAssertEqual(Glob(#"\*-prod"#).literalPrefix, "*-prod")
     }
 
     func testQuestionMarkMatchesExactlyOneCharacter() {
@@ -86,6 +89,21 @@ final class TagPatternsTests: XCTestCase {
     /// tracking off for that repository without saying so.
     func testAnEmptyPatternIsNoEntry() {
         let patterns = TagPatterns(["acme/billing": "  "])
+        XCTAssertEqual(patterns.pattern(for: "acme/billing"), TagPatterns.defaultPattern)
+    }
+
+    /// The setter has to reject what the initialiser rejects, or the two disagree about
+    /// their own key space: a blank repository would store its pattern under `""` and
+    /// `pattern(for: "")` would answer with it instead of the default.
+    func testTheSetterRejectsABlankRepository() {
+        var patterns = TagPatterns()
+        patterns.set("release-*", for: "  ")
+        XCTAssertEqual(patterns.pattern(for: ""), TagPatterns.defaultPattern)
+        XCTAssertTrue(patterns.byRepository.isEmpty)
+
+        patterns.set("release-*", for: "Acme/Billing")
+        XCTAssertEqual(patterns.pattern(for: "acme/billing"), "release-*")
+        patterns.set(nil, for: "acme/billing")
         XCTAssertEqual(patterns.pattern(for: "acme/billing"), TagPatterns.defaultPattern)
     }
 }

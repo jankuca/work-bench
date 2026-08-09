@@ -101,6 +101,38 @@ final class UnboundMergeTests: XCTestCase {
         XCTAssertNil(state.unboundMerges[id])
     }
 
+    /// Dismissal has to take the unbound record with it. A dismissed row never renders
+    /// again, so a record left behind would go on dragging the closed search's lower bound
+    /// backwards and spending comparisons on a row nobody will see — and `recordMerges`
+    /// would not put it back, because it skips dismissed pull requests.
+    func testDismissalRetiresTheUnboundRecordAndTheQueryBound() {
+        let id = PRID(repo: "acme/billing", number: 2)
+        var state = LocalState.empty
+        state.recordMerges(from: [merged(2)])
+        XCTAssertEqual(state.oldestUnboundMergeAt, mergedAt)
+
+        state.dismiss(id)
+
+        XCTAssertTrue(state.dismissed.contains(id))
+        XCTAssertNil(state.unboundMerges[id])
+        XCTAssertNil(state.oldestUnboundMergeAt)
+
+        // And it stays gone across polls.
+        state.recordMerges(from: [merged(2)])
+        XCTAssertNil(state.unboundMerges[id])
+    }
+
+    /// `Clear all` dismisses a whole section at once, and has to do the same cleanup.
+    func testDismissingASequenceRetiresEveryRecord() {
+        var state = LocalState.empty
+        state.recordMerges(from: [merged(2), merged(3)])
+
+        state.dismiss([PRID(repo: "acme/billing", number: 2), PRID(repo: "acme/billing", number: 3)])
+
+        XCTAssertTrue(state.unboundMerges.isEmpty)
+        XCTAssertEqual(state.dismissed.count, 2)
+    }
+
     /// The lower bound of the closed search. It is the *oldest* waiting merge, because that
     /// is the one that would otherwise age out of the query and strand.
     func testTheOldestWaitingMergeIsTheQueryBound() {

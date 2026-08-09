@@ -43,6 +43,10 @@ public struct TagPatterns: Equatable, Sendable {
 
     public mutating func set(_ pattern: String?, for repository: String) {
         let key = TagPatterns.key(repository)
+        // The same rejection the initialiser makes. Without it, a blank repository stores
+        // its pattern under `""`, and `pattern(for: "")` answers with it instead of the
+        // default — a setter and an initialiser disagreeing about their own key space.
+        guard !key.isEmpty else { return }
         guard let pattern, !pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             byRepository[key] = nil
             return

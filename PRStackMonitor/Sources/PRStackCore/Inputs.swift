@@ -208,6 +208,24 @@ public struct LocalState: Equatable, Sendable {
         }
     }
 
+    /// Dismisses a pull request: a permanent tombstone, and the end of any release work
+    /// still queued for it.
+    ///
+    /// The two halves belong together. A dismissed row never renders again, so an unbound
+    /// record left behind would go on drawing the merged query's lower bound backwards and
+    /// spending comparisons on a row nobody will see — and ``recordMerges(from:)`` would
+    /// not put it back, because it skips dismissed pull requests.
+    public mutating func dismiss<Ids: Sequence>(_ ids: Ids) where Ids.Element == PRID {
+        for id in ids {
+            dismissed.insert(id)
+            unboundMerges[id] = nil
+        }
+    }
+
+    public mutating func dismiss(_ id: PRID) {
+        dismiss(CollectionOfOne(id))
+    }
+
     /// Binds a pull request to the release it shipped in. Permanent, and it retires the
     /// unbound record — including its compared-tag set, which has nothing left to bound.
     public mutating func bind(_ id: PRID, toRelease tag: String) {

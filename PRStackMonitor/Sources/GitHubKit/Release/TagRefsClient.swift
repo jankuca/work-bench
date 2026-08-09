@@ -181,6 +181,22 @@ public struct TagRefsClient {
             guard hasNextPage else { break pagination }
             cursor = pageInfo?.endCursor
 
+            // Bounds are checked after the page is banked, so each one stops the *next*
+            // request rather than discarding work already paid for — the same arrangement
+            // the pull request search uses. The floor matters more here than it looks:
+            // release tracking runs after both searches, so it is the last thing spending
+            // the allowance and the first thing that should stop.
+            if let rateLimit, rateLimit.isBelowFloor {
+                isComplete = false
+                warnings.append(
+                    .rateLimitFloorReached(
+                        remaining: rateLimit.remaining,
+                        limit: rateLimit.limit,
+                        resetAt: rateLimit.resetAt
+                    )
+                )
+                break pagination
+            }
             if pages >= configuration.pageCap {
                 isComplete = false
                 warnings.append(.tagPageCapReached(repository: repository, pages: pages))

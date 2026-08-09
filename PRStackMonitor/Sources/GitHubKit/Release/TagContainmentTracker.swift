@@ -117,11 +117,20 @@ public struct TagContainmentTracker: ReleaseTracker {
 
             for (id, merge) in merges {
                 if restFloorReached { break repositories }
-                // Only tags cut after the merge can contain it, and only tags never tested
+                // Only tags as new as the merge can contain it, and only tags never tested
                 // against *this* commit are worth a request. `fetch.candidates` is already
                 // oldest-first, so the first hit is the earliest release.
+                //
+                // The bound is inclusive, and that is load-bearing rather than tidy. A
+                // lightweight tag carries its target commit's date, so a tag cut directly on
+                // the merge commit — the ordinary "tag the release" workflow — reports
+                // exactly `mergedAt`. A strict `>` would drop it from the candidate list on
+                // every poll, and it would never enter `comparedTags` to be reconsidered, so
+                // the row would sit at `merged · awaiting release` for good. One redundant
+                // comparison against a same-instant tag costs a request; missing it costs
+                // the binding.
                 let untested = fetch.candidates.filter { candidate in
-                    candidate.taggedAt > merge.mergedAt && !merge.comparedTags.contains(candidate.name)
+                    candidate.taggedAt >= merge.mergedAt && !merge.comparedTags.contains(candidate.name)
                 }
                 guard !untested.isEmpty else { continue }
 
@@ -155,13 +164,15 @@ public struct TagContainmentTracker: ReleaseTracker {
                     } catch let error as GitHubError {
                         if error.endsThePoll { throw error }
                         // A tag deleted between the ref query and this call, or a commit
-                        // that no longer exists. Report it and leave this pull request for
-                        // the next poll rather than burning the budget on a repository
-                        // that is answering with errors.
+                        // that no longer exists. Report it and leave the whole repository
+                        // for the next poll: the merges under it share the candidate list
+                        // that just failed, so trying the next one spends the budget on a
+                        // repository that is answering with errors.
                         result.warnings.append(
                             .releaseTrackingFailed(repository: repository, reason: error.description)
                         )
-                        break candidates
+                        if !negatives.isEmpty { result.comparisons[id] = negatives }
+                        continue repositories
                     }
 
                     result.restRateLimit = comparison.rateLimit ?? result.restRateLimit

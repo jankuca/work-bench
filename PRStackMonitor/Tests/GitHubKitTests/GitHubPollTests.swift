@@ -105,6 +105,26 @@ final class GitHubPollTests: XCTestCase {
         XCTAssertTrue(result.isComplete)
     }
 
+    /// The persisted merges are what widen the closed search. Every other poll test starts
+    /// from `.empty`, so without this one, dropping `local.unboundMerges` from the call
+    /// would leave the suite green while a six-week-old merge quietly left the query.
+    func testAWaitingMergeWidensTheClosedSearch() async throws {
+        let transport = StubTransport(responses: [
+            .json(SearchPage.json(numbers: [], hasNextPage: false, endCursor: nil)),
+            .json(SearchPage.json(numbers: [], hasNextPage: false, endCursor: nil))
+        ])
+        let local = LocalState(unboundMerges: [
+            PRID(repo: "acme/billing", number: 4012): UnboundMerge(
+                mergeCommit: "9f1c2ab",
+                mergedAt: ISO8601DateFormatter().date(from: "2025-12-01T09:30:00Z")!
+            )
+        ])
+
+        _ = try await GitHubPoll(client: client(transport)).run(scope: .all, local: local, now: now)
+
+        XCTAssertTrue(try searchQuery(transport, 1).contains("closed:>=2025-12-01"))
+    }
+
     /// The tracker's work list is the persisted merges *plus* the ones this poll just
     /// found, so a pull request that merged seconds ago is testable against a tag cut
     /// seconds before that, on the poll it first appears.

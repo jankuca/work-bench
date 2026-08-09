@@ -101,6 +101,10 @@ struct DumpOptions {
     var tracksReleases = false
     var tagPatterns: [String: String] = [:]
     var comparisonBudget = 20
+    /// Whether `--comparisons` was actually typed. The value alone cannot say: 20 is both
+    /// the default and a perfectly ordinary thing to pass, so without this the validation
+    /// below would either miss the flag or reject the default.
+    var setsComparisonBudget = false
     var statePath: String?
 
     /// No `--repo` means every repository, which is the `all` mode from
@@ -164,15 +168,22 @@ struct DumpOptions {
                 options.tracksReleases = true
             case "--comparisons":
                 options.comparisonBudget = try nextInt("--comparisons")
+                options.setsComparisonBudget = true
             case "--state":
                 options.statePath = try next("--state")
             case "--tag-pattern":
                 let raw = try next("--tag-pattern")
                 // `=` rather than a repeated pair of arguments, so one repository's setting
                 // is one token and cannot be split by a missing value.
+                //
+                // The repository half is validated as `owner/name` rather than taken as
+                // typed: `TagPatterns` keys on `nameWithOwner`, so `billing=release-*` would
+                // be stored, never matched, and silently leave that repository on `v*` —
+                // which looks exactly like the pattern being wrong.
                 guard let separator = raw.firstIndex(of: "="),
                       separator != raw.startIndex,
-                      raw.index(after: separator) != raw.endIndex else {
+                      raw.index(after: separator) != raw.endIndex,
+                      RepoScope.isWellFormed(String(raw[..<separator])) else {
                     throw DumpFailure("--tag-pattern needs owner/name=glob, got '\(raw)'")
                 }
                 options.tagPatterns[String(raw[..<separator])] = String(raw[raw.index(after: separator)...])
@@ -225,6 +236,7 @@ struct DumpOptions {
                 options.resolvesLinear ? nil : "--no-linear",
                 options.tracksReleases ? "--releases" : nil,
                 options.tagPatterns.isEmpty ? nil : "--tag-pattern",
+                options.setsComparisonBudget ? "--comparisons" : nil,
                 // A fixture carries its own `local`, including its release bindings, so a
                 // state file would be two answers to the same question.
                 options.statePath == nil ? nil : "--state"
@@ -240,8 +252,13 @@ struct DumpOptions {
         if options.tracksReleases && !options.qualifiers.isEmpty {
             throw DumpFailure("--qualifier cannot be combined with --releases")
         }
+        // Both of these configure work that only `--releases` does. Accepting them quietly
+        // would report a budget that was never spent and a pattern that was never used.
         if !options.tracksReleases && !options.tagPatterns.isEmpty {
             throw DumpFailure("--tag-pattern only applies with --releases")
+        }
+        if !options.tracksReleases && options.setsComparisonBudget {
+            throw DumpFailure("--comparisons only applies with --releases")
         }
 
         return options

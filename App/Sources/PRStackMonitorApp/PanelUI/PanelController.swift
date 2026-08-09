@@ -179,9 +179,9 @@ final class PanelController: ObservableObject {
     }
 
     func dismiss(_ id: PRID) {
-        local.dismissed.insert(id)
-        // A dismissed row can never come back, so it has nothing left to bind to a release.
-        local.unboundMerges[id] = nil
+        // Tombstone plus release cleanup, in `LocalState` so the two cannot drift apart
+        // here and in `clearDone`.
+        local.dismiss(id)
         persist()
         rebuild()
     }

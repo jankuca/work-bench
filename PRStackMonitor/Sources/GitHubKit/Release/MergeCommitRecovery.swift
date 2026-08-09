@@ -106,6 +106,10 @@ public struct MergeCommitRecovery {
         for commit in commits.reversed() {
             guard let oid = commit.oid, !oid.isEmpty else { continue }
             for number in MergeCommitRecovery.referencedNumbers(in: commit.messageHeadline ?? "") {
+                // First writer wins, and walking in reverse makes that the oldest commit.
+                // Assigning unconditionally would let the newest mention overwrite it,
+                // which is the revert case exactly.
+                guard byNumber[number] == nil else { continue }
                 byNumber[number] = oid
             }
         }

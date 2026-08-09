@@ -139,6 +139,46 @@ final class TagRefsClientTests: XCTestCase {
         XCTAssertEqual(fetch.pointsSpent, 2)
     }
 
+    /// The ref list can shift under pagination, so the same tag can arrive on two pages.
+    /// Keeping the first sighting makes the candidate list the same either way.
+    func testARepeatedTagAcrossPagesIsCountedOnce() async throws {
+        let tag = TagPage.Tag.lightweight("v1.0.0", commit: "c1", date: TagRefsClientTests.day(1))
+        let transport = StubTransport(responses: [
+            .json(TagPage.json(tags: [tag], hasNextPage: true, endCursor: "PAGE2")),
+            .json(TagPage.json(tags: [tag]))
+        ])
+
+        let fetch = try await client(transport, pageSize: 1)
+            .fetchCandidates(repository: "acme/billing", glob: Glob("v*"))
+
+        XCTAssertEqual(fetch.candidates.map(\.name), ["v1.0.0"])
+        XCTAssertEqual(fetch.pagesFetched, 2)
+    }
+
+    /// Release tracking runs after both pull request searches, so it is the last thing
+    /// spending the allowance and the first thing that should stop.
+    func testPaginationStopsAtTheRateLimitFloor() async throws {
+        let tag = TagPage.Tag.lightweight("v1.0.0", commit: "c1", date: TagRefsClientTests.day(1))
+        let transport = StubTransport(responses: [
+            .json(TagPage.json(tags: [tag], hasNextPage: true, endCursor: "PAGE2", remaining: 400)),
+            .json(TagPage.json(tags: [tag]))
+        ])
+
+        let fetch = try await client(transport, pageSize: 1)
+            .fetchCandidates(repository: "acme/billing", glob: Glob("v*"))
+
+        XCTAssertEqual(fetch.pagesFetched, 1)
+        XCTAssertFalse(fetch.isComplete)
+        XCTAssertEqual(
+            fetch.warnings,
+            [.rateLimitFloorReached(
+                remaining: 400,
+                limit: 5_000,
+                resetAt: ISO8601DateFormatter().date(from: "2026-01-10T13:00:00Z")
+            )]
+        )
+    }
+
     /// `release-annotated-tag-on-older-commit`. `TAG_COMMIT_DATE` sorts by the *target
     /// commit's* date, so a tag cut today against an older commit arrives first. Since the
     /// binding is permanent, taking the server's first hit would pin a pull request to a
