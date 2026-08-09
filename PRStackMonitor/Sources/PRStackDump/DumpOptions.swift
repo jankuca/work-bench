@@ -186,7 +186,13 @@ struct DumpOptions {
                       RepoScope.isWellFormed(String(raw[..<separator])) else {
                     throw DumpFailure("--tag-pattern needs owner/name=glob, got '\(raw)'")
                 }
-                options.tagPatterns[String(raw[..<separator])] = String(raw[raw.index(after: separator)...])
+                // Lowercased here, because `TagPatterns` keys case-insensitively: passing
+                // both `Acme/Billing=v*` and `acme/billing=release-*` would otherwise keep
+                // two entries that collapse into one later, and `Dictionary` iteration would
+                // decide which pattern a permanent binding was made under. Normalising at
+                // the door makes it last-flag-wins instead.
+                let repository = String(raw[..<separator]).lowercased()
+                options.tagPatterns[repository] = String(raw[raw.index(after: separator)...])
             case "--emit-snapshot":
                 options.emitSnapshotPath = try next("--emit-snapshot")
             case "--presentation":

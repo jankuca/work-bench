@@ -192,8 +192,7 @@ final class PanelController: ObservableObject {
             .first { $0.kind == .done }?
             .rows
             .map(\.id) ?? []
-        local.dismissed.formUnion(done)
-        for id in done { local.unboundMerges[id] = nil }
+        local.dismiss(done)
         persist()
         rebuild()
     }

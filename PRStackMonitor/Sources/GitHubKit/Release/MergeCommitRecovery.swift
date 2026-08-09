@@ -91,6 +91,18 @@ public struct MergeCommitRecovery {
                 guard let oid = byNumber[candidate.number] else { continue }
                 result.commits[candidate.id] = oid
             }
+
+            // The floor applies between repositories as well. `GitHubPoll` only sees the
+            // allowance this returns, so it can stop the tag pass but not these requests —
+            // whatever this repository recovered is kept, and the rest waits for the reset.
+            if let limit = result.rateLimit, limit.isBelowFloor {
+                result.warnings.append(
+                    .releaseTrackingDeferred(
+                        reason: "GitHub allowance low (\(limit.remaining) of \(limit.limit) points left)"
+                    )
+                )
+                break
+            }
         }
 
         return result

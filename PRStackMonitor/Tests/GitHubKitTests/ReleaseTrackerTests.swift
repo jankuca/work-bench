@@ -62,6 +62,7 @@ final class ReleaseTrackerTests: XCTestCase {
         _ transport: ReleaseStubTransport,
         patterns: TagPatterns = .standard,
         comparisonBudget: Int = 20,
+        tagPageCap: Int = 10,
         etags: any ETagStore = InMemoryETagStore()
     ) -> TagContainmentTracker {
         TagContainmentTracker(
@@ -71,6 +72,7 @@ final class ReleaseTrackerTests: XCTestCase {
                 tagPatterns: patterns,
                 comparisonBudget: comparisonBudget,
                 tagRefs: TagRefsClient.Configuration(
+                    pageCap: tagPageCap,
                     endpoint: URL(string: "https://api.github.test/graphql")!
                 ),
                 restBaseURL: URL(string: "https://api.github.test")!
@@ -274,6 +276,31 @@ final class ReleaseTrackerTests: XCTestCase {
         XCTAssertEqual(
             result.warnings.last?.description.contains("deferred release tracking"),
             true
+        )
+    }
+
+    /// A truncated tag list binds nothing. A page that was never fetched can hold an
+    /// earlier matching release, and the binding would be permanent — so the repository
+    /// waits for a later poll instead.
+    func testATruncatedTagListBindsNothing() async throws {
+        let transport = ReleaseStubTransport()
+        transport.tagPages = [
+            .json(TagPage.json(
+                tags: [TagPage.Tag.lightweight("v9.0.0", commit: commit, date: ReleaseTrackerTests.day(5))],
+                hasNextPage: true,
+                endCursor: "PAGE2"
+            ))
+        ]
+        transport.comparisons = ["v9.0.0...\(commit)": "identical"]
+
+        let result = try await tracker(transport, tagPageCap: 1).poll(unbound: unbound(), now: now)
+
+        XCTAssertTrue(transport.compared.isEmpty)
+        XCTAssertTrue(result.bindings.isEmpty)
+        XCTAssertEqual(
+            result.warnings,
+            [.tagPageCapReached(repository: repository, pages: 1)],
+            "the truncation is still reported, so the repository is not silently skipped"
         )
     }
 

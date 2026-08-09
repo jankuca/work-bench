@@ -126,7 +126,14 @@ public struct TagContainmentTracker: ReleaseTracker {
                 break repositories
             }
 
-            guard !fetch.candidates.isEmpty else { continue }
+            // A truncated tag list must not bind anything. The candidates are re-sorted
+            // locally by their own timestamps, so a page that was never fetched can hold an
+            // *earlier* matching release — and the binding this would write is permanent.
+            // Leaving the repository for a later poll is recoverable; binding it to the
+            // wrong release is not. The page cap is 1,000 matching tags in one repository,
+            // which is far past the point where the pattern is wrong, and the warning
+            // already says so.
+            guard fetch.isComplete, !fetch.candidates.isEmpty else { continue }
 
             for (id, merge) in merges {
                 if restFloorReached { break repositories }

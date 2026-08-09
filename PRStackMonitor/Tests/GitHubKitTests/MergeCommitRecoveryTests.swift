@@ -31,7 +31,7 @@ final class MergeCommitRecoveryTests: XCTestCase {
     }
 
     /// `history` comes back newest first.
-    private func history(_ commits: [(oid: String, headline: String)]) -> String {
+    private func history(_ commits: [(oid: String, headline: String)], remaining: Int = 4_900) -> String {
         let nodes = commits.map { commit -> String in
             // A revert's headline quotes the commit it undoes, so the escaping is not
             // hypothetical — unescaped, the fixture is not JSON at all.
@@ -44,7 +44,7 @@ final class MergeCommitRecoveryTests: XCTestCase {
         {
           "data": {
             "rateLimit": {
-              "limit": 5000, "cost": 1, "remaining": 4900, "resetAt": "2026-01-20T13:00:00Z"
+              "limit": 5000, "cost": 1, "remaining": \(remaining), "resetAt": "2026-01-20T13:00:00Z"
             },
             "repository": {
               "defaultBranchRef": {
@@ -133,6 +133,24 @@ final class MergeCommitRecoveryTests: XCTestCase {
         XCTAssertEqual(transport.requests.count, 2)
         XCTAssertEqual(result.commits.count, 3)
         XCTAssertEqual(result.commits[PRID(repo: "acme/web", number: 3)], "c")
+    }
+
+    /// The floor applies between repositories too. `GitHubPoll` only sees the allowance
+    /// this returns, so it can stop the tag pass but not these requests.
+    func testALowAllowanceStopsAfterTheCurrentRepository() async throws {
+        let transport = StubTransport(responses: [
+            .json(history([("a", "One (#1)")], remaining: 400))
+        ])
+
+        let result = try await recovery(transport).recover([merged(1), merged(3, repo: "acme/web")])
+
+        XCTAssertEqual(transport.requests.count, 1, "the second repository is not read")
+        // Whatever the first repository recovered is kept.
+        XCTAssertEqual(result.commits, [PRID(repo: "acme/billing", number: 1): "a"])
+        XCTAssertEqual(
+            result.warnings.last?.description.contains("deferred release tracking"),
+            true
+        )
     }
 
     /// A pull request nothing on trunk mentions is left alone rather than guessed at. It
