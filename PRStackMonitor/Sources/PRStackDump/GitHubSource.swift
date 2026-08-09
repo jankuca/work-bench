@@ -33,6 +33,48 @@ enum GitHubSource {
         return fetch
     }
 
+    /// The full M6 poll: the open search, the closed search bounded by the oldest merge
+    /// still waiting for a tag, and then the tag/`compare` pass that binds them.
+    ///
+    /// Runs only under `--releases`, because it costs a second search and up to
+    /// `--comparisons` REST calls per run — and because the one-search path above is what
+    /// M2's done-criteria is written against.
+    static func poll(options: DumpOptions, local: LocalState, now: Date) async throws -> GitHubPollResult {
+        let credentials = tokenProvider(options: options)
+        let transport = URLSessionTransport.standard()
+        let pipeline = GitHubPoll(
+            client: GitHubClient(
+                transport: transport,
+                tokenProvider: credentials,
+                configuration: GitHubClient.Configuration(
+                    pageSize: options.pageSize,
+                    pageCap: options.pageCap,
+                    pointBudget: options.pointBudget
+                )
+            ),
+            tracker: TagContainmentTracker(
+                transport: transport,
+                tokenProvider: credentials,
+                configuration: TagContainmentTracker.Configuration(
+                    tagPatterns: TagPatterns(options.tagPatterns),
+                    comparisonBudget: options.comparisonBudget
+                )
+            )
+        )
+
+        let result: GitHubPollResult
+        do {
+            result = try await pipeline.run(scope: options.scope, local: local, now: now)
+        } catch let error as GitHubError {
+            throw DumpFailure(describe(error))
+        }
+
+        report(result.open, label: "open")
+        report(result.closed, label: "closed")
+        reportReleases(result.release)
+        return result
+    }
+
     /// `--token`, then the environment, then the login keychain — the shared chain, so the
     /// order and the `canImport(Security)` fence live in one place (``CredentialChain``).
     private static func tokenProvider(options: DumpOptions) -> any TokenProvider {
@@ -46,9 +88,10 @@ enum GitHubSource {
 
     /// Diagnostics go to stderr so `prstack-dump --github > panel.txt` still captures only
     /// the panel.
-    private static func report(_ fetch: PullRequestFetch) {
+    private static func report(_ fetch: PullRequestFetch, label: String? = nil) {
+        let kind = label.map { $0 + " " } ?? ""
         var lines = [
-            "fetched \(fetch.pullRequests.count) pull requests"
+            "fetched \(fetch.pullRequests.count) \(kind)pull requests"
                 + " as \(fetch.viewerLogin.isEmpty ? "(unknown viewer)" : fetch.viewerLogin)"
                 + " in \(fetch.pagesFetched) page(s)"
                 + ", \(fetch.pointsSpent) GraphQL point(s)"
@@ -61,6 +104,24 @@ enum GitHubSource {
             lines.append("more results remain; resume after cursor \(cursor)")
         }
         lines.append(contentsOf: fetch.warnings.map { "warning: " + $0.description })
+        Diagnostics.write(lines.joined(separator: "\n"))
+    }
+
+    /// What the release pass actually did. Bindings are the interesting line — everything
+    /// else is there so a run that bound nothing still says why.
+    private static func reportReleases(_ result: ReleaseTrackerResult) {
+        var lines = [
+            "release tracking: \(result.bindings.count) newly shipped"
+                + ", \(result.comparisonsMade) comparison(s)"
+                + ", \(result.pointsSpent) GraphQL point(s) on tags"
+        ]
+        for (id, tag) in result.bindings.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+            lines.append("  \(id.rawValue) shipped in \(tag)")
+        }
+        if let limit = result.restRateLimit {
+            lines.append("REST limit: \(limit.remaining) of \(limit.limit) request(s) left")
+        }
+        lines.append(contentsOf: result.warnings.map { "warning: " + $0.description })
         Diagnostics.write(lines.joined(separator: "\n"))
     }
 

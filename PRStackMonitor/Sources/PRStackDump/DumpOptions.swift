@@ -46,6 +46,22 @@ Live GitHub
                         `-`. The file is dumpable again, so a live fetch can become a
                         fixture once it has been anonymised.
 
+Releases and persistence (with --github)
+
+  --releases            Also run release tracking: a second search for closed pull
+                        requests, bounded by the oldest merge still waiting for a tag, then
+                        the repository's tags and a `compare` per untested candidate. This
+                        is what flips a merged row to shipped.
+  --tag-pattern <r=g>   The release tag glob for one repository, e.g.
+                        --tag-pattern acme/billing=release-*. Repeatable; anything unlisted
+                        uses \(TagPatterns.defaultPattern).
+  --comparisons N       `compare` calls this poll may spend (default 20). The rest defers to
+                        the next poll, and nothing already tested is ever re-tested.
+  --state <path>        Read and write state.json at <path> — dismissals, snoozes, read
+                        digests, release bindings and unbound merges. Without it the state
+                        is in memory and every run starts cold; with it, running twice is
+                        how you watch a binding survive a relaunch.
+
 Linear (with --github)
 
   --linear-token <v>    The Linear API key. Otherwise $PRSTACK_LINEAR_KEY, then
@@ -82,6 +98,10 @@ struct DumpOptions {
     var linearToken: String?
     var linearCachePath: String?
     var resolvesLinear = true
+    var tracksReleases = false
+    var tagPatterns: [String: String] = [:]
+    var comparisonBudget = 20
+    var statePath: String?
 
     /// No `--repo` means every repository, which is the `all` mode from
     /// IMPLEMENTATION_PLAN §3 rather than an empty selection.
@@ -140,6 +160,22 @@ struct DumpOptions {
                 options.linearCachePath = try next("--linear-cache")
             case "--no-linear":
                 options.resolvesLinear = false
+            case "--releases":
+                options.tracksReleases = true
+            case "--comparisons":
+                options.comparisonBudget = try nextInt("--comparisons")
+            case "--state":
+                options.statePath = try next("--state")
+            case "--tag-pattern":
+                let raw = try next("--tag-pattern")
+                // `=` rather than a repeated pair of arguments, so one repository's setting
+                // is one token and cannot be split by a missing value.
+                guard let separator = raw.firstIndex(of: "="),
+                      separator != raw.startIndex,
+                      raw.index(after: separator) != raw.endIndex else {
+                    throw DumpFailure("--tag-pattern needs owner/name=glob, got '\(raw)'")
+                }
+                options.tagPatterns[String(raw[..<separator])] = String(raw[raw.index(after: separator)...])
             case "--emit-snapshot":
                 options.emitSnapshotPath = try next("--emit-snapshot")
             case "--presentation":
@@ -186,11 +222,26 @@ struct DumpOptions {
                 options.linearCachePath == nil ? nil : "--linear-cache",
                 // A fixture carries its issues already resolved, so there is nothing for
                 // this to switch off — quietly accepting it would suggest otherwise.
-                options.resolvesLinear ? nil : "--no-linear"
+                options.resolvesLinear ? nil : "--no-linear",
+                options.tracksReleases ? "--releases" : nil,
+                options.tagPatterns.isEmpty ? nil : "--tag-pattern",
+                // A fixture carries its own `local`, including its release bindings, so a
+                // state file would be two answers to the same question.
+                options.statePath == nil ? nil : "--state"
             ].compactMap { $0 }
             if !liveOnly.isEmpty {
                 throw DumpFailure("\(liveOnly.joined(separator: ", ")) only applies with --github")
             }
+        }
+
+        // The release path runs two searches of its own — open, then closed and bounded by
+        // the oldest unbound merge — so a raw qualifier would land on both and mean
+        // different things in each.
+        if options.tracksReleases && !options.qualifiers.isEmpty {
+            throw DumpFailure("--qualifier cannot be combined with --releases")
+        }
+        if !options.tracksReleases && !options.tagPatterns.isEmpty {
+            throw DumpFailure("--tag-pattern only applies with --releases")
         }
 
         return options

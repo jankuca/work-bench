@@ -33,6 +33,13 @@ EMIT ?=
 LINEAR_CACHE ?=
 NO_LINEAR ?=
 
+# `make releases` adds release tracking to the same fetch. STATE is the state.json it reads
+# and writes — bindings, unbound merges and the tags already compared against them — so the
+# second run of the same release costs no comparisons at all. TAG_PATTERNS overrides the
+# `v*` default per repository, e.g. TAG_PATTERNS='acme/billing=release-*'.
+STATE ?= build/state.json
+TAG_PATTERNS ?=
+
 # Ask SwiftPM where it put the binary rather than assuming `.build/$(CONFIGURATION)`.
 # That path is an internal detail — it varies by architecture and by build system, and
 # `.build/debug` is only a convenience symlink the current one happens to create.
@@ -41,7 +48,7 @@ NO_LINEAR ?=
 BIN_DIR    = $(shell swift build --package-path $(APP_PACKAGE) -c $(CONFIGURATION) --show-bin-path)
 EXECUTABLE = $(BIN_DIR)/PRStackMonitorApp
 
-.PHONY: all help build bundle sign run install uninstall identity test dump panel fetch clean
+.PHONY: all help build bundle sign run install uninstall identity test dump panel fetch releases clean
 
 all: sign
 
@@ -57,6 +64,7 @@ help:
 	@echo "make dump       derive a fixture and print the panel (FIXTURE=$(FIXTURE))"
 	@echo "make panel      same fixture, rendered as the row view reads it"
 	@echo "make fetch      derive live GitHub + Linear data (REPOS='o/a o/b' PAGE_SIZE=$(PAGE_SIZE))"
+	@echo "make releases   same, plus release tracking against STATE=$(STATE)"
 	@echo "make clean      remove build products"
 
 build:
@@ -127,6 +135,19 @@ fetch:
 		--page-size $(PAGE_SIZE) \
 		$(foreach repo,$(REPOS),--repo $(repo)) \
 		$(if $(EMIT),--emit-snapshot $(EMIT),) \
+		$(if $(LINEAR_CACHE),--linear-cache $(LINEAR_CACHE),) \
+		$(if $(NO_LINEAR),--no-linear,)
+
+# The M6 poll: open pull requests, then the closed ones back to the oldest merge still
+# waiting for a tag, then the tags themselves and a `compare` per untested candidate.
+# STATE points at a state.json, so running this twice is how you watch a binding be made
+# once and then survive — the second run does no comparisons at all.
+releases:
+	@swift run --package-path $(CORE_PACKAGE) prstack-dump --github --releases \
+		--page-size $(PAGE_SIZE) \
+		--state $(STATE) \
+		$(foreach repo,$(REPOS),--repo $(repo)) \
+		$(foreach pattern,$(TAG_PATTERNS),--tag-pattern $(pattern)) \
 		$(if $(LINEAR_CACHE),--linear-cache $(LINEAR_CACHE),) \
 		$(if $(NO_LINEAR),--no-linear,)
 

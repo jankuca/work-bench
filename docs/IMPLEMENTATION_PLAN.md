@@ -72,6 +72,12 @@ as unread, how stacks are ordered. It takes snapshots in and produces a `PanelMo
 networking, no persistence, no clock reads (time is injected). That is what makes the state machine
 testable without a Mac in the loop.
 
+The one thing that sits beside it rather than inside it is the **state store** added at M6
+(`PRStackCore/Persistence`). Derivation is untouched — it still takes its `local` as an argument and reads
+no file — but the module that owns `LocalState` owns the shape it takes on disk, the same way `LinearKit`
+owns its project cache's store. The alternative, an eighth module for one file, buys nothing; putting it in
+the AppKit shell would put the round trip somewhere CI cannot run it.
+
 ### Data flow
 
 Linear resolution depends on identifiers extracted from the GitHub payload, so the two fetches are
@@ -447,9 +453,17 @@ mark the footer stale until `resetAt`. Backing off on the *measured* remaining p
 avoids the failure mode where the app is hard-blocked mid-poll and shows a disconnected icon for the rest of
 the hour.
 
+Once there are two queries, the first one takes `is:open`. The plan's search above is deliberately unbounded
+in time, which is right when it is the only query and wrong the moment a second one covers everything that
+has closed: without the qualifier every poll re-fetches every pull request the user has ever authored, and
+the lower bound below saves nothing.
+
 **Merged PRs** are fetched by a second query whose lower bound is *dynamic*, not a fixed window: it starts at
 the oldest **unbound** merged PR still in local state (i.e. merged but not yet matched to a tag), defaulting
-to 14 days back when there are none. Unbound merged PRs are persisted indefinitely with their merge commit,
+to 14 days back when there are none. As built, that query asks for `is:closed` rather than `is:merged` —
+one qualifier wider, the same cost and the same bound. Merged and closed-without-merging are both terminal
+states the precedence table resolves and both belong in Done, so narrowing it to merges would make a pull
+request the user closed vanish from the panel the moment the open search stopped returning it. Unbound merged PRs are persisted indefinitely with their merge commit,
 so a release cut six weeks after the merge still binds and still flips the row to shipped. A fixed 14-day
 window would drop the PR out of the query, lose the merge commit, and leave it stranded at
 `merged · awaiting release` forever — exactly the case PRD §10 says should resolve quietly whenever the tag
@@ -921,8 +935,10 @@ PRStackMonitor/
   Package.swift                 # PRStackCore, NetKit, GitHubKit, LinearKit (+ tests)
   Sources/
     PRStackCore/                # models, derivation, ordering, unread, snooze
+      Persistence/              # the state.json store (M6)
     NetKit/                     # HTTP transport, GraphQL envelope, credentials
     GitHubKit/                  # GraphQL + REST, DTOs, rate limiting
+      Release/                  # tag globs, refs query, compare, the tracker (M6)
     LinearKit/                  # identifier scan, issue → project, cache
   Tests/
     PRStackCoreTests/           # fixtures + golden panel models
