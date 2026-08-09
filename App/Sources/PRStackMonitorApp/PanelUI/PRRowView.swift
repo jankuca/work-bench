@@ -69,8 +69,11 @@ struct PRRowView: View {
                 Button("Wake now", action: onWake)
             }
             if row.supports(.snooze) {
+                // The duration's own capitalisation, not a lowercased join: `Until Monday`
+                // read as "until monday" turns the weekday into a common noun, which is
+                // exactly the kind of thing only the rotor would ever say aloud.
                 ForEach(SnoozeDuration.allCases, id: \.self) { duration in
-                    Button("Snooze \(duration.title.lowercased())") { onSnooze(duration) }
+                    Button("\(RowAction.snooze.title): \(duration.title)") { onSnooze(duration) }
                 }
             }
         }
@@ -204,9 +207,15 @@ struct PRRowView: View {
     ///
     /// Done rows keep the ✕ instead: dismissal is the whole of what they offer, and it is
     /// already in the flow.
+    ///
+    /// Mounted for every non-Done row and hidden by **opacity**, rather than added and
+    /// removed with the hover. Moving the pointer off the row and onto the open popup ends
+    /// the hover, and taking the anchor out of the tree at that moment can dismiss the menu
+    /// the pointer is travelling towards. `allowsHitTesting` is what keeps the invisible
+    /// state from being a click target the row's own tap gesture never sees.
     @ViewBuilder
     private var menuButton: some View {
-        if isHovered, !row.isDismissible {
+        if !row.isDismissible {
             Menu {
                 rowMenuItems
             } label: {
@@ -228,6 +237,8 @@ struct PRRowView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            .opacity(isHovered ? 1 : 0)
+            .allowsHitTesting(isHovered)
             // The row is one accessibility element and its rotor already carries every
             // entry this menu holds; exposing the menu as well would offer each action
             // twice by ear.

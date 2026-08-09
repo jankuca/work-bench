@@ -95,21 +95,26 @@ enum AppDefaults {
 
     /// Unions `names` into the stored list. Sorted, case-insensitively de-duplicated, and
     /// only written when it actually changed — this runs on every poll.
+    ///
+    /// What is already stored goes through the same filter as what arrives. A hand-written
+    /// `defaults write` can put `["acme/web", "ACME/web", " "]` under this key, and a merge
+    /// that trusted the stored half would carry all three into the checklist while claiming
+    /// to have de-duplicated them.
     @discardableResult
     static func noteRepositories<Names: Sequence>(
         _ names: Names,
         _ defaults: UserDefaults = .standard
     ) -> [String] where Names.Element == String {
-        let existing = seenRepositories(defaults)
-        var seen = Set(existing.map { $0.lowercased() })
-        var merged = existing
-        for name in names {
+        let stored = seenRepositories(defaults)
+        var seen: Set<String> = []
+        var merged: [String] = []
+        for name in stored + Array(names) {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard RepoScope.isWellFormed(trimmed), seen.insert(trimmed.lowercased()).inserted else { continue }
             merged.append(trimmed)
         }
         merged.sort { $0.lowercased() < $1.lowercased() }
-        if merged != existing { defaults.set(merged, forKey: seenRepositoriesKey) }
+        if merged != stored { defaults.set(merged, forKey: seenRepositoriesKey) }
         return merged
     }
 

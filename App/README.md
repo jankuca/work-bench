@@ -128,7 +128,9 @@ dismissal, and removing the token twice over-releases.
 
 Settings is a window rather than a scene (there is no SwiftUI `App` here to hang one off):
 the two tokens, the repository scope with its per-repository release-tag glob, and the
-per-event toggles. Every edit applies as it is made, and closing the window polls.
+per-event toggles. Every edit is written as it is made; the poll it implies comes when the
+window closes, so typing a tag glob does not spend a request per keystroke. A credential
+change is the exception and polls immediately — that is how the reconnect banner comes down.
 
 Almost none of *what* it shows is decided in this package. `PRStackCore`'s presentation
 layer resolves every row down to a title, an emphasis tier, a semantic tone, a meta line

@@ -35,7 +35,15 @@ final class SettingsModel: ObservableObject {
         case environment(String)
     }
 
-    /// Called after any change a poll would read differently.
+    /// Brings a poll forward. **Not** called for every edit.
+    ///
+    /// Each edit here persists immediately, and every poll reads the scope and the patterns
+    /// from `UserDefaults` at its top — so a change is picked up by the next poll whether or
+    /// not one is started for it. What a per-edit poll would add is a request per keystroke
+    /// in the tag-pattern field and one per checkbox in a run down the list, against a
+    /// 5,000-point hourly allowance. So the editing session polls once, when the window
+    /// closes, and a credential change polls immediately because that is how the reconnect
+    /// banner comes down.
     var onChange: () -> Void = {}
 
     @Published var isAllRepositories: Bool
@@ -48,6 +56,12 @@ final class SettingsModel: ObservableObject {
     @Published var linearKey: String = ""
     @Published private(set) var githubSource: CredentialSource = .absent
     @Published private(set) var linearSource: CredentialSource = .absent
+    /// Whether the Keychain holds a credential at all, which is **not** the same question as
+    /// whether it is the one in use. An exported variable outranks it, and hiding `Remove`
+    /// behind the source would strand a stored token the user can neither see nor delete —
+    /// and which quietly becomes live again the day the variable goes away.
+    @Published private(set) var githubHasStoredToken = false
+    @Published private(set) var linearHasStoredToken = false
     /// The outcome of the last credential action, or the reason it failed. The Keychain is
     /// the one thing here that can refuse.
     @Published private(set) var credentialMessage: String?
@@ -130,7 +144,8 @@ final class SettingsModel: ObservableObject {
         // a branch on emptiness here.
         patterns.set(pattern, for: name)
         AppDefaults.setTagPatterns(patterns, defaults)
-        onChange()
+        // No poll: this is one keystroke of a glob being typed, and `release-*` would be
+        // five polls against four patterns nobody meant. The close does it once.
     }
 
     /// The pattern actually in force for a repository, for the field's placeholder.
@@ -143,10 +158,11 @@ final class SettingsModel: ObservableObject {
         !isAllRepositories && !repositories.contains(where: \.isSelected)
     }
 
+    /// Stored, not polled — for the same reason as the tag patterns above. Checking four
+    /// repositories in a row is one intent, and the close is where it is acted on.
     private func writeScope() {
         let selected = repositories.filter(\.isSelected).map(\.name)
         AppDefaults.setRepoScope(isAllRepositories ? .all : .selected(selected), defaults)
-        onChange()
     }
 
     // MARK: - Credentials
@@ -212,18 +228,26 @@ final class SettingsModel: ObservableObject {
     }
 
     func refreshCredentialSources() {
-        githubSource = source(names: EnvironmentTokenProvider.github(environment: environment).names,
-                              store: KeychainTokenStore(account: .github))
-        linearSource = source(names: EnvironmentTokenProvider.linear(environment: environment).names,
-                              store: KeychainTokenStore(account: .linear))
+        githubHasStoredToken = KeychainTokenStore(account: .github).hasToken
+        githubSource = source(
+            names: EnvironmentTokenProvider.github(environment: environment).names,
+            isStored: githubHasStoredToken
+        )
+        linearHasStoredToken = KeychainTokenStore(account: .linear).hasToken
+        linearSource = source(
+            names: EnvironmentTokenProvider.linear(environment: environment).names,
+            isStored: linearHasStoredToken
+        )
     }
 
-    private func source(names: [String], store: KeychainTokenStore) -> CredentialSource {
+    /// The environment first, because ``CredentialChain`` tries it first — this reports what
+    /// is *in use*, not what exists.
+    private func source(names: [String], isStored: Bool) -> CredentialSource {
         for name in names {
             let value = environment[name]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if !value.isEmpty { return .environment(name) }
         }
-        return store.hasToken ? .keychain : .absent
+        return isStored ? .keychain : .absent
     }
 
     // MARK: - Events

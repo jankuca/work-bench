@@ -30,6 +30,10 @@ final class HoverKeyMonitor: NSObject {
     /// handler live, so the third open of the panel would dismiss three rows on one `X`.
     func start(on window: NSWindow?, controller: PanelController) {
         stop()
+        // No window, no monitor. `handle` scopes events with `event.window === window`, and
+        // a nil property would make that succeed for every event that also carries no
+        // window — an unscoped monitor acting on keystrokes aimed somewhere else.
+        guard let window else { return }
         self.window = window
         self.controller = controller
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in

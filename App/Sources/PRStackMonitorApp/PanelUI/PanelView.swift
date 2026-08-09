@@ -83,17 +83,22 @@ struct PanelView: View {
             isFirst: isFirst,
             onClearAll: { controller.clearDone() }
         )
-        ForEach(Array(section.rows.enumerated()), id: \.offset) { item in
+        // Keyed by `PRID`, not by position. With the offset as identity SwiftUI reuses the
+        // view at each index for whatever row lands there, so a poll that inserts or
+        // removes one moves every row below it into a neighbour's view — and the hover
+        // highlight, which is now also the keyboard's target, would stay where the pointer
+        // is not.
+        ForEach(section.rows, id: \.id) { row in
             PRRowView(
-                row: item.element,
-                isHovered: controller.hovered == item.element.id,
+                row: row,
+                isHovered: controller.hovered == row.id,
                 fieldColor: Tokens.field.color,
-                onOpen: { controller.open(row: item.element) },
+                onOpen: { controller.open(row: row) },
                 onOpenIssue: { controller.open($0.url) },
-                onMarkRead: { controller.markRead(item.element.id) },
-                onSnooze: { controller.snooze(item.element.id, for: $0) },
-                onWake: { controller.wake(item.element.id) },
-                onDismiss: { controller.dismiss(item.element.id) }
+                onMarkRead: { controller.markRead(row.id) },
+                onSnooze: { controller.snooze(row.id, for: $0) },
+                onWake: { controller.wake(row.id) },
+                onDismiss: { controller.dismiss(row.id) }
             )
             // The hovered row lives on the controller, not in this view: it is the target
             // of the key monitor, which is an AppKit object outside the view tree.
@@ -103,13 +108,13 @@ struct PanelView: View {
                     // `.active` arrives on every pointer move inside the row, and the
                     // hovered id is published — assigning the same value again would
                     // re-render the whole panel per mouse move.
-                    if controller.hovered != item.element.id { controller.hovered = item.element.id }
+                    if controller.hovered != row.id { controller.hovered = row.id }
                 case .ended:
                     // Only clear what this row set. As the pointer crosses a boundary the
                     // two rows' `ended` and `active` can arrive in either order, and
                     // clearing unconditionally would drop the highlight the row below
                     // just claimed.
-                    if controller.hovered == item.element.id { controller.hovered = nil }
+                    if controller.hovered == row.id { controller.hovered = nil }
                 }
             }
         }

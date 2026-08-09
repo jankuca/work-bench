@@ -183,8 +183,9 @@ refresh interval decides what gets re-asked, never what gets used. A Linear outa
 every cached heading in place and only marks the source stale in the footer — it must never
 make project sections appear to empty out.
 
-It lives in its own file
-(`~/Library/Application Support/PRStackMonitor/linear-cache.json`), and stays there. The plan
+It lives in its own file, rather than inside `state.json` — the app defaults to
+`~/Library/Application Support/PRStackMonitor/linear-cache.json`, and a caller that owns its
+own path says so (`prstack-dump --linear-cache`). The plan
 originally drew it inside `state.json`; the two turned out to have different writers, since
 `LocalState` is one value owned by the main actor and written whole while the cache is
 written from the resolver's own task on a background poll. Folding it in would either make

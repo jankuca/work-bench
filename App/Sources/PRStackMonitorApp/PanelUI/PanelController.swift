@@ -302,12 +302,17 @@ final class PanelController: ObservableObject {
         onOpenSettings()
     }
 
-    /// Called when Settings closes or changes something a poll reads — the repository
-    /// scope, a tag pattern, a credential.
+    /// Called when Settings closes, and when a credential changes under it.
     ///
-    /// A plain refresh: the scope and the patterns are read from `UserDefaults` at the top
-    /// of every poll, so there is nothing to invalidate, only a poll to bring forward.
+    /// Nothing to invalidate: the scope and the patterns are read from `UserDefaults` at the
+    /// top of every poll. What there is, is a poll to bring forward — and one to abandon.
+    /// A poll already in flight was started under the configuration the user has just
+    /// replaced, and ``refresh()`` would decline to start another while it ran, leaving the
+    /// panel on the old scope's results until the next open. Cancelling is safe: the
+    /// generation guard in ``apply(_:from:)`` drops the late arrival.
     func settingsDidChange() {
+        pollTask?.cancel()
+        pollTask = nil
         refresh()
     }
 

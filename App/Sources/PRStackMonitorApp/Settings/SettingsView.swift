@@ -39,6 +39,7 @@ struct AccountsSettingsView: View {
                     help: "Read-only: Contents, Pull requests, Metadata.",
                     value: $model.githubToken,
                     source: model.githubSource,
+                    isStored: model.githubHasStoredToken,
                     onSave: model.saveGitHubToken,
                     onRemove: model.removeGitHubToken
                 )
@@ -50,6 +51,7 @@ struct AccountsSettingsView: View {
                     help: "Optional. Without it every row groups under Other.",
                     value: $model.linearKey,
                     source: model.linearSource,
+                    isStored: model.linearHasStoredToken,
                     onSave: model.saveLinearKey,
                     onRemove: model.removeLinearKey
                 )
@@ -73,6 +75,8 @@ struct CredentialField: View {
     var help: String
     @Binding var value: String
     var source: SettingsModel.CredentialSource
+    /// Whether the Keychain holds one, separately from whether it is the one in use.
+    var isStored: Bool
     var onSave: () -> Void
     var onRemove: () -> Void
 
@@ -89,7 +93,10 @@ struct CredentialField: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
-                if source == .keychain {
+                // Offered whenever something is stored, not only when the store is what
+                // the app is reading. An exported variable outranks the Keychain, and
+                // hiding this behind that would leave a token the user cannot delete.
+                if isStored {
                     Button("Remove", action: onRemove)
                 }
             }
@@ -108,8 +115,10 @@ struct CredentialField: View {
             return "Stored in the login keychain."
         case .environment(let name):
             // Worth stating plainly: the chain tries the environment before the Keychain,
-            // so a stored token is sitting there unused until the variable goes away.
-            return "Using $\(name) from the environment — a saved token is ignored while it is set."
+            // so a stored token is sitting there unused until the variable goes away. Said
+            // only when there actually is one, or it reads as a warning about nothing.
+            guard isStored else { return "Using $\(name) from the environment." }
+            return "Using $\(name) from the environment; the saved token is ignored while it is set."
         }
     }
 }
