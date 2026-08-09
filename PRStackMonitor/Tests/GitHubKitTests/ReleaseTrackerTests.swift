@@ -18,6 +18,8 @@ final class ReleaseStubTransport: HTTPTransport {
     var comparisons: [String: String] = [:]
     /// `"<tag>...<sha>"` → a failure response instead of a comparison.
     var comparisonFailures: [String: HTTPResponse] = [:]
+    /// Headers on every successful comparison, for the rate-limit accounting.
+    var comparisonHeaders: [String: String] = [:]
 
     private(set) var tagQueries: [HTTPRequest] = []
     /// Every `<tag>...<sha>` asked for, in order.
@@ -34,7 +36,7 @@ final class ReleaseStubTransport: HTTPTransport {
         compared.append(basehead)
         if let failure = comparisonFailures[basehead] { return failure }
         let status = comparisons[basehead] ?? "ahead"
-        return .json(#"{"status":"\#(status)"}"#)
+        return .json(#"{"status":"\#(status)"}"#, headers: comparisonHeaders)
     }
 }
 
@@ -191,6 +193,39 @@ final class ReleaseTrackerTests: XCTestCase {
         XCTAssertEqual(
             result.warnings,
             [.comparisonBudgetExhausted(spent: 3, limit: 3)]
+        )
+    }
+
+    /// Below 10% of the REST allowance the budget drops to zero for the rest of the poll.
+    /// Backing off on the measured remaining count, before exhaustion, is what stops the app
+    /// being hard-blocked mid-poll and showing a disconnected icon for the rest of the hour.
+    func testTheRESTFloorStopsFurtherComparisons() async throws {
+        let tags = (1...5).map { index in
+            TagPage.Tag.lightweight("v1.0.\(index)", commit: "c\(index)", date: ReleaseTrackerTests.day(5))
+        }
+        let transport = ReleaseStubTransport()
+        transport.tagPages = [.json(TagPage.json(tags: tags))]
+        transport.comparisonHeaders = [
+            "x-ratelimit-limit": "5000",
+            "x-ratelimit-remaining": "400",
+            "x-ratelimit-reset": "1800000000"
+        ]
+
+        let result = try await tracker(transport).poll(unbound: unbound(), now: now)
+
+        XCTAssertEqual(transport.compared.count, 1, "the first answer already reported the floor")
+        // The one answer it did get is still banked, so the deferred work resumes rather
+        // than restarting.
+        XCTAssertEqual(result.comparisons[pullRequest], ["v1.0.1"])
+        XCTAssertEqual(
+            result.warnings,
+            [
+                .rateLimitFloorReached(
+                    remaining: 400,
+                    limit: 5_000,
+                    resetAt: Date(timeIntervalSince1970: 1_800_000_000)
+                )
+            ]
         )
     }
 

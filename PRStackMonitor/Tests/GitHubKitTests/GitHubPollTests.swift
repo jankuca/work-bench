@@ -165,6 +165,37 @@ final class GitHubPollTests: XCTestCase {
         XCTAssertEqual(result.pullRequests[0].state, .open)
     }
 
+    /// Below 10% of the allowance the comparison budget drops to zero. A merge that has
+    /// waited weeks can wait for the reset; spending what is left on it would cost the open
+    /// list its next poll.
+    func testALowAllowanceDefersReleaseTrackingEntirely() async throws {
+        let transport = StubTransport(responses: [
+            .json(SearchPage.json(numbers: [10], hasNextPage: false, endCursor: nil)),
+            .json(
+                SearchPage.json(
+                    numbers: [9],
+                    hasNextPage: false,
+                    endCursor: nil,
+                    remaining: 400,
+                    state: "MERGED",
+                    mergedAt: "2026-01-18T10:00:00Z",
+                    mergeCommit: "sha"
+                )
+            )
+        ])
+        let tracker = RecordingTracker()
+
+        let result = try await GitHubPoll(client: client(transport), tracker: tracker)
+            .run(scope: .all, local: .empty, now: now)
+
+        XCTAssertEqual(tracker.calls, 0)
+        XCTAssertEqual(result.release.warnings.count, 1)
+        XCTAssertEqual(
+            result.release.warnings.first?.description.contains("deferred release tracking"),
+            true
+        )
+    }
+
     /// Without a tracker the poll is still a poll — that is what a build with no
     /// `Contents: read` scope, and the dump tool without `--releases`, do.
     func testNoTrackerMeansNoReleaseWork() async throws {

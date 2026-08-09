@@ -50,7 +50,19 @@ public struct GitHubPoll {
 
         var release = ReleaseTrackerResult.empty
         if let tracker {
-            release = try await tracker.poll(unbound: working.unboundMerges, now: now)
+            // Below 10% of the hourly allowance the comparison budget drops to zero
+            // (IMPLEMENTATION_PLAN §3). A merge that has waited weeks can wait for the
+            // reset; spending what is left of the allowance on it would cost the *open*
+            // list its next poll, which is the half of the panel that is time-sensitive.
+            if let limit = closed.rateLimit ?? open.rateLimit, limit.isBelowFloor {
+                release.warnings = [
+                    .releaseTrackingDeferred(
+                        reason: "GitHub allowance low (\(limit.remaining) of \(limit.limit) points left)"
+                    )
+                ]
+            } else {
+                release = try await tracker.poll(unbound: working.unboundMerges, now: now)
+            }
         }
 
         return GitHubPollResult(

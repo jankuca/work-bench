@@ -70,6 +70,10 @@ public struct TagContainmentTracker: ReleaseTracker {
         guard !unbound.isEmpty, configuration.comparisonBudget > 0 else { return result }
 
         var remainingComparisons = configuration.comparisonBudget
+        /// Set when a comparison comes back with less than 10% of the REST allowance left.
+        /// From then on the budget is zero for the rest of this poll, and the negatives
+        /// already collected are kept — so the deferred work resumes rather than restarting.
+        var restFloorReached = false
 
         // Sorted, so two polls over the same state spend the budget on the same repositories
         // in the same order. `Dictionary` iteration order is not stable across processes,
@@ -112,6 +116,7 @@ public struct TagContainmentTracker: ReleaseTracker {
             guard !fetch.candidates.isEmpty else { continue }
 
             for (id, merge) in merges {
+                if restFloorReached { break repositories }
                 // Only tags cut after the merge can contain it, and only tags never tested
                 // against *this* commit are worth a request. `fetch.candidates` is already
                 // oldest-first, so the first hit is the earliest release.
@@ -122,6 +127,10 @@ public struct TagContainmentTracker: ReleaseTracker {
 
                 var negatives: Set<String> = []
                 candidates: for candidate in untested {
+                    guard !restFloorReached else {
+                        if !negatives.isEmpty { result.comparisons[id] = negatives }
+                        break repositories
+                    }
                     guard remainingComparisons > 0 else {
                         result.warnings.append(
                             .comparisonBudgetExhausted(
@@ -156,6 +165,20 @@ public struct TagContainmentTracker: ReleaseTracker {
                     }
 
                     result.restRateLimit = comparison.rateLimit ?? result.restRateLimit
+                    // Backing off on the *measured* remaining allowance, before exhaustion,
+                    // is what keeps the app from being hard-blocked mid-poll for the rest of
+                    // the hour (IMPLEMENTATION_PLAN §3). Noted here and acted on at the top
+                    // of the loop, so this comparison's own answer is still banked.
+                    if let rest = comparison.rateLimit, rest.isBelowFloor, !restFloorReached {
+                        restFloorReached = true
+                        result.warnings.append(
+                            .rateLimitFloorReached(
+                                remaining: rest.remaining,
+                                limit: rest.limit,
+                                resetAt: rest.resetAt
+                            )
+                        )
+                    }
 
                     if comparison.containment.contains {
                         result.bindings[id] = candidate.name
