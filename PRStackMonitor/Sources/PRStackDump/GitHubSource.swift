@@ -72,12 +72,7 @@ enum GitHubSource {
 
         report(result.open, label: "open")
         report(result.closed, label: "closed")
-        if !result.recovery.commits.isEmpty {
-            Diagnostics.write(
-                "recovered \(result.recovery.commits.count) merge commit(s) from trunk"
-                    + " for pull requests GitHub reported none for"
-            )
-        }
+        reportRecovery(result.recovery)
         reportReleases(result.release)
         return result
     }
@@ -111,6 +106,24 @@ enum GitHubSource {
             lines.append("more results remain; resume after cursor \(cursor)")
         }
         lines.append(contentsOf: fetch.warnings.map { "warning: " + $0.description })
+        Diagnostics.write(lines.joined(separator: "\n"))
+    }
+
+    /// The trunk lookups for merges GitHub reported no commit for.
+    ///
+    /// Warnings go out even when nothing was recovered: a repository that could not be read
+    /// is *why* a row is still sitting at `merged · awaiting release`, and silence there
+    /// looks identical to "there was nothing to recover".
+    private static func reportRecovery(_ result: MergeCommitRecoveryResult) {
+        var lines: [String] = []
+        if !result.commits.isEmpty {
+            lines.append(
+                "recovered \(result.commits.count) merge commit(s) from trunk"
+                    + " for pull requests GitHub reported none for"
+            )
+        }
+        lines.append(contentsOf: result.warnings.map { "warning: " + $0.description })
+        guard !lines.isEmpty else { return }
         Diagnostics.write(lines.joined(separator: "\n"))
     }
 

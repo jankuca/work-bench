@@ -113,6 +113,19 @@ public struct TagContainmentTracker: ReleaseTracker {
             result.pointsSpent += fetch.pointsSpent
             result.rateLimit = fetch.rateLimit ?? result.rateLimit
             result.warnings.append(contentsOf: fetch.warnings)
+
+            // The GraphQL floor ends the whole pass, not just this repository's pagination:
+            // below 10% the comparison budget goes to zero as well (IMPLEMENTATION_PLAN §3).
+            // Every merge still waiting has waited longer than the allowance takes to reset.
+            if let limit = fetch.rateLimit, limit.isBelowFloor {
+                result.warnings.append(
+                    .releaseTrackingDeferred(
+                        reason: "GitHub allowance low (\(limit.remaining) of \(limit.limit) points left)"
+                    )
+                )
+                break repositories
+            }
+
             guard !fetch.candidates.isEmpty else { continue }
 
             for (id, merge) in merges {

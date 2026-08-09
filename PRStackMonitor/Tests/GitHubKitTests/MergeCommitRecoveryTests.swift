@@ -143,6 +143,36 @@ final class MergeCommitRecoveryTests: XCTestCase {
         XCTAssertTrue(result.commits.isEmpty)
     }
 
+    /// Recovery is a GraphQL request in service of a merge that will not be compared this
+    /// poll anyway, so below the floor it defers with everything else release-related.
+    func testALowAllowanceSkipsRecoveryEntirely() async throws {
+        let transport = StubTransport(responses: [
+            .json(SearchPage.json(numbers: [], hasNextPage: false, endCursor: nil)),
+            .json(
+                SearchPage.json(
+                    numbers: [4012],
+                    hasNextPage: false,
+                    endCursor: nil,
+                    remaining: 400,
+                    state: "MERGED",
+                    mergedAt: "2026-01-18T10:00:00Z"
+                )
+            )
+        ])
+        let client = GitHubClient(
+            transport: transport,
+            tokenProvider: StaticTokenProvider("ghp_test"),
+            configuration: GitHubClient.Configuration(endpoint: endpoint)
+        )
+
+        let result = try await GitHubPoll(client: client, recovery: recovery(transport))
+            .run(scope: .all, local: .empty, now: mergedAt)
+
+        XCTAssertEqual(transport.requests.count, 2, "no trunk history request")
+        XCTAssertEqual(result.recovery, .empty)
+        XCTAssertNil(result.pullRequests.first?.mergeCommit)
+    }
+
     func testTheRecoveredCommitReachesTheMergeRecord() async throws {
         let transport = StubTransport(responses: [
             .json(SearchPage.json(numbers: [], hasNextPage: false, endCursor: nil)),

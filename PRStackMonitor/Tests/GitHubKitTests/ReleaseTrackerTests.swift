@@ -250,6 +250,33 @@ final class ReleaseTrackerTests: XCTestCase {
         )
     }
 
+    /// The GraphQL floor ends the whole pass, not just this repository's pagination: below
+    /// 10% the comparison budget goes to zero too, so no tag is compared and no later
+    /// repository is read.
+    func testTheGraphQLFloorEndsThePassBeforeAnyComparison() async throws {
+        let other = PRID(repo: "acme/web", number: 77)
+        let transport = ReleaseStubTransport()
+        transport.tagPages = [
+            .json(TagPage.json(
+                tags: [TagPage.Tag.lightweight("v1.0.0", commit: "c1", date: ReleaseTrackerTests.day(5))],
+                remaining: 400
+            ))
+        ]
+
+        var merges = unbound()
+        merges[other] = UnboundMerge(mergeCommit: "webcommit", mergedAt: mergedAt)
+
+        let result = try await tracker(transport).poll(unbound: merges, now: now)
+
+        XCTAssertEqual(transport.tagQueries.count, 1, "the second repository is not read")
+        XCTAssertTrue(transport.compared.isEmpty, "the comparison budget is zero below the floor")
+        XCTAssertTrue(result.bindings.isEmpty)
+        XCTAssertEqual(
+            result.warnings.last?.description.contains("deferred release tracking"),
+            true
+        )
+    }
+
     /// A 404 — a tag deleted between the ref query and the comparison — is one repository's
     /// problem and not a negative. Recording it as one would suppress the comparison that
     /// binds the pull request if the tag comes back.

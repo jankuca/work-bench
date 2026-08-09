@@ -49,13 +49,20 @@ public struct GitHubPoll {
             pullRequests.append(pullRequest)
         }
 
+        // Below 10% of the hourly allowance, everything release-related defers to the next
+        // poll — recovery included, since it is a GraphQL request in service of a merge
+        // that will not be compared this poll anyway (IMPLEMENTATION_PLAN §3).
+        var isBelowFloor = (closed.rateLimit ?? open.rateLimit)?.isBelowFloor ?? false
+
         // A merged pull request with no merge commit has nothing for a tag to contain, and
         // that does not self-correct: the row would sit at `merged · awaiting release` for
         // good. Recovering the commit from trunk before the merges are recorded is what
         // keeps it bindable (IMPLEMENTATION_PLAN §3).
         var recovered = MergeCommitRecoveryResult.empty
-        if let recovery, !MergeCommitRecovery.candidates(among: pullRequests).isEmpty {
+        if let recovery, !isBelowFloor, !MergeCommitRecovery.candidates(among: pullRequests).isEmpty {
             recovered = try await recovery.recover(pullRequests)
+            // Its own queries count too: the floor can be crossed here.
+            isBelowFloor = recovered.rateLimit?.isBelowFloor ?? isBelowFloor
             if !recovered.commits.isEmpty {
                 pullRequests = pullRequests.map { pullRequest in
                     guard let oid = recovered.commits[pullRequest.id] else { return pullRequest }
@@ -74,15 +81,15 @@ public struct GitHubPoll {
 
         var release = ReleaseTrackerResult.empty
         if let tracker {
-            // Below 10% of the hourly allowance the comparison budget drops to zero
-            // (IMPLEMENTATION_PLAN §3). A merge that has waited weeks can wait for the
-            // reset; spending what is left of the allowance on it would cost the *open*
-            // list its next poll, which is the half of the panel that is time-sensitive.
-            if let limit = closed.rateLimit ?? open.rateLimit, limit.isBelowFloor {
+            // Below the floor the comparison budget drops to zero as well. A merge that has
+            // waited weeks can wait for the reset; spending what is left of the allowance on
+            // it would cost the *open* list its next poll, which is the half of the panel
+            // that is time-sensitive.
+            if isBelowFloor {
+                let limit = recovered.rateLimit ?? closed.rateLimit ?? open.rateLimit
+                let counts = limit.map { "(\($0.remaining) of \($0.limit) points left)" } ?? ""
                 release.warnings = [
-                    .releaseTrackingDeferred(
-                        reason: "GitHub allowance low (\(limit.remaining) of \(limit.limit) points left)"
-                    )
+                    .releaseTrackingDeferred(reason: "GitHub allowance low \(counts)".trimmingCharacters(in: .whitespaces))
                 ]
             } else {
                 release = try await tracker.poll(unbound: working.unboundMerges, now: now)
