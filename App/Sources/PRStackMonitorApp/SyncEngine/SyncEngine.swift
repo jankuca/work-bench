@@ -52,16 +52,26 @@ final class SyncEngine {
     private var timer: Task<Void, Never>?
     private var isRunning = false
 
+    /// The two monitors are `nil`-defaulted and built in the body rather than defaulted to
+    /// `PowerMonitor()` / `SleepMonitor()` in the signature.
+    ///
+    /// Both are `@MainActor` types, and a default argument is evaluated in the *caller's*
+    /// context, which is nonisolated unless the language mode says otherwise — building one
+    /// there is a call into the main actor from outside it. Swift 6 fixed this by giving
+    /// default expressions the callee's isolation, but this package builds in the Swift 5
+    /// language mode, where recent compilers have promoted the diagnostic from a warning to
+    /// an error. The init body is isolated, so moving the construction into it costs one
+    /// `??` per parameter and keeps the injection seam the tests use.
     init(
         configuration: SyncConfiguration = .standard,
-        power: PowerMonitor = PowerMonitor(),
-        sleep: SleepMonitor = SleepMonitor(),
+        power: PowerMonitor? = nil,
+        sleep: SleepMonitor? = nil,
         clock: @escaping () -> Date = { Date() },
         jitter: @escaping () -> Double = { Double.random(in: 0...1) }
     ) {
         self.configuration = configuration
-        self.power = power
-        self.sleep = sleep
+        self.power = power ?? PowerMonitor()
+        self.sleep = sleep ?? SleepMonitor()
         self.clock = clock
         self.jitter = jitter
     }

@@ -18,7 +18,8 @@ struct PanelView: View {
                 header: controller.panel.header,
                 onRefresh: { controller.refresh() },
                 onMarkAllRead: { controller.markAllRead() },
-                onOpenSettings: { controller.openSettings() }
+                onOpenSettings: { controller.openSettings() },
+                onQuit: { controller.quit() }
             )
 
             if let banner = controller.panel.banner {

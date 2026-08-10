@@ -7,6 +7,7 @@ struct PanelHeaderView: View {
     var onRefresh: () -> Void
     var onMarkAllRead: () -> Void
     var onOpenSettings: () -> Void
+    var onQuit: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -42,6 +43,12 @@ struct PanelHeaderView: View {
                 Button("Mark all read", action: onMarkAllRead)
                 Divider()
                 Button("Settings…", action: onOpenSettings)
+                Divider()
+                // The only way out of the app that does not involve Activity Monitor.
+                // ⌘Q reaches the same place (``MainMenu``), but only while the app is
+                // active — and an app whose entire UI is a popover spends most of its life
+                // not being active, so the way out has to be inside the popover.
+                Button("Quit PRStackMonitor", action: onQuit)
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 11, weight: .medium))
@@ -137,43 +144,108 @@ struct PanelFooterView: View {
     var onOpenSettings: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(Tokens.foreground(footer.syncTone))
-                .frame(width: 5, height: 5)
-                .accessibilityHidden(true)
-            Text(footer.syncText)
-                .font(Tokens.text(11))
-                .foregroundStyle(Tokens.textTertiary.color)
-                .help(footer.detail ?? footer.syncText)
-            if let note = footer.linearNote {
-                // Tertiary and unaccented on purpose. Linear being down does not make the
-                // rows wrong, only their headings possibly behind, so it reads as a
-                // footnote rather than as the amber the sync dot uses (§4).
-                Text("· " + note)
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                SyncDot(tone: footer.syncTone, isSyncing: footer.isSyncing)
+                Text(footer.syncText)
                     .font(Tokens.text(11))
                     .foregroundStyle(Tokens.textTertiary.color)
-                    .help(footer.detail ?? note)
-            }
-            Spacer(minLength: 0)
-            if footer.showsMarkAllRead {
-                Button("Mark all read", action: onMarkAllRead)
+                    .help(footer.detail ?? footer.syncText)
+                if let note = footer.linearNote {
+                    // Tertiary and unaccented on purpose. Linear being down does not make
+                    // the rows wrong, only their headings possibly behind, so it reads as a
+                    // footnote rather than as the amber the sync dot uses (§4).
+                    Text("· " + note)
+                        .font(Tokens.text(11))
+                        .foregroundStyle(Tokens.textTertiary.color)
+                        .help(footer.detail ?? note)
+                }
+                Spacer(minLength: 0)
+                if footer.showsMarkAllRead {
+                    Button("Mark all read", action: onMarkAllRead)
+                        .buttonStyle(.plain)
+                        .font(Tokens.text(11.5))
+                        .foregroundStyle(Tokens.textSecondary.color)
+                    Rectangle()
+                        .fill(Tokens.separator.color)
+                        .frame(width: 1, height: 11)
+                }
+                Button("Settings", action: onOpenSettings)
                     .buttonStyle(.plain)
                     .font(Tokens.text(11.5))
                     .foregroundStyle(Tokens.textSecondary.color)
-                Rectangle()
-                    .fill(Tokens.separator.color)
-                    .frame(width: 1, height: 11)
             }
-            Button("Settings", action: onOpenSettings)
-                .buttonStyle(.plain)
-                .font(Tokens.text(11.5))
-                .foregroundStyle(Tokens.textSecondary.color)
+
+            // Only while it lasts, and only for the failures nothing else states — so the
+            // footer is one line in every healthy state and grows a second one exactly
+            // when there is something to read.
+            if let error = footer.errorMessage {
+                HStack(alignment: .top, spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Tokens.amber.color)
+                        .accessibilityHidden(true)
+                    Text(error)
+                        .font(Tokens.text(11))
+                        .foregroundStyle(Tokens.amberText.color)
+                        // Two lines is enough for every message the kits produce, and a
+                        // cap is what keeps a server's HTML error page from pushing the
+                        // rows off the panel.
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help(error)
+                    Spacer(minLength: 0)
+                }
+                .accessibilityElement(children: .combine)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(Tokens.chrome.color)
         .overlay(alignment: .top) { Hairline() }
+    }
+}
+
+/// The 5 pt sync dot, which pulses while a poll is in flight.
+///
+/// The pulse is the whole point of the state existing separately from the text beside it:
+/// "syncing…" appears and disappears within a few hundred milliseconds on a healthy poll,
+/// which is long enough to read only if you happened to be looking. Motion is what gets
+/// noticed peripherally, and a poll that is *not* finishing quickly — the case where the
+/// question is actually being asked — keeps it going for as long as it takes.
+private struct SyncDot: View {
+    var tone: StatusTone
+    var isSyncing: Bool
+
+    /// A repeating pulse is exactly the kind of motion Reduce Motion is turned on to stop,
+    /// and it would run for the whole of every poll. The text beside the dot already says
+    /// `syncing…`, so honouring the preference costs the state nothing: it stays legible
+    /// without the animation, which is the test for whether motion was decoration.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    @State private var isDim = false
+
+    private var pulses: Bool { isSyncing && !reduceMotion }
+
+    var body: some View {
+        Circle()
+            .fill(Tokens.foreground(tone))
+            .frame(width: 5, height: 5)
+            .opacity(pulses && isDim ? 0.3 : 1)
+            // One state change plus `repeatForever` is the whole animation: the dot is
+            // handed a single new value and the repetition comes from the curve, so there
+            // is no timer here and nothing to stop when the poll lands.
+            .animation(pulse, value: isDim)
+            // Both inputs, because either can change under a running poll: the footer is
+            // rebuilt in place when one starts — the view does not re-appear, its input
+            // changes — and Reduce Motion can be switched on while it is going.
+            .onChange(of: pulses) { _, isPulsing in isDim = isPulsing }
+            .onAppear { isDim = pulses }
+            .accessibilityHidden(true)
+    }
+
+    private var pulse: Animation {
+        pulses ? .easeInOut(duration: 0.55).repeatForever(autoreverses: true) : .default
     }
 }
 

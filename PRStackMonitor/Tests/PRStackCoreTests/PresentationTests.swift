@@ -355,7 +355,8 @@ final class PanelPresentationTests: XCTestCase {
         _ name: String,
         github: SourceHealth = .connected,
         linear: SourceHealth = .connected,
-        syncedAgo: TimeInterval? = 34
+        syncedAgo: TimeInterval? = 34,
+        isRefreshing: Bool = false
     ) throws -> PanelPresentation {
         let fixture = try Fixtures.load(name)
         return PanelPresentation.make(
@@ -363,7 +364,8 @@ final class PanelPresentationTests: XCTestCase {
             status: PanelStatus(
                 github: github,
                 linear: linear,
-                lastSyncedAt: syncedAgo.map { fixture.now.addingTimeInterval(-$0) }
+                lastSyncedAt: syncedAgo.map { fixture.now.addingTimeInterval(-$0) },
+                isRefreshing: isRefreshing
             ),
             now: fixture.now
         )
@@ -522,9 +524,71 @@ final class PanelPresentationTests: XCTestCase {
         XCTAssertEqual(expired.footer.syncTone, .danger)
         XCTAssertEqual(expired.footer.syncText, "disconnected")
 
+        // Never synced *and* failing is red rather than grey. There is no cached list
+        // underneath this one to be recently true, so "nothing has arrived yet" is not a
+        // neutral fact about timing — it is the failure, and the message is beside it.
         let unreachable = try panel("empty-state", github: .unreachable("timed out"), syncedAgo: nil)
-        XCTAssertEqual(unreachable.footer.syncTone, .neutral)
+        XCTAssertEqual(unreachable.footer.syncTone, .danger)
         XCTAssertEqual(unreachable.footer.syncText, "never synced")
+        XCTAssertEqual(unreachable.footer.errorMessage, "timed out")
+    }
+
+    /// "Is it actually running?" is the question the footer exists to answer, and until
+    /// now it only ever reported on the poll before this one.
+    func testFooterSaysWhenAPollIsInFlight() throws {
+        let syncing = try panel("panel-2a", isRefreshing: true)
+        XCTAssertTrue(syncing.footer.isSyncing)
+        XCTAssertEqual(syncing.footer.syncTone, .inFlight)
+        XCTAssertEqual(syncing.footer.syncText, "syncing…")
+
+        // And outranks every resting state, each of which describes the *previous* poll.
+        // A retry that is happening is the more current fact than the failure it retries.
+        let retrying = try panel("panel-2a", github: .unreachable("timed out"), isRefreshing: true)
+        XCTAssertEqual(retrying.footer.syncText, "syncing…")
+        // The failure it is retrying still shows: it is the last thing known to be true,
+        // and the poll under way has not yet disproved it.
+        XCTAssertEqual(retrying.footer.errorMessage, "timed out")
+
+        XCTAssertFalse(try panel("panel-2a").footer.isSyncing)
+    }
+
+    /// The report is read a line at a time, so a value that contains a newline would end
+    /// its record early and be parsed as another. Failure messages are the one field that
+    /// can carry one — a server's response body reaches this straight from the transport.
+    func testTheReportEscapesLineBreaksInAValue() throws {
+        let presented = try panel(
+            "panel-2a",
+            github: .unreachable("GitHub returned HTTP 502:\n<html>\r\n</html>")
+        )
+        let rendered = PanelPresentationReport.render(presented)
+        let footers = rendered.split(separator: "\n").filter { $0.hasPrefix("footer ") }
+
+        XCTAssertEqual(footers.count, 1, "the message must not break the footer into several records")
+        XCTAssertTrue(
+            footers[0].contains(#"error="GitHub returned HTTP 502:\n<html>\r\n</html>""#),
+            "expected the breaks escaped in place, got \(footers[0])"
+        )
+    }
+
+    /// A transient failure is stated, not hidden behind a hover. The two failures that are
+    /// already said elsewhere — an expired token, no token at all — are not repeated.
+    func testFooterStatesATransientFailure() throws {
+        XCTAssertEqual(
+            try panel("panel-2a", github: .unreachable("could not reach GitHub: the request timed out"))
+                .footer.errorMessage,
+            "could not reach GitHub: the request timed out"
+        )
+        XCTAssertNil(
+            try panel("panel-2a", github: .unauthorized("bad credentials")).footer.errorMessage,
+            "the reconnect banner already says this, next to the button that fixes it"
+        )
+        XCTAssertNil(try panel("panel-2a", github: .unconfigured).footer.errorMessage)
+        XCTAssertNil(try panel("panel-2a").footer.errorMessage)
+        // Linear's failures cost the panel its project headings and nothing else, so they
+        // stay a footnote and the hover detail (§4).
+        XCTAssertNil(
+            try panel("panel-2a", linear: .unreachable("could not reach Linear")).footer.errorMessage
+        )
     }
 
     /// The footer says how it is at a glance and why on hover. A connected source has no
