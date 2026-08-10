@@ -381,10 +381,10 @@ repository in scope is public). No OAuth app, no callback URL, no Apple involvem
 this later without touching the sync layer — hide it all behind a `TokenProvider`.
 
 This was originally specified as a read-only fine-grained token (`Contents: read`, `Pull requests: read`,
-`Metadata: read`) and that is not sufficient: `statusCheckRollup` reads check runs, and GitHub offers no Checks
-permission on fine-grained tokens — the capability was withdrawn over edge cases, so only GitHub Apps can reach
-that API. The fine-grained token satisfies the search and then fails the rollup on every node, costing the panel
-its CI status entirely.
+`Metadata: read`) and that is not sufficient: the fine-grained token satisfies the search and then fails
+`statusCheckRollup` on every node with FORBIDDEN, costing the panel its CI status entirely. Per GitHub Support,
+Checks cannot be granted to a fine-grained token at all — the capability existed, hit edge cases, and was
+withdrawn — so a GitHub App is the only alternative to a classic token.
 
 The cost of the switch is that `repo` is read/write over all private repositories, against a fine-grained token
 that was read-only and per-repository; classic scopes have no read-only tier covering checks. The sync layer

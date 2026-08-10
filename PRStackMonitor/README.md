@@ -128,7 +128,7 @@ the same anonymisation rule applies to them.
 M2 is demoable against:
 
 ```sh
-export PRSTACK_GITHUB_TOKEN=github_pat_…        # or store it in the login keychain
+export PRSTACK_GITHUB_TOKEN=ghp_…               # or store it in the login keychain
 
 swift run prstack-dump --github                 # All scope
 swift run prstack-dump --github --repo acme/billing --repo acme/source   # Selected scope

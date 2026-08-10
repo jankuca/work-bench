@@ -155,9 +155,11 @@ enum GitHubSource {
             A classic personal access token with the `repo` scope — or `public_repo` if every
             repository in scope is public (IMPLEMENTATION_PLAN §3).
 
-            A fine-grained token will authenticate and then fail `statusCheckRollup` on every
-            pull request with FORBIDDEN: GitHub offers no Checks permission on fine-grained
-            tokens, so CI status comes back empty.
+            A fine-grained token authenticates and answers the search, then fails
+            `statusCheckRollup` on every pull request with FORBIDDEN, so CI status comes back
+            empty. GitHub Support's answer is that Checks cannot be granted to a fine-grained
+            token at all — the capability existed, hit edge cases, and was withdrawn — which
+            leaves a GitHub App as the only alternative to a classic token.
             """
         default:
             return error.description

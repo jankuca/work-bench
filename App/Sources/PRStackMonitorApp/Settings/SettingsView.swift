@@ -37,8 +37,10 @@ struct AccountsSettingsView: View {
             Section("GitHub") {
                 CredentialField(
                     prompt: "Classic personal access token",
-                    help: "Scope: repo (or public_repo). CI status needs a classic token — "
-                        + "fine-grained tokens cannot read Checks.",
+                    help: "Scope: repo — which grants read *and write* on every private "
+                        + "repository, though this app only ever reads. Prefer public_repo "
+                        + "if every repository you track is public. A fine-grained token "
+                        + "cannot fetch CI status: GitHub forbids it the check rollup.",
                     value: $model.githubToken,
                     source: model.githubSource,
                     isStored: model.githubHasStoredToken,
