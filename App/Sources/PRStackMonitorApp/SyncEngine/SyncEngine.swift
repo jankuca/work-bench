@@ -117,13 +117,22 @@ final class SyncEngine {
     /// Sleep and power, re-read together. The notifications say that *something* changed,
     /// not what, so both are refreshed on either.
     private func machineDidChange() {
+        let wasAsleep = conditions.isAsleep
         conditions.isSystemAsleep = sleep.isSystemAsleep
         conditions.isDisplayAsleep = sleep.isDisplayAsleep
         conditions.power = power.read()
-        // No special case for waking: the last poll is by then older than any interval, so
-        // the schedule below is already overdue and fires at once. Waking from sleep syncs
-        // immediately and then re-evaluates the table from the top, which is what §4 asks
-        // for, and it falls out of the ordinary arithmetic rather than out of a branch.
+
+        // "Waking from sleep syncs immediately, then re-evaluates the table from the top"
+        // (IMPLEMENTATION_PLAN §4) — unconditionally, which is why this is a branch rather
+        // than a consequence of the arithmetic. After a night asleep the last poll is older
+        // than any interval and the schedule below would be overdue anyway; after a
+        // thirty-second display sleep it would not, and the panel the user is looking
+        // straight at would wait out the rest of an interval before checking. Forgetting
+        // the last poll is what makes both cases the same case.
+        //
+        // A backoff still holds through it: the schedule takes the later of the interval and
+        // the retry instant, so a source that is failing is not hammered by a lid.
+        if wasAsleep, !conditions.isAsleep { lastPollAt = nil }
         reschedule()
     }
 
@@ -134,16 +143,21 @@ final class SyncEngine {
     /// Only a transient failure escalates. A rejected credential is not retried into
     /// submission — see ``Backoff/backsOff(_:)`` — and a source that has not been asked at
     /// all this poll keeps whatever hold it already had, since nothing was learned.
+    ///
+    /// Every other answer **clears** the hold, not just a healthy one. A `401` is an answer:
+    /// the service was reached and replied, so a delay earned by an earlier timeout is
+    /// describing a network that is demonstrably working again. Left in place it would hold
+    /// back the poll that comes after the user pastes a new token, which is the one poll that
+    /// matters at that moment.
     func record(_ health: SourceHealth, for source: EventSource) {
-        if health.isConnected {
-            guard backoffs[source] != nil else { return }
-            backoffs[source]?.clear()
-        } else {
-            guard Backoff.backsOff(health) else { return }
-            var backoff = backoffs[source] ?? Backoff()
-            backoff.recordFailure(at: clock(), jitter: jitter())
-            backoffs[source] = backoff
+        guard !health.isConnected, Backoff.backsOff(health) else {
+            guard backoffs.removeValue(forKey: source) != nil else { return }
+            reschedule()
+            return
         }
+        var backoff = backoffs[source] ?? Backoff()
+        backoff.recordFailure(at: clock(), jitter: jitter())
+        backoffs[source] = backoff
         reschedule()
     }
 
@@ -172,8 +186,11 @@ final class SyncEngine {
     /// `nil` clears both, which is what a credential change in Settings means — either
     /// token may have been the one that was replaced.
     func reconnect(_ source: EventSource? = nil) {
+        // Dropped rather than reset in place, the same way ``record(_:for:)`` retires one:
+        // an absent entry and a cleared one behave identically, and having only one spelling
+        // of "not backing off" is what keeps them that way.
         for key in EventSource.allCases where source == nil || source == key {
-            backoffs[key]?.clear()
+            backoffs[key] = nil
         }
         fire()
     }
