@@ -102,15 +102,15 @@ final class PanelController: ObservableObject {
         // The engine says when; this says what. Every poll in the app's life comes through
         // here, including the first one and the manual ones, so there is one path to reason
         // about rather than a scheduled path and a hand-rolled one beside it.
-        engine.onPoll = { [weak self] in self?.poll() }
+        self.engine.onPoll = { [weak self] in self?.poll() }
         // The footer measures staleness against the current interval, and two of the
         // conditions that change it — a battery crossing the threshold, a machine waking —
         // arrive from the machine rather than from a poll. Rebuilding on the cadence rather
         // than on every reschedule keeps that to the handful of times a day it happens.
-        engine.onCadenceChange = { [weak self] in self?.rebuild() }
+        self.engine.onCadenceChange = { [weak self] in self?.rebuild() }
         // The merges the last launch left waiting decide the interval before the first poll
         // has landed: a release tag cut while the app was closed is found at 60 s, not 5 min.
-        engine.setAwaitingRelease(!local.unboundMerges.isEmpty)
+        self.engine.setAwaitingRelease(!local.unboundMerges.isEmpty)
     }
 
     // MARK: - Lifecycle
