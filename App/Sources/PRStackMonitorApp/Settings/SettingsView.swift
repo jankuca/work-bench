@@ -36,8 +36,9 @@ struct AccountsSettingsView: View {
         Form {
             Section("GitHub") {
                 CredentialField(
-                    prompt: "Fine-grained personal access token",
-                    help: "Read-only: Contents, Pull requests, Metadata.",
+                    prompt: "Classic personal access token",
+                    help: "Scope: repo (or public_repo). CI status needs a classic token — "
+                        + "fine-grained tokens cannot read Checks.",
                     value: $model.githubToken,
                     source: model.githubSource,
                     isStored: model.githubHasStoredToken,

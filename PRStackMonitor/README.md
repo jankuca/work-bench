@@ -139,9 +139,23 @@ swift run prstack-dump --github --presentation                # what the row vie
 
 From the repository root, `make fetch REPOS='acme/billing' PAGE_SIZE=5` does the same.
 
-The token is a **fine-grained personal access token**, read-only, with `Contents: read`,
-`Pull requests: read` and `Metadata: read`. It is looked for in `$PRSTACK_GITHUB_TOKEN`,
-then `$GITHUB_TOKEN`, then the login keychain on macOS.
+The token is a **classic personal access token** with the `repo` scope — or `public_repo`
+if every repository in scope is public. It is looked for in `$PRSTACK_GITHUB_TOKEN`, then
+`$GITHUB_TOKEN`, then the login keychain on macOS.
+
+A fine-grained token does not work for the full query. `statusCheckRollup` reads check
+runs, and GitHub does not offer a Checks permission on fine-grained tokens at all — per
+GitHub Support the capability existed, was found to have edge cases, and was withdrawn, so
+only GitHub Apps can read that API. A fine-grained token answers the search perfectly well
+and then returns `FORBIDDEN: Resource not accessible by personal access token` for every
+pull request's rollup, which is reported as a warning per node and leaves every row with no
+CI status.
+
+This is a real widening and worth saying plainly: `repo` is read **and write** across all
+private repositories, where the fine-grained token it replaces was read-only and
+per-repository. Classic scopes have no read-only equivalent that includes checks. The app
+only ever issues reads, but the token it now holds could do more. Preferring a GitHub App
+installation token would close that gap and is the honest long-term fix.
 
 Diagnostics — how many pages, how many GraphQL points, why pagination stopped, and every
 warning — go to stderr, so `prstack-dump --github > panel.txt` still captures only the
