@@ -68,17 +68,21 @@ final class PanelController: ObservableObject {
     /// opening, a merge waiting for a tag, a source failing — is observed here.
     private let engine: SyncEngine
 
+    /// `engine` is `nil`-defaulted and built in the body for the reason spelled out on
+    /// ``SyncEngine/init(configuration:power:sleep:clock:jitter:)``: it is a `@MainActor`
+    /// type, and a default argument is evaluated in the caller's context rather than this
+    /// one. `store` needs no such treatment — `FileStateStore` is not isolated.
     init(
         source: any PanelSource,
         events: EventBus,
         store: any StateStore = FileStateStore(url: FileStateStore.defaultURL()),
-        engine: SyncEngine = SyncEngine(),
+        engine: SyncEngine? = nil,
         clock: @escaping () -> Date = { Date() }
     ) {
         self.source = source
         self.events = events
         self.store = store
-        self.engine = engine
+        self.engine = engine ?? SyncEngine()
         self.clock = clock
         snapshot = RawSnapshot(viewerLogin: "", pullRequests: [])
         status = .unconfigured
