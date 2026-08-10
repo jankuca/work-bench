@@ -604,8 +604,8 @@ Linear source is marked stale.
 ### Storage
 
 - `~/Library/Application Support/PRStackMonitor/state.json` — dismissed set, snooze deadlines, read
-  digests, PR→tag bindings, **unbound merged PRs with their merge commit and `mergedAt`**, Linear project
-  cache, per-source last successful sync. Atomic writes, schema-versioned.
+  digests, PR→tag bindings, **unbound merged PRs with their merge commit and `mergedAt`**, per-source last
+  successful sync. Atomic writes, schema-versioned.
   The store that writes this file lands in **M6**, not M7 — see §7.
   **One writer.** `LocalState` is a single value owned by the main actor and written whole, so the release
   tracker hands its bindings back to be merged there rather than writing the file from its own task — two
@@ -619,10 +619,17 @@ Linear source is marked stale.
   of false unread and self-corrects at the next open, and a lost snooze just wakes its row early. Dismissal
   tombstones are the one loss nothing re-derives: every dismissed pull request the queries still return —
   anything still open, and merges inside the window — stops being suppressed, and the set cannot be rebuilt.
+- `~/Library/Application Support/PRStackMonitor/linear-cache.json` — the identifier → project cache, in its
+  own file rather than inside `state.json` as originally drawn. The two have different writers: `LocalState`
+  is one value owned by the main actor and written whole, while the cache is written from the resolver's own
+  task on a background poll. Folding it in would either make the resolver a second writer of the state file —
+  the hazard the single-writer rule above exists to prevent — or route every cache hit through the main actor
+  to be merged. Nothing derivation reads lives in it, so the separate path costs no correctness.
 - Keychain (generic password, one item per service) — GitHub token, Linear key.
-- `UserDefaults` — repo scope mode + selected repos, **per-repo tag pattern map** (`nameWithOwner` → glob,
-  default `v*`), poll intervals, launch-at-login, per-event sink toggles. M6 reads the tag pattern map
-  directly, with `v*` as the default; M7 adds the editor for it.
+- `UserDefaults` — repo scope mode + selected repos, the repos seen in recent results (what Settings offers as
+  the checklist), **per-repo tag pattern map** (`nameWithOwner` → glob, default `v*`), poll intervals,
+  launch-at-login, per-event sink toggles. M6 reads the tag pattern map directly, with `v*` as the default;
+  M7 adds the editor for it.
 
 ---
 

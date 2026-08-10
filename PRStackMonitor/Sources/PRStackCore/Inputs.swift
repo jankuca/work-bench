@@ -175,6 +175,37 @@ public struct LocalState: Equatable, Sendable {
         markRead(snapshot.pullRequests.map(\.id), in: snapshot)
     }
 
+    // MARK: - Snooze
+
+    /// Suppresses a pull request's attention state until `deadline`.
+    ///
+    /// A deadline already in the past is stored rather than rejected, and derivation reads
+    /// it as awake: the two are the same outcome, and refusing it here would mean the one
+    /// caller that computes a deadline from a stale `now` fails silently instead.
+    public mutating func snooze(_ id: PRID, until deadline: Date) {
+        snoozedUntil[id] = deadline
+    }
+
+    /// Wakes a snoozed pull request now. Idempotent — waking a row that is not asleep is
+    /// what the menu does when the deadline passed while it was open.
+    public mutating func wake(_ id: PRID) {
+        snoozedUntil[id] = nil
+    }
+
+    /// Drops deadlines that have already passed.
+    ///
+    /// Cosmetic for derivation, which compares against `now` either way, but not for the
+    /// file: a snooze set once per pull request per week would otherwise accumulate an
+    /// entry per pull request the user has ever silenced, forever. Called once per poll,
+    /// so an expired deadline survives at most one interval.
+    ///
+    /// Safe against the wake-up event, which is diffed from `(status, isSuppressed)` in
+    /// the previous *model* — removing an entry derivation already reads as expired
+    /// changes nothing it sees.
+    public mutating func pruneSnoozes(before now: Date) {
+        snoozedUntil = snoozedUntil.filter { $0.value > now }
+    }
+
     // MARK: - Release tracking
 
     /// Notes the merge commit of every merged pull request that is still waiting for a tag.
@@ -219,6 +250,10 @@ public struct LocalState: Equatable, Sendable {
         for id in ids {
             dismissed.insert(id)
             unboundMerges[id] = nil
+            // A dismissed row never renders again, so its wake time has nothing left to
+            // wake. Left behind it would sit in the file forever, since nothing else ever
+            // looks the id up again.
+            snoozedUntil[id] = nil
         }
     }
 

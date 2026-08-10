@@ -7,9 +7,8 @@ import Foundation
 /// wrong does not fail loudly — it just leaves every merge in one repository sitting at
 /// `merged · awaiting release` forever (IMPLEMENTATION_PLAN §3).
 ///
-/// M6 reads this map; M7 adds the editor for it, so until then every repository takes the
-/// default. That is only demoable because the target repositories do tag `v*` — the one
-/// thing §8 asks to confirm during this milestone.
+/// M6 reads this map and M7 added the editor for it; a repository with no entry still takes
+/// the `v*` default, which is most of them.
 public struct TagPatterns: Equatable, Sendable {
     /// The default for any repository without an entry.
     public static let defaultPattern = "v*"

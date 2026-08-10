@@ -108,11 +108,29 @@ no input for it (IMPLEMENTATION_PLAN §3). A test pins that, so the case cannot 
 appearing by accident before a deployment tracker exists to mean it.
 
 Derivation's transitions reach the icon through `Events/` — an `EventBus`, one registered
-`EventSink`, and a per-event-type toggle set (`EventPreferences`) the bus already filters
-on, though nothing sets it: the Settings checkboxes are M7.
-That is deliberate: adding "notify me when my pull request reaches production" later means
-writing a `UserNotificationSink` and registering it, with no change to core, to the panel,
-or to the bus.
+`EventSink`, and a per-event-type toggle set (`EventPreferences`) the bus filters on, which
+Settings' third tab now writes. That is deliberate: adding "notify me when my pull request
+reaches production" later means writing a `UserNotificationSink` and registering it, with no
+change to core, to the panel, or to the bus.
+
+The rows are interactive as of M7. Clicking one opens the pull request and marks it read;
+the meta line's identifier opens the Linear issue and `+N` opens the rest; Done rows carry a
+✕ and their section a `Clear all`. Every other row action lives in one list — the ⋯ that
+appears on the hovered row, the right-click menu, and the VoiceOver rotor all render
+`RowAction`, so a case added there appears in all three.
+
+With the pointer over a row, the keyboard accelerates the same list: `R` marks it read, `S`
+opens the snooze durations, `X` dismisses a Done row, `↩` opens the pull request, and `L`
+opens the primary Linear issue with repeated presses cycling through the rest. The keys are
+a single local `NSEvent` monitor scoped to the popover's window, started on open and stopped
+through one idempotent teardown — a popover close and a resign both fire for the same
+dismissal, and removing the token twice over-releases.
+
+Settings is a window rather than a scene (there is no SwiftUI `App` here to hang one off):
+the two tokens, the repository scope with its per-repository release-tag glob, and the
+per-event toggles. Every edit is written as it is made; the poll it implies comes when the
+window closes, so typing a tag glob does not spend a request per keystroke. A credential
+change is the exception and polls immediately — that is how the reconnect banner comes down.
 
 Almost none of *what* it shows is decided in this package. `PRStackCore`'s presentation
 layer resolves every row down to a title, an emphasis tier, a semantic tone, a meta line
@@ -122,16 +140,11 @@ build.
 
 Not here yet:
 
-- **Sync** (M8). `PanelController` polls on open and on demand. There is no interval
-  table, no sleep or battery awareness, no backoff.
-- **Interactions and persistence** (M7). `Mark all read`, dismiss and `Clear all` work,
-  but only in memory — quitting forgets them, which is also why unread survives nothing
-  yet: the read digests that carry it across a relaunch have no store until M7. The
-  hovered-row keyboard actions and the Settings window are M7 too — including the
-  checkboxes that would bind to `EventPreferences`; `Settings` currently explains where
-  the token is read from.
-- **Project headings from Linear** (M5). Until then every row groups under `Other`,
-  because nothing populates `linearIssues`.
+- **Sync** (M8). `PanelController` polls at launch, on open and on demand. There is no
+  interval table, no sleep or battery awareness, no backoff, and no per-source reconnect
+  banner beyond the one an expired GitHub token raises.
+- **Polish** (M9). The dark palette exists in `Tokens.swift` and the rows carry
+  accessibility labels, but neither has had its pass.
 
 ## Running it against your own pull requests
 

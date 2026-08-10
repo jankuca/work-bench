@@ -10,9 +10,6 @@ import PRStackCore
 struct PanelView: View {
     @ObservedObject var controller: PanelController
 
-    /// The row under the pointer. M7 makes this the target of the keyboard actions; at
-    /// M3 it drives the hover lift only.
-    @State private var hovered: PRID?
     @State private var contentHeight: CGFloat = Tokens.Panel.minBodyHeight
 
     var body: some View {
@@ -86,25 +83,38 @@ struct PanelView: View {
             isFirst: isFirst,
             onClearAll: { controller.clearDone() }
         )
-        ForEach(Array(section.rows.enumerated()), id: \.offset) { item in
+        // Keyed by `PRID`, not by position. With the offset as identity SwiftUI reuses the
+        // view at each index for whatever row lands there, so a poll that inserts or
+        // removes one moves every row below it into a neighbour's view — and the hover
+        // highlight, which is now also the keyboard's target, would stay where the pointer
+        // is not.
+        ForEach(section.rows, id: \.id) { row in
             PRRowView(
-                row: item.element,
-                isHovered: hovered == item.element.id,
+                row: row,
+                isHovered: controller.hovered == row.id,
                 fieldColor: Tokens.field.color,
-                onOpen: { controller.open(item.element.url) },
+                onOpen: { controller.open(row: row) },
                 onOpenIssue: { controller.open($0.url) },
-                onDismiss: { controller.dismiss(item.element.id) }
+                onMarkRead: { controller.markRead(row.id) },
+                onSnooze: { controller.snooze(row.id, for: $0) },
+                onWake: { controller.wake(row.id) },
+                onDismiss: { controller.dismiss(row.id) }
             )
+            // The hovered row lives on the controller, not in this view: it is the target
+            // of the key monitor, which is an AppKit object outside the view tree.
             .onContinuousHover { phase in
                 switch phase {
                 case .active:
-                    hovered = item.element.id
+                    // `.active` arrives on every pointer move inside the row, and the
+                    // hovered id is published — assigning the same value again would
+                    // re-render the whole panel per mouse move.
+                    if controller.hovered != row.id { controller.hovered = row.id }
                 case .ended:
                     // Only clear what this row set. As the pointer crosses a boundary the
                     // two rows' `ended` and `active` can arrive in either order, and
                     // clearing unconditionally would drop the highlight the row below
                     // just claimed.
-                    if hovered == item.element.id { hovered = nil }
+                    if controller.hovered == row.id { controller.hovered = nil }
                 }
             }
         }

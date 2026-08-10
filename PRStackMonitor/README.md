@@ -5,11 +5,11 @@ for the whole design; this README covers only how to work in this package.
 
 | Target | Milestone | Notes |
 | --- | --- | --- |
-| `PRStackCore` | M1, M3, M4 | Domain model and all derivation logic, plus the presentation layer the panel view reads, the event diff, and the menu bar icon's state machine. Foundation only, no I/O, no clock reads |
+| `PRStackCore` | M1, M3, M4, M6, M7 | Domain model and all derivation logic, plus the presentation layer the panel view reads, the event diff, the menu bar icon's state machine, the `state.json` store, and the row actions behind the pointer and the keys. Foundation only, no I/O beyond that one store, no clock reads |
 | `NetKit` | M5 | The seam under both service kits: HTTP transport, GraphQL envelope, credential providers. One macOS-only file, fenced. No policy |
-| `GitHubKit` | M2 | GraphQL + REST clients, DTOs, rate limiting |
+| `GitHubKit` | M2, M6 | GraphQL + REST clients, DTOs, rate limiting, and the tag-containment release tracker |
 | `LinearKit` | M5 | Identifier scan, batched `issue(id:)` resolution, the project cache |
-| `prstack-dump` | M1–M5 | Debug tool: derive a fixture, or a live GitHub + Linear poll, and print the panel |
+| `prstack-dump` | M1–M6 | Debug tool: derive a fixture, or a live GitHub + Linear poll, and print the panel |
 
 The AppKit shell (`App/`) is a separate Swift package and is not part of this one.
 
@@ -183,6 +183,12 @@ refresh interval decides what gets re-asked, never what gets used. A Linear outa
 every cached heading in place and only marks the source stale in the footer — it must never
 make project sections appear to empty out.
 
-It lives in its own file for now
-(`~/Library/Application Support/PRStackMonitor/linear-cache.json`). The plan puts it inside
-`state.json`, and M7 — where the rest of `LocalState` gains a store — is where it moves.
+It lives in its own file, rather than inside `state.json` — the app defaults to
+`~/Library/Application Support/PRStackMonitor/linear-cache.json`, and a caller that owns its
+own path says so (`prstack-dump --linear-cache`). The plan
+originally drew it inside `state.json`; the two turned out to have different writers, since
+`LocalState` is one value owned by the main actor and written whole while the cache is
+written from the resolver's own task on a background poll. Folding it in would either make
+the resolver a second writer of the state file — the hazard the single-writer rule exists to
+prevent — or route every cache hit through the main actor to be merged, for a field
+derivation never reads.
