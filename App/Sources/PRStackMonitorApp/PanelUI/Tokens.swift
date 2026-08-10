@@ -22,8 +22,21 @@ enum Tokens {
         /// per row per redraw buys nothing.
         let color: Color
 
+        private let light: NSColor
+        private let dark: NSColor
+
         init(light: NSColor, dark: NSColor) {
+            self.light = light
+            self.dark = dark
             color = Color(nsColor: NSColor(name: nil) { $0.isDark ? dark : light })
+        }
+
+        /// The same colour, mixed toward white in each appearance.
+        ///
+        /// Derived rather than written out as its own hex pair so a lighter token can never
+        /// drift off the hue it is meant to be a lighter version of.
+        func lightened(light lightAmount: Double, dark darkAmount: Double) -> Adaptive {
+            Adaptive(light: mixWhite(light, lightAmount), dark: mixWhite(dark, darkAmount))
         }
     }
 
@@ -61,6 +74,18 @@ enum Tokens {
     static let accent = Adaptive(light: hex(0x5E6AD2), dark: hex(0x8B95E8))
     static let accentChip = Adaptive(light: hex(0xECECF8), dark: hex(0x262A45))
 
+    /// The ring a reviewer avatar wears, one step lighter than the status colour itself.
+    ///
+    /// Lighter than ``foreground`` on purpose: the ring is a solid 2 pt band around an
+    /// 18 pt circle, so at full status strength it reads as a second chip competing with
+    /// the real one. Lifted toward the field it stays legible as state without shouting.
+    static let dangerRing = danger.lightened(light: 0.36, dark: 0.24)
+    static let successRing = success.lightened(light: 0.36, dark: 0.24)
+    static let mergedRing = mergedPurple.lightened(light: 0.36, dark: 0.24)
+    static let amberRing = amber.lightened(light: 0.36, dark: 0.24)
+    static let accentRing = accent.lightened(light: 0.36, dark: 0.24)
+    static let neutralRing = textTertiary.lightened(light: 0.36, dark: 0.24)
+
     static let neutralChip = Adaptive(light: hex(0xE0E1E5), dark: hex(0x35353A))
     static let spineLine = Adaptive(light: hex(0xDDDEE3), dark: hex(0x3C3C42))
     static let emptySegment = Adaptive(light: hex(0xE4E4E7), dark: hex(0x38383D))
@@ -76,6 +101,18 @@ enum Tokens {
         case .merged: return mergedPurple.color
         case .inFlight: return amber.color
         case .accent: return accent.color
+        }
+    }
+
+    /// The ring around a reviewer avatar.
+    static func avatarRing(_ tone: StatusTone) -> Color {
+        switch tone {
+        case .neutral: return neutralRing.color
+        case .danger: return dangerRing.color
+        case .success: return successRing.color
+        case .merged: return mergedRing.color
+        case .inFlight: return amberRing.color
+        case .accent: return accentRing.color
         }
     }
 
@@ -199,6 +236,21 @@ enum Tokens {
     private static func white(_ alpha: Double) -> NSColor {
         NSColor(srgbRed: 1, green: 1, blue: 1, alpha: alpha)
     }
+}
+
+/// Mixes `amount` of white into `color`, in sRGB.
+///
+/// Component-wise rather than an HSB brightness bump: the status colours are already at or
+/// near full brightness in dark appearance, so only losing saturation makes them lighter.
+private func mixWhite(_ color: NSColor, _ amount: Double) -> NSColor {
+    let base = color.usingColorSpace(.sRGB) ?? color
+    func lift(_ component: CGFloat) -> CGFloat { component + (1 - component) * CGFloat(amount) }
+    return NSColor(
+        srgbRed: lift(base.redComponent),
+        green: lift(base.greenComponent),
+        blue: lift(base.blueComponent),
+        alpha: base.alphaComponent
+    )
 }
 
 private extension NSAppearance {

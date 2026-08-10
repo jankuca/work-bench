@@ -137,7 +137,7 @@ struct ReviewerAvatarsView: View {
             .overlay(Circle().strokeBorder(haloColor, lineWidth: 1))
             .background(
                 Circle()
-                    .fill(Tokens.foreground(reviewer.tone))
+                    .fill(Tokens.avatarRing(reviewer.tone))
                     .padding(-Tokens.Row.avatarRing + 1)
             )
             .help(reviewer.login)
