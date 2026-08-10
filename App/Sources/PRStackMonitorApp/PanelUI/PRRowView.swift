@@ -264,7 +264,12 @@ private extension View {
     }
 }
 
-/// The meta line: #number · repo · phrase · age · identifier.
+/// The meta line: #number · [repo ·] phrase · age · [snooze ·] [identifier · +N].
+///
+/// Everything in brackets is conditional — the repo name on the list spanning more than
+/// one repository, the snooze on a wake time still ahead, the identifier on the pull
+/// request naming a ticket at all. ``RowPresentation`` decides all of it; this view only
+/// draws what arrives.
 ///
 /// Laid out as an `HStack` of separate views rather than one attributed string because
 /// the identifier and the `+N` affix are both click targets, and because the phrase's
