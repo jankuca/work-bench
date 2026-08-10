@@ -186,6 +186,16 @@ final class SyncEngine {
     /// the refresh control and a reconnect, and a control that silently does nothing is
     /// worse than a poll the scheduler did not ask for. What `isRunning` gates is the
     /// *timer*, in ``reschedule()``.
+    ///
+    /// `lastPollAt` is when a poll was last **attempted**, not when one last started a
+    /// request. The two differ only when a tick lands while the previous poll is still in
+    /// flight, and the panel controller declines to start a second — which costs that tick,
+    /// deliberately. The alternatives are both worse: not consuming the cadence leaves the
+    /// next fire permanently overdue and spins the timer against a poll that has not
+    /// finished, and re-firing the moment it does turns a run of requests slower than the
+    /// interval into near-continuous polling against the hourly allowance. A skip is
+    /// bounded — every request carries a 30-second timeout, so the poll holding the slot
+    /// ends, and the tick after it starts normally.
     private func fire() {
         lastPollAt = clock()
         onPoll()

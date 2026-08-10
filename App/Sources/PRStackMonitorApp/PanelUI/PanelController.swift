@@ -154,6 +154,9 @@ final class PanelController: ObservableObject {
     }
 
     private func poll() {
+        // One poll in flight at a time. A tick that lands on top of a running poll is
+        // dropped rather than queued — see ``SyncEngine/fire()`` for why that tick is
+        // allowed to cost its interval instead of being made up later.
         guard pollTask == nil else { return }
         pollGeneration += 1
         let generation = pollGeneration
