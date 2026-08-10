@@ -5,9 +5,10 @@ import NetKit
 /// query selects.
 ///
 /// GraphQL bills **points computed from node counts**, not one point per request: the
-/// nested `reviews(last: 20)` and `contexts(first: 20)` selections multiply against 50
-/// pull requests per page. So the client records what a call actually cost rather than
-/// estimating it from a request count (IMPLEMENTATION_PLAN §3).
+/// nested `reviews(last: 20)`, `reviewRequests(first: 10)` and `contexts(first: 20)`
+/// selections multiply against 50 pull requests per page. So the client records what a
+/// call actually cost rather than estimating it from a request count
+/// (IMPLEMENTATION_PLAN §3).
 public struct RateLimit: Equatable, Sendable {
     /// The hourly allowance, 5,000 for a personal access token.
     public var limit: Int

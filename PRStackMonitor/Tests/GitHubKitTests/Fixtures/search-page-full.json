@@ -52,7 +52,32 @@
                 "author": { "login": "sam", "avatarUrl": "https://avatars.example/sam" },
                 "state": "PENDING",
                 "submittedAt": null
+              },
+              {
+                "author": { "login": "avery", "avatarUrl": "https://avatars.example/avery" },
+                "state": "COMMENTED",
+                "submittedAt": "2026-01-09T16:00:00Z"
               }
+            ]
+          },
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "__typename": "User",
+                  "login": "priya",
+                  "avatarUrl": "https://avatars.example/priya"
+                }
+              },
+              { "requestedReviewer": { "__typename": "Team", "slug": "platform" } },
+              {
+                "requestedReviewer": {
+                  "__typename": "User",
+                  "login": "kai",
+                  "avatarUrl": "https://avatars.example/kai"
+                }
+              },
+              { "requestedReviewer": { "__typename": "Bot" } }
             ]
           },
           "commits": {

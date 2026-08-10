@@ -190,16 +190,63 @@ final class PullRequestMapperTests: XCTestCase {
 
     // MARK: - Reviewers
 
+    /// Everyone who submitted, in submission order, then everyone still being waited on.
+    func testReviewersAreSubmissionsThenOpenRequests() throws {
+        let pullRequest = try XCTUnwrap(try mapped().first { $0.number == 4012 })
+        XCTAssertEqual(pullRequest.reviews.map(\.login), ["rowan", "kai", "platform", "priya"])
+        XCTAssertEqual(
+            pullRequest.reviews.map(\.state),
+            [.approved, .changesRequested, .requested, .requested]
+        )
+    }
+
     /// A reviewer who approves and then leaves a remark is still an approver. Taking the
     /// last node would quietly turn their green ring grey.
     func testCommentDoesNotOverwriteAStandingApproval() throws {
         let pullRequest = try XCTUnwrap(try mapped().first { $0.number == 4012 })
-        XCTAssertEqual(pullRequest.reviews.map(\.login), ["rowan", "kai"])
-        XCTAssertEqual(pullRequest.reviews.map(\.state), [.approved, .changesRequested])
-        XCTAssertEqual(
-            pullRequest.reviews.first?.avatarURL,
-            URL(string: "https://avatars.example/rowan")
-        )
+        let rowan = try XCTUnwrap(pullRequest.reviews.first { $0.login == "rowan" })
+        XCTAssertEqual(rowan.state, .approved)
+        XCTAssertEqual(rowan.avatarURL, URL(string: "https://avatars.example/rowan"))
+    }
+
+    /// Replying to a reviewer on your own pull request submits a `COMMENTED` review by
+    /// you — every review comment on GitHub belongs to a review. The author is not one of
+    /// their own reviewers, and since the panel lists only `author:@me` pull requests,
+    /// keeping them would put your own avatar on nearly every row.
+    func testTheAuthorIsNotOneOfTheirOwnReviewers() throws {
+        let pullRequest = try XCTUnwrap(try mapped().first { $0.number == 4012 })
+        XCTAssertEqual(pullRequest.authorLogin, "avery")
+        XCTAssertFalse(pullRequest.reviews.contains { $0.login == "avery" })
+    }
+
+    /// A request is how a reviewer who has not looked yet exists at all: `reviews` holds
+    /// submissions only, so without this the row that most needs an avatar — waiting on
+    /// someone — would show none.
+    func testOpenRequestsBecomeReviewersWithNoVerdict() throws {
+        let pullRequest = try XCTUnwrap(try mapped().first { $0.number == 4012 })
+        let priya = try XCTUnwrap(pullRequest.reviews.first { $0.login == "priya" })
+        XCTAssertEqual(priya.state, .requested)
+        XCTAssertEqual(priya.avatarURL, URL(string: "https://avatars.example/priya"))
+        // A team request answers with `slug`, not `login`.
+        XCTAssertEqual(pullRequest.reviews.first { $0.login == "platform" }?.state, .requested)
+    }
+
+    /// Re-requesting someone who has already reviewed does not duplicate them, and does
+    /// not downgrade the verdict that still stands.
+    func testARerequestedReviewerKeepsTheirSubmittedReview() throws {
+        let pullRequest = try XCTUnwrap(try mapped().first { $0.number == 4012 })
+        XCTAssertEqual(pullRequest.reviews.filter { $0.login == "kai" }.count, 1)
+        XCTAssertEqual(pullRequest.reviews.first { $0.login == "kai" }?.state, .changesRequested)
+    }
+
+    /// A `Bot` or a `Mannequin` request answers with neither `login` nor `slug`, so there
+    /// is nothing to draw an avatar from.
+    func testUnnamedRequestedReviewersAreDropped() {
+        let connection = ReviewRequestConnectionDTO(nodes: [
+            ReviewRequestDTO(requestedReviewer: RequestedReviewerDTO(typeName: "Bot")),
+            ReviewRequestDTO(requestedReviewer: nil)
+        ])
+        XCTAssertTrue(PullRequestMapper.reviewers(from: nil, requests: connection).isEmpty)
     }
 
     /// A pending review is an unsubmitted draft, visible to nobody but its author.

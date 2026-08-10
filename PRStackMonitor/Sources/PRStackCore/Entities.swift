@@ -23,6 +23,10 @@ public enum ReviewState: String, Codable, Sendable {
     case commented
     case pending
     case dismissed
+    /// Asked for a review and has not submitted one. Not a state GitHub reports on a
+    /// review — there is no review yet — it comes from the pull request's open review
+    /// requests, which is the only place a reviewer who has done nothing exists at all.
+    case requested
 }
 
 public enum Mergeable: String, Codable, Sendable {
