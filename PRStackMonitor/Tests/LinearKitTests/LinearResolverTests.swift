@@ -258,6 +258,55 @@ final class LinearResolverTests: XCTestCase {
         XCTAssertNil(resolution.health)
     }
 
+    // MARK: - Backing off
+
+    /// A source in backoff sends nothing and still answers (M8, IMPLEMENTATION_PLAN §4).
+    ///
+    /// This is the difference between deferring the *request* and skipping resolution:
+    /// cached identifiers keep their project headings, so the panel does not reshuffle
+    /// while Linear is down — only an identifier Linear has never answered for falls to
+    /// `Other`, which is what an outage costs anyway.
+    func testCacheOnlyResolutionSendsNothingAndKeepsHeadings() async throws {
+        let transport = StubTransport(responses: [])
+        let cached = cache([("BIL-312", issue("BIL-312", project: ("proj-billing", "Billing")))])
+        let (resolver, _) = self.resolver(transport, cache: cached)
+        // One cached identifier, one that has never been resolved.
+        let subject = pullRequest(title: "Fixes BIL-312 and SRC-97", headRef: "jk/work")
+
+        let resolution = await resolver.resolve(pullRequests: [subject], now: now, mode: .cacheOnly)
+
+        XCTAssertEqual(transport.requestCount, 0)
+        XCTAssertEqual(resolution.pullRequests[0].linearIssues.map(\.identifier), ["BIL-312"])
+        let billingSection = PanelSection.Kind.project(id: "proj-billing", name: "Billing")
+        XCTAssertEqual(
+            section(of: resolution.pullRequests[0], in: derive(resolution.pullRequests)),
+            billingSection
+        )
+        // Nothing was asked, so nothing was learned: the health stays whatever the failure
+        // that started the backoff set it to, rather than being reset by a deferred poll.
+        XCTAssertNil(resolution.health)
+    }
+
+    /// Even when every identifier is stale enough to be re-asked, which is the case the
+    /// mode exists for: a long outage is exactly when everything is due a refresh.
+    func testCacheOnlyIgnoresTheRefreshInterval() async throws {
+        let transport = StubTransport(responses: [])
+        let cached = cache(
+            [("BIL-312", issue("BIL-312", project: ("proj-billing", "Billing")))],
+            age: LinearProjectCache.refreshInterval * 30
+        )
+        let (resolver, _) = self.resolver(transport, cache: cached)
+
+        let resolution = await resolver.resolve(
+            pullRequests: [pullRequest(headRef: "jk/bil-312")],
+            now: now,
+            mode: .cacheOnly
+        )
+
+        XCTAssertEqual(transport.requestCount, 0)
+        XCTAssertEqual(resolution.pullRequests[0].primaryIssue?.projectID, "proj-billing")
+    }
+
     // MARK: - Not configured
 
     /// Linear is optional; GitHub is not. With no key the panel groups everything under

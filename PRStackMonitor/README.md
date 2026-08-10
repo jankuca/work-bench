@@ -5,7 +5,7 @@ for the whole design; this README covers only how to work in this package.
 
 | Target | Milestone | Notes |
 | --- | --- | --- |
-| `PRStackCore` | M1, M3, M4, M6, M7 | Domain model and all derivation logic, plus the presentation layer the panel view reads, the event diff, the menu bar icon's state machine, the `state.json` store, and the row actions behind the pointer and the keys. Foundation only, no I/O beyond that one store, no clock reads |
+| `PRStackCore` | M1, M3, M4, M6, M7, M8 | Domain model and all derivation logic, plus the presentation layer the panel view reads, the event diff, the menu bar icon's state machine, the `state.json` store, the row actions behind the pointer and the keys, and the poll interval table with its per-source backoff. Foundation only, no I/O beyond that one store, no clock reads |
 | `NetKit` | M5 | The seam under both service kits: HTTP transport, GraphQL envelope, credential providers. One macOS-only file, fenced. No policy |
 | `GitHubKit` | M2, M6 | GraphQL + REST clients, DTOs, rate limiting, and the tag-containment release tracker |
 | `LinearKit` | M5 | Identifier scan, batched `issue(id:)` resolution, the project cache |
@@ -25,6 +25,17 @@ inverts the layering for a `URLRequest`.
 `NetKit` holds **no policy**. Every rule about what a status code means, what a rate limit
 costs, or when to retry lives in the kit that owns the API. That is what keeps it from
 quietly becoming a third service.
+
+### Why the scheduler is split
+
+The plan draws `SyncEngine` as a macOS-only module (§1), and the half that watches sleep
+notifications and reads IOKit's power sources is exactly that — it lives in `App/`. What
+came here instead is `PRStackCore/Sync/`: the interval table, the backoff arithmetic, and
+the staleness threshold the footer reads. They are decisions, not observations, and they
+have the same shape as everything else in this package — pure, clock-injected, and wrong in
+ways a reviewer will not see. The ordering of §4's table is the point of the whole feature
+(asleep and low battery outrank an open panel), and it is only testable at all because the
+conditions arrive as a value.
 
 ## Running the tests
 

@@ -67,10 +67,9 @@ final class StatusItemController: NSObject {
         // not connected, nothing verified, dashed.
         show(.disconnected)
 
-        // One poll at launch, so the icon means something before the panel has ever been
-        // opened. This is not the scheduler: the interval table, sleep and battery are
-        // M8, and they replace this call rather than being bolted onto it.
-        controller.refresh()
+        // Starts the scheduler, which polls once immediately and then on the interval table
+        // — sleep, battery, panel state and all. Nothing else in this class has a timer.
+        controller.start()
     }
 
     @objc private func togglePopover(_ sender: Any?) {

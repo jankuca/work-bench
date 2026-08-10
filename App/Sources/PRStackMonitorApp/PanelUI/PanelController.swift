@@ -9,11 +9,10 @@ import PRStackCore
 /// What the panel is bound to: one snapshot, the local state over it, and the health of
 /// the source that produced it.
 ///
-/// This is not the sync engine. There is no interval table, no power awareness and no
-/// backoff here — those are M8, and this deliberately does the least that makes M3
-/// demoable against real data: one poll when the panel opens, one more when the refresh
-/// control is pressed. `SyncEngine` replaces `refresh()`'s body and nothing else in this
-/// file has to move.
+/// It is not the scheduler either. ``SyncEngine`` decides *when* a poll happens — the
+/// interval table, sleep, battery, backoff — and calls in; everything about *what* a poll
+/// does, and every write to `LocalState`, stays here, so there is still exactly one writer
+/// of `state.json` and one place the network is touched.
 @MainActor
 final class PanelController: ObservableObject {
     @Published private(set) var panel: PanelPresentation
@@ -39,8 +38,7 @@ final class PanelController: ObservableObject {
     private var pollGeneration = 0
 
     /// The model from the last derivation, held in memory and **never persisted**, so a
-    /// relaunch replays no history (IMPLEMENTATION_PLAN §1). `SyncEngine` takes this over
-    /// at M8.
+    /// relaunch replays no history (IMPLEMENTATION_PLAN §1).
     private var previous: PanelModel?
     /// The status the previous derivation ran under, for the connection transitions that
     /// cannot come out of a snapshot.
@@ -61,16 +59,21 @@ final class PanelController: ObservableObject {
     /// ``persist()`` immediately afterwards, so a crash costs at most the change in flight
     /// (IMPLEMENTATION_PLAN §3).
     private let store: any StateStore
+    /// When to poll. Held here because everything that changes the answer — the panel
+    /// opening, a merge waiting for a tag, a source failing — is observed here.
+    private let engine: SyncEngine
 
     init(
         source: any PanelSource,
         events: EventBus,
         store: any StateStore = FileStateStore(url: FileStateStore.defaultURL()),
+        engine: SyncEngine = SyncEngine(),
         clock: @escaping () -> Date = { Date() }
     ) {
         self.source = source
         self.events = events
         self.store = store
+        self.engine = engine
         self.clock = clock
         snapshot = RawSnapshot(viewerLogin: "", pullRequests: [])
         status = .unconfigured
@@ -86,9 +89,28 @@ final class PanelController: ObservableObject {
         }
 
         panel = PanelPresentation.make(model: .empty, status: .unconfigured, now: clock())
+
+        // The engine says when; this says what. Every poll in the app's life comes through
+        // here, including the first one and the manual ones, so there is one path to reason
+        // about rather than a scheduled path and a hand-rolled one beside it.
+        engine.onPoll = { [weak self] in self?.poll() }
+        // The footer measures staleness against the current interval, and two of the
+        // conditions that change it — a battery crossing the threshold, a machine waking —
+        // arrive from the machine rather than from a poll. Rebuilding on the cadence rather
+        // than on every reschedule keeps that to the handful of times a day it happens.
+        engine.onCadenceChange = { [weak self] in self?.rebuild() }
+        // The merges the last launch left waiting decide the interval before the first poll
+        // has landed: a release tag cut while the app was closed is found at 60 s, not 5 min.
+        engine.setAwaitingRelease(!local.unboundMerges.isEmpty)
     }
 
     // MARK: - Lifecycle
+
+    /// Starts the scheduler, which polls once immediately: the menu bar icon has to mean
+    /// something before the panel has ever been opened.
+    func start() {
+        engine.start()
+    }
 
     /// Called when the popover opens. The panel shows what it has immediately and the
     /// poll lands under it — the alternative is a blank panel for as long as GitHub takes,
@@ -101,6 +123,9 @@ final class PanelController: ObservableObject {
         digestsWhileOpen = local.readDigests
         local.markAllRead(in: snapshot)
         persist()
+        // Row 3 of the interval table. Set before the poll below, so the 30-second cadence
+        // is what the poll it starts is measured from.
+        engine.setPanelOpen(true)
         rebuild()
         refresh()
     }
@@ -115,10 +140,23 @@ final class PanelController: ObservableObject {
         // next open would begin with a keyboard target the user cannot see.
         hovered = nil
         status.isRefreshing = false
+        engine.setPanelOpen(false)
         rebuild()
     }
 
+    /// The refresh control, and the poll an open panel starts with.
+    ///
+    /// Through the engine rather than straight into ``poll()``, because a manual refresh
+    /// restarts the current interval's timer from zero — pressing it at second 29 must not
+    /// be followed by a scheduled poll one second later.
     func refresh() {
+        engine.refreshNow()
+    }
+
+    private func poll() {
+        // One poll in flight at a time. A tick that lands on top of a running poll is
+        // dropped rather than queued — see ``SyncEngine/fire()`` for why that tick is
+        // allowed to cost its interval instead of being made up later.
         guard pollTask == nil else { return }
         pollGeneration += 1
         let generation = pollGeneration
@@ -128,11 +166,15 @@ final class PanelController: ObservableObject {
         // The state the poll reads — its unbound merges bound the closed search and give the
         // release tracker its work list. A value copy: the poll never writes local state,
         // it hands back what it found and this actor merges it (IMPLEMENTATION_PLAN §3).
-        let local = self.local
-        let now = clock()
+        let plan = PollPlan(
+            local: local,
+            now: clock(),
+            // A backing-off Linear still resolves from cache; what it skips is the request.
+            resolvesLinear: engine.resolvesLinear
+        )
         pollTask = Task { [weak self] in
             guard let self else { return }
-            let outcome = await self.source.load(local: local, now: now)
+            let outcome = await self.source.load(plan)
             self.apply(outcome, from: generation)
         }
     }
@@ -179,10 +221,22 @@ final class PanelController: ObservableObject {
             for warning in product.warnings {
                 NSLog("PRStackMonitor: %@", warning.description)
             }
+            // What the next interval is decided from. Each source's health separately, so a
+            // Linear outage backs Linear off and leaves GitHub's cadence alone; then the
+            // two table rows that come out of the data.
+            engine.record(.connected, for: .github)
+            if let linear = product.linear { engine.record(linear, for: .linear) }
+            engine.setAwaitingRelease(!local.unboundMerges.isEmpty)
+            // "Recently active" reads the pull requests' own timestamps rather than a note
+            // this app takes when it happens to notice something. That way it survives a
+            // relaunch, and a stack somebody else is pushing to counts as activity even on
+            // the poll that first sees it.
+            engine.noteActivity(at: snapshot.pullRequests.map(\.updatedAt).max())
         case .failed(let health):
             // The rows stay. Losing the connection does not make what was fetched untrue,
             // only unverifiable — the banner and the footer say which (§5).
             status.github = health
+            engine.record(health, for: .github)
         }
         rebuild()
     }
@@ -307,13 +361,17 @@ final class PanelController: ObservableObject {
     /// Nothing to invalidate: the scope and the patterns are read from `UserDefaults` at the
     /// top of every poll. What there is, is a poll to bring forward — and one to abandon.
     /// A poll already in flight was started under the configuration the user has just
-    /// replaced, and ``refresh()`` would decline to start another while it ran, leaving the
+    /// replaced, and ``poll()`` would decline to start another while it ran, leaving the
     /// panel on the old scope's results until the next open. Cancelling is safe: the
     /// generation guard in ``apply(_:from:)`` drops the late arrival.
+    ///
+    /// This is the reconnect path, so it clears both sources' backoff: either credential
+    /// may have been the one replaced, and a token pasted in Settings must be tried now
+    /// rather than after however long the last failure had earned.
     func settingsDidChange() {
         pollTask?.cancel()
         pollTask = nil
-        refresh()
+        engine.reconnect()
     }
 
     // MARK: - Derivation
@@ -325,6 +383,10 @@ final class PanelController: ObservableObject {
         // at the open, not against the ones that open rewrote.
         var deriving = local
         if let digestsWhileOpen { deriving.readDigests = digestsWhileOpen }
+
+        // What the footer measures staleness against: data older than one interval is
+        // behind its own schedule, whatever that schedule currently is (§4).
+        status.pollInterval = engine.schedule.interval
 
         let derived = Derivation.derive(snapshot: snapshot, local: deriving, previous: previous, now: now)
         // Connection transitions are diffed here rather than in derivation: a poll that
@@ -390,14 +452,24 @@ struct PollProduct: Sendable {
     var warnings: [FetchWarning] = []
 }
 
-/// Where a panel's rows come from. One implementation talks to GitHub; a preview passes
-/// a fixture.
+/// One poll's instructions.
 ///
-/// `local` goes in because two things depend on it: the closed search's lower bound, and
+/// `local` is here because two things depend on it: the closed search's lower bound, and
 /// the release tracker's work list. It comes back untouched — the source returns findings,
 /// the panel controller is the only writer.
+struct PollPlan: Sendable {
+    var local: LocalState
+    var now: Date
+    /// False while Linear is backing off. The poll runs either way and the rows still get
+    /// their cached project headings; what is deferred is the request, not the resolution
+    /// (IMPLEMENTATION_PLAN §4).
+    var resolvesLinear: Bool = true
+}
+
+/// Where a panel's rows come from. One implementation talks to GitHub; a preview passes
+/// a fixture.
 protocol PanelSource: Sendable {
-    func load(local: LocalState, now: Date) async -> PollOutcome
+    func load(_ plan: PollPlan) async -> PollOutcome
 }
 
 /// One GraphQL poll, mapped to an outcome the panel can render.
@@ -424,7 +496,7 @@ struct GitHubPanelSource: PanelSource {
     /// uncached request per pair, which the persisted negatives keep to a handful.
     let etags: any ETagStore = InMemoryETagStore()
 
-    func load(local: LocalState, now: Date) async -> PollOutcome {
+    func load(_ plan: PollPlan) async -> PollOutcome {
         let credentials = CredentialChain.standard(
             environment: .github(),
             keychain: .github,
@@ -451,11 +523,16 @@ struct GitHubPanelSource: PanelSource {
         )
 
         do {
-            let fetched = try await poll.run(scope: scope, local: local, now: now)
+            let fetched = try await poll.run(scope: scope, local: plan.local, now: plan.now)
             // Linear never fails the poll. It cannot: every row is already complete without
             // it, and losing it costs only the project headings for identifiers that have
             // never been cached (IMPLEMENTATION_PLAN §4).
-            let resolution = await LinearPanelSource.resolve(fetched.pullRequests, over: transport)
+            let resolution = await LinearPanelSource.resolve(
+                fetched.pullRequests,
+                over: transport,
+                now: plan.now,
+                mode: plan.resolvesLinear ? .fetch : .cacheOnly
+            )
             return .fetched(
                 PollProduct(
                     snapshot: RawSnapshot(
@@ -493,9 +570,17 @@ enum LinearPanelSource {
     /// Shares the caller's transport — see ``GitHubPanelSource/transport``. The two
     /// integrations talk to different hosts, so they do not contend for a connection, and
     /// one session for the app is what the pooling is for.
+    ///
+    /// `now` is the poll's instant, not this function's: one poll evaluates the cache's
+    /// refresh interval against a single time, the same one the GitHub half was bounded by.
+    /// Reading the clock again here would let an entry go stale between the two halves of
+    /// one poll, which is a difference nothing else in the app can see and nothing can
+    /// reproduce.
     static func resolve(
         _ pullRequests: [PullRequest],
-        over transport: any HTTPTransport
+        over transport: any HTTPTransport,
+        now: Date,
+        mode: LinearResolutionMode
     ) async -> LinearResolution {
         let resolver = LinearResolver(
             client: LinearClient(
@@ -508,7 +593,7 @@ enum LinearPanelSource {
             ),
             store: FileLinearProjectCacheStore(url: cacheURL)
         )
-        return await resolver.resolve(pullRequests: pullRequests, now: Date())
+        return await resolver.resolve(pullRequests: pullRequests, now: now, mode: mode)
     }
 
     /// `~/Library/Application Support/PRStackMonitor/linear-cache.json`.
