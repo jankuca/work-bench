@@ -396,12 +396,16 @@ per repo, just read.
 and a repository list means nothing across accounts: replacing the token in Settings repoints the app at a
 different person's pull requests, and a `selected` scope carried over from the previous account matches none
 of them — the panel goes quietly empty while the checklist offers repos the new token cannot even see. So
-each poll records `viewer { login }`, and a login that differs from the stored one **parks** the outgoing
-account's three keys under an account-suffixed name and restores the incoming account's, if it has any. An
-account seen for the first time starts where a fresh install does — All, empty list — and the poll that
-noticed the change is immediately followed by another, because the one that just landed was filtered through
-the *previous* account's scope. Switching back restores what was parked: two tokens is precisely the case
-this exists for, and a selection discarded once is a selection nobody makes twice. The tag pattern map is
+each poll records `viewer { login }`, and the three keys are **stored under an account-suffixed name and read
+through the stored login**. Switching accounts therefore moves nothing: it is a single write of the login,
+which every read follows, so there is no window in which the login says one account and half the preferences
+still belong to another. An account seen for the first time has nothing stored and starts where a fresh
+install does — All, empty list — and the poll that noticed the change is immediately followed by another,
+because the one that just landed was filtered through the *previous* account's scope. Switching back finds
+the earlier account's keys exactly as it left them: two tokens is precisely the case this exists for, and a
+selection discarded once is a selection nobody makes twice. Settings before the first poll of all, and every
+build before this existed, wrote to the bare unsuffixed keys; the first account to identify itself copies
+those to its own, writing the login last so an interrupted copy simply runs again. The tag pattern map is
 deliberately not account-scoped — it is keyed by repository, and a repository is the same repository whoever
 is looking. The accounts tab states the login the last poll answered for, since a write-only token field
 cannot otherwise say which of two tokens is in use.

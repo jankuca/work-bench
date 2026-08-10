@@ -217,26 +217,35 @@ private struct SyncDot: View {
     var tone: StatusTone
     var isSyncing: Bool
 
+    /// A repeating pulse is exactly the kind of motion Reduce Motion is turned on to stop,
+    /// and it would run for the whole of every poll. The text beside the dot already says
+    /// `syncing…`, so honouring the preference costs the state nothing: it stays legible
+    /// without the animation, which is the test for whether motion was decoration.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @State private var isDim = false
+
+    private var pulses: Bool { isSyncing && !reduceMotion }
 
     var body: some View {
         Circle()
             .fill(Tokens.foreground(tone))
             .frame(width: 5, height: 5)
-            .opacity(isSyncing && isDim ? 0.3 : 1)
+            .opacity(pulses && isDim ? 0.3 : 1)
             // One state change plus `repeatForever` is the whole animation: the dot is
             // handed a single new value and the repetition comes from the curve, so there
             // is no timer here and nothing to stop when the poll lands.
             .animation(pulse, value: isDim)
-            // Driven off the flag rather than `onAppear`, because the footer is rebuilt in
-            // place: the view does not re-appear when a poll starts, its input changes.
-            .onChange(of: isSyncing) { _, syncing in isDim = syncing }
-            .onAppear { isDim = isSyncing }
+            // Both inputs, because either can change under a running poll: the footer is
+            // rebuilt in place when one starts — the view does not re-appear, its input
+            // changes — and Reduce Motion can be switched on while it is going.
+            .onChange(of: pulses) { _, isPulsing in isDim = isPulsing }
+            .onAppear { isDim = pulses }
             .accessibilityHidden(true)
     }
 
     private var pulse: Animation {
-        isSyncing ? .easeInOut(duration: 0.55).repeatForever(autoreverses: true) : .default
+        pulses ? .easeInOut(duration: 0.55).repeatForever(autoreverses: true) : .default
     }
 }
 

@@ -552,6 +552,24 @@ final class PanelPresentationTests: XCTestCase {
         XCTAssertFalse(try panel("panel-2a").footer.isSyncing)
     }
 
+    /// The report is read a line at a time, so a value that contains a newline would end
+    /// its record early and be parsed as another. Failure messages are the one field that
+    /// can carry one — a server's response body reaches this straight from the transport.
+    func testTheReportEscapesLineBreaksInAValue() throws {
+        let presented = try panel(
+            "panel-2a",
+            github: .unreachable("GitHub returned HTTP 502:\n<html>\r\n</html>")
+        )
+        let rendered = PanelPresentationReport.render(presented)
+        let footers = rendered.split(separator: "\n").filter { $0.hasPrefix("footer ") }
+
+        XCTAssertEqual(footers.count, 1, "the message must not break the footer into several records")
+        XCTAssertTrue(
+            footers[0].contains(#"error="GitHub returned HTTP 502:\n<html>\r\n</html>""#),
+            "expected the breaks escaped in place, got \(footers[0])"
+        )
+    }
+
     /// A transient failure is stated, not hidden behind a hover. The two failures that are
     /// already said elsewhere — an expired token, no token at all — are not repeated.
     func testFooterStatesATransientFailure() throws {

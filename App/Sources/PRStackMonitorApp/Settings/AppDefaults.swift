@@ -75,23 +75,26 @@ enum AppDefaults {
     /// Which repositories the poll covers. `all` unless the user has said otherwise, and
     /// `all` again if the stored mode is a spelling this build does not know.
     static func repoScope(_ defaults: UserDefaults = .standard) -> RepoScope {
-        let raw = defaults.string(forKey: repoScopeModeKey) ?? ScopeMode.all.rawValue
+        let raw = defaults.string(forKey: key(repoScopeModeKey, defaults)) ?? ScopeMode.all.rawValue
         guard ScopeMode(rawValue: raw) == .selected else { return .all }
         return .selected(selectedRepositories(defaults))
     }
 
     static func setRepoScope(_ scope: RepoScope, _ defaults: UserDefaults = .standard) {
-        defaults.set(scope.isAll ? ScopeMode.all.rawValue : ScopeMode.selected.rawValue, forKey: repoScopeModeKey)
+        defaults.set(
+            scope.isAll ? ScopeMode.all.rawValue : ScopeMode.selected.rawValue,
+            forKey: key(repoScopeModeKey, defaults)
+        )
         // The selection is written even in `all` mode. Switching to All and back must not
         // silently blank the checklist, and the empty selection is exactly the case the
         // search client answers with no request at all.
         if case .selected(let repositories) = scope {
-            defaults.set(repositories, forKey: selectedRepositoriesKey)
+            defaults.set(repositories, forKey: key(selectedRepositoriesKey, defaults))
         }
     }
 
     static func selectedRepositories(_ defaults: UserDefaults = .standard) -> [String] {
-        strings(forKey: selectedRepositoriesKey, defaults)
+        strings(forKey: key(selectedRepositoriesKey, defaults), defaults)
     }
 
     // MARK: - Repositories seen
@@ -104,7 +107,7 @@ enum AppDefaults {
     /// narrows the snapshot, so reading only what is on screen would make the unchecked
     /// repositories disappear from the very list they are unchecked in.
     static func seenRepositories(_ defaults: UserDefaults = .standard) -> [String] {
-        strings(forKey: seenRepositoriesKey, defaults)
+        strings(forKey: key(seenRepositoriesKey, defaults), defaults)
     }
 
     /// Unions `names` into the stored list. Sorted, case-insensitively de-duplicated, and
@@ -128,7 +131,7 @@ enum AppDefaults {
             merged.append(trimmed)
         }
         merged.sort { $0.lowercased() < $1.lowercased() }
-        if merged != stored { defaults.set(merged, forKey: seenRepositoriesKey) }
+        if merged != stored { defaults.set(merged, forKey: key(seenRepositoriesKey, defaults)) }
         return merged
     }
 
@@ -142,8 +145,8 @@ enum AppDefaults {
     /// archived. Widening to All is part of the reset rather than a side effect: clearing a
     /// selection while `selected` is in force is the one state that stops every poll.
     static func resetRepositories(_ defaults: UserDefaults = .standard) {
-        defaults.removeObject(forKey: seenRepositoriesKey)
-        defaults.removeObject(forKey: selectedRepositoriesKey)
+        defaults.removeObject(forKey: key(seenRepositoriesKey, defaults))
+        defaults.removeObject(forKey: key(selectedRepositoriesKey, defaults))
         setRepoScope(.all, defaults)
     }
 
@@ -154,7 +157,7 @@ enum AppDefaults {
         /// The same account as the last poll, or a poll that could not say who it was for.
         case unchanged
         /// The first poll ever to name an account. Whatever is stored was configured under
-        /// it — there has only been one — so it is adopted rather than parked.
+        /// it — there has only been one — so it is handed over rather than left behind.
         case adopted(String)
         case switched(from: String, to: String)
     }
@@ -166,7 +169,31 @@ enum AppDefaults {
         return stored.isEmpty ? nil : stored
     }
 
-    /// Records who the poll answered for, and moves the account-scoped preferences with it.
+    /// Where an account's copy of `base` lives.
+    ///
+    /// Every account-scoped read and write in this file goes through here, which is what
+    /// makes switching accounts **one write**: nothing is moved between keys, so there is no
+    /// window in which the stored login says one account and some of the preferences still
+    /// belong to another. A process that stops mid-switch has either written the login or
+    /// not, and both are consistent.
+    ///
+    /// With no account identified yet — a fresh install, or any launch before the first poll
+    /// answers — this is the bare key. That is also where every build before account scoping
+    /// wrote, which is what lets ``noteViewer(_:_:)`` adopt those settings by copying from
+    /// one known place rather than carrying a migration table.
+    private static func key(_ base: String, for login: String?) -> String {
+        guard let login, !login.isEmpty else { return base }
+        return "\(base)@\(login.lowercased())"
+    }
+
+    /// Lower-cased in ``key(_:for:)``, because GitHub logins are case-insensitive and
+    /// `Jankuca` coming back must find what `jankuca` left.
+    private static func key(_ base: String, _ defaults: UserDefaults) -> String {
+        key(base, for: viewerLogin(defaults))
+    }
+
+    /// Records who the poll answered for, which is what every account-scoped preference is
+    /// keyed by.
     ///
     /// Replacing the token in Settings is not a small edit — it repoints the app at a
     /// different person's pull requests — and the repository list is the part that cannot
@@ -174,11 +201,12 @@ enum AppDefaults {
     /// filters against. Left alone, the panel is empty and the checklist offers repositories
     /// the new token cannot see, with nothing anywhere saying why.
     ///
-    /// Parked rather than deleted, and restored on the way back. Switching between a work
-    /// token and a personal one is the reason anyone has two, and a selection that was
-    /// discarded the first time is a selection nobody makes twice. An account seen for the
-    /// first time has nothing parked, so it starts where a fresh install does: All
-    /// repositories, an empty list, and the next poll fills it in.
+    /// Nothing is discarded on the way. The previous account's preferences stay under their
+    /// own keys and are found again if that token comes back — switching between a work
+    /// token and a personal one is the reason anyone has two, and a selection thrown away
+    /// the first time is a selection nobody makes twice. An account seen for the first time
+    /// has nothing stored, so it starts where a fresh install does: All repositories, an
+    /// empty list, and the next poll fills it in.
     ///
     /// The viewer login is GitHub's own answer to `viewer { login }` on the poll the token
     /// just made — not the token, which is never stored anywhere but the Keychain.
@@ -189,37 +217,38 @@ enum AppDefaults {
         // evidence of a switch. Both searches would have to come back empty for this.
         guard !incoming.isEmpty else { return .unchanged }
 
-        let previous = viewerLogin(defaults)
-        guard previous?.lowercased() != incoming.lowercased() else { return .unchanged }
-        defaults.set(incoming, forKey: viewerLoginKey)
+        let stored = viewerLogin(defaults)
+        guard stored?.lowercased() != incoming.lowercased() else { return .unchanged }
 
-        guard let previous else { return .adopted(incoming) }
-        for key in accountScopedKeys {
-            move(key, to: parked(key, for: previous), defaults)
-            move(parked(key, for: incoming), to: key, defaults)
+        guard let previous = stored else {
+            adopt(incoming, defaults)
+            return .adopted(incoming)
         }
+
+        // One write, and every keyed read above follows it.
+        defaults.set(incoming, forKey: viewerLoginKey)
         return .switched(from: previous, to: incoming)
     }
 
-    /// Where an account's preferences wait while another account is signed in. Lower-cased,
-    /// because GitHub logins are case-insensitive and `Jankuca` coming back must find what
-    /// `jankuca` parked.
-    private static func parked(_ key: String, for login: String) -> String {
-        "\(key)@\(login.lowercased())"
-    }
-
-    /// Moves a stored value, leaving nothing behind at either end.
+    /// Hands the settings stored before anyone knew whose they were to the first account
+    /// that identifies itself.
     ///
-    /// Absent has to stay absent: an account with nothing parked must arrive at this
-    /// build's defaults, and copying rather than moving would leave it looking at the
-    /// account it replaced.
-    private static func move(_ source: String, to destination: String, _ defaults: UserDefaults) {
-        if let value = defaults.object(forKey: source) {
-            defaults.set(value, forKey: destination)
-        } else {
-            defaults.removeObject(forKey: destination)
+    /// The one place account scoping copies anything, and the copy is safe to interrupt:
+    /// the login is written **last**, so a process that stops partway leaves it unset and
+    /// the bare keys untouched — the next poll runs the whole thing again from the same
+    /// starting point. Skipping keys the account already has is what makes the repeat
+    /// harmless rather than a second overwrite.
+    ///
+    /// The bare keys are left behind rather than deleted. They are unreachable once a login
+    /// is stored, and leaving them is what keeps this idempotent.
+    private static func adopt(_ login: String, _ defaults: UserDefaults) {
+        for base in accountScopedKeys {
+            let destination = key(base, for: login)
+            guard defaults.object(forKey: destination) == nil,
+                  let inherited = defaults.object(forKey: base) else { continue }
+            defaults.set(inherited, forKey: destination)
         }
-        defaults.removeObject(forKey: source)
+        defaults.set(login, forKey: viewerLoginKey)
     }
 
     // MARK: - Reading
