@@ -18,6 +18,17 @@ final class SyncEngine {
     /// from when its request finished.
     var onPoll: () -> Void = {}
 
+    /// Fired when the *cadence* changes — not on every reschedule, which happens on every
+    /// condition change and every tick.
+    ///
+    /// The panel reads ``schedule`` for its staleness threshold, and the two conditions
+    /// that move it come from the machine rather than from a poll: unplugging a
+    /// nearly-flat laptop, and waking one. Without this the footer would go on measuring
+    /// against the previous interval until something else happened to rebuild it — which,
+    /// at the 15-minute low-power interval, is exactly as long as the wrong threshold is
+    /// most visible.
+    var onCadenceChange: () -> Void = {}
+
     /// The schedule as it currently stands, for the footer's staleness threshold and for
     /// the diagnostic line.
     private(set) var schedule: SyncSchedule = .suspended
@@ -190,6 +201,7 @@ final class SyncEngine {
         guard isRunning else { return }
 
         let now = clock()
+        let previous = schedule
         schedule = SyncPolicy.schedule(
             conditions: conditions,
             configuration: configuration,
@@ -199,6 +211,9 @@ final class SyncEngine {
             lastPollAt: lastPollAt,
             now: now
         )
+        // The cadence, not the whole schedule: `nextPollAt` moves on every tick and means
+        // nothing to the panel, so comparing the value would make this fire constantly.
+        if schedule.cadence != previous.cadence { onCadenceChange() }
         // Suspended: no interval, no timer. The next wake notification re-evaluates.
         guard let delay = schedule.delay(from: now) else { return }
 

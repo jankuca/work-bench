@@ -94,6 +94,11 @@ final class PanelController: ObservableObject {
         // here, including the first one and the manual ones, so there is one path to reason
         // about rather than a scheduled path and a hand-rolled one beside it.
         engine.onPoll = { [weak self] in self?.poll() }
+        // The footer measures staleness against the current interval, and two of the
+        // conditions that change it — a battery crossing the threshold, a machine waking —
+        // arrive from the machine rather than from a poll. Rebuilding on the cadence rather
+        // than on every reschedule keeps that to the handful of times a day it happens.
+        engine.onCadenceChange = { [weak self] in self?.rebuild() }
         // The merges the last launch left waiting decide the interval before the first poll
         // has landed: a release tag cut while the app was closed is found at 60 s, not 5 min.
         engine.setAwaitingRelease(!local.unboundMerges.isEmpty)
@@ -522,6 +527,7 @@ struct GitHubPanelSource: PanelSource {
             let resolution = await LinearPanelSource.resolve(
                 fetched.pullRequests,
                 over: transport,
+                now: plan.now,
                 mode: plan.resolvesLinear ? .fetch : .cacheOnly
             )
             return .fetched(
@@ -561,9 +567,16 @@ enum LinearPanelSource {
     /// Shares the caller's transport — see ``GitHubPanelSource/transport``. The two
     /// integrations talk to different hosts, so they do not contend for a connection, and
     /// one session for the app is what the pooling is for.
+    ///
+    /// `now` is the poll's instant, not this function's: one poll evaluates the cache's
+    /// refresh interval against a single time, the same one the GitHub half was bounded by.
+    /// Reading the clock again here would let an entry go stale between the two halves of
+    /// one poll, which is a difference nothing else in the app can see and nothing can
+    /// reproduce.
     static func resolve(
         _ pullRequests: [PullRequest],
         over transport: any HTTPTransport,
+        now: Date,
         mode: LinearResolutionMode
     ) async -> LinearResolution {
         let resolver = LinearResolver(
@@ -577,7 +590,7 @@ enum LinearPanelSource {
             ),
             store: FileLinearProjectCacheStore(url: cacheURL)
         )
-        return await resolver.resolve(pullRequests: pullRequests, now: Date(), mode: mode)
+        return await resolver.resolve(pullRequests: pullRequests, now: now, mode: mode)
     }
 
     /// `~/Library/Application Support/PRStackMonitor/linear-cache.json`.
