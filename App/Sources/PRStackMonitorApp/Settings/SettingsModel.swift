@@ -48,6 +48,14 @@ final class SettingsModel: ObservableObject {
 
     @Published var isAllRepositories: Bool
     @Published private(set) var repositories: [RepositorySetting]
+    /// The GitHub login the last poll answered for, and therefore whose repository list is
+    /// on screen. Nil until a poll has named one.
+    ///
+    /// The one thing the accounts tab could not say before: the field is write-only by
+    /// design, so `Stored in the login keychain` was true of the token before it was
+    /// replaced and of the token after, and there was no way to tell which one the app was
+    /// actually using (§3).
+    @Published private(set) var githubAccount: String?
 
     /// The two token fields. Write-only: a stored credential is never read back into the
     /// window — there is no reason to put a live token on screen, and an empty field with
@@ -82,8 +90,29 @@ final class SettingsModel: ObservableObject {
         self.defaults = defaults
         self.environment = environment
 
-        let scope = AppDefaults.repoScope(defaults)
-        isAllRepositories = scope.isAll
+        // Placeholders, replaced by `reload()` below — which is the one implementation of
+        // "read everything `UserDefaults` holds", so that opening the window a second time
+        // and opening it the first time cannot disagree.
+        isAllRepositories = true
+        repositories = []
+        enabledEvents = Dictionary(
+            uniqueKeysWithValues: DomainEventKind.allCases.map { ($0, events.preferences.allows($0)) }
+        )
+
+        reload()
+    }
+
+    /// Re-reads the preferences, and where each credential is coming from.
+    ///
+    /// Called every time the window is shown, because all of it changes while the window is
+    /// closed: a poll adds a repository to the checklist, a token is revoked in Keychain
+    /// Access — and a poll under a replaced token swaps the whole repository list for the
+    /// new account's (``AppDefaults/noteViewer(_:_:)``). The window is built once and kept,
+    /// so without this it would go on showing the previous account's repositories until the
+    /// app was relaunched.
+    func reload() {
+        githubAccount = AppDefaults.viewerLogin(defaults)
+        isAllRepositories = AppDefaults.repoScope(defaults).isAll
 
         let selected = Set(AppDefaults.selectedRepositories(defaults).map { $0.lowercased() })
         let patterns = AppDefaults.tagPatterns(defaults)
@@ -101,10 +130,6 @@ final class SettingsModel: ObservableObject {
                 tagPattern: patterns.byRepository[name.lowercased()] ?? ""
             )
         }
-
-        enabledEvents = Dictionary(
-            uniqueKeysWithValues: DomainEventKind.allCases.map { ($0, events.preferences.allows($0)) }
-        )
 
         refreshCredentialSources()
     }
@@ -151,11 +176,29 @@ final class SettingsModel: ObservableObject {
     /// The pattern actually in force for a repository, for the field's placeholder.
     var defaultTagPattern: String { TagPatterns.defaultPattern }
 
+    /// `Repositories`, or whose they are once a poll has said. The list and the selection
+    /// under it belong to one account and are swapped when the token points at another, so
+    /// the heading is where that stops being a surprise.
+    var repositoriesHeading: String {
+        githubAccount.map { "Repositories · @\($0)" } ?? "Repositories"
+    }
+
     /// Selected mode with nothing selected — a state the user can reach, and one that stops
     /// every poll. The client answers an empty selection with no request rather than
     /// widening back to everything, so this has to be said out loud.
     var isWatchingNothing: Bool {
         !isAllRepositories && !repositories.contains(where: \.isSelected)
+    }
+
+    /// Empties the checklist and watches everything again, so the next results rebuild it.
+    ///
+    /// Polls immediately, unlike every other edit on this tab: the list this leaves behind
+    /// is empty, and an empty list is the one state the user cannot read anything out of.
+    /// The poll it starts is what fills it back in.
+    func resetRepositories() {
+        AppDefaults.resetRepositories(defaults)
+        reload()
+        onChange()
     }
 
     /// Stored, not polled — for the same reason as the tag patterns above. Checking four

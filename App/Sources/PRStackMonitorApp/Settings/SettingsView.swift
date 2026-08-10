@@ -19,10 +19,11 @@ struct SettingsView: View {
                 .tabItem { Label("Notifications", systemImage: "bell") }
         }
         .frame(width: 520, height: 400)
-        // The Keychain and the environment can both change while the window is open — a
-        // token revoked in Keychain Access, a variable exported into a relaunch — and this
-        // is the one place that would otherwise go on claiming the old answer.
-        .onAppear { model.refreshCredentialSources() }
+        // The Keychain, the environment and the repository list can all change while the
+        // window is open — a token revoked in Keychain Access, a variable exported into a
+        // relaunch, a poll landing behind the window — and this is the one place that would
+        // otherwise go on claiming the old answer.
+        .onAppear { model.reload() }
     }
 }
 
@@ -43,6 +44,16 @@ struct AccountsSettingsView: View {
                     onSave: model.saveGitHubToken,
                     onRemove: model.removeGitHubToken
                 )
+                // Which token is in use is otherwise unanswerable from this window: the
+                // field is write-only, so `Stored in the login keychain` reads the same
+                // before and after a token is replaced. This is GitHub's own answer, from
+                // the last poll the stored token made.
+                if let account = model.githubAccount {
+                    Text("Signed in as @\(account). Repository settings below are kept per account.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             Section("Linear") {
@@ -143,7 +154,7 @@ struct RepositoriesSettingsView: View {
                 .foregroundStyle(.secondary)
             }
 
-            Section("Repositories") {
+            Section(model.repositoriesHeading) {
                 if model.repositories.isEmpty {
                     Text("Nothing seen yet. Repositories appear here as polls return pull requests from them.")
                         .font(.callout)
@@ -164,6 +175,21 @@ struct RepositoriesSettingsView: View {
                     )
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                }
+
+                // The list only ever grows, so this is the one way back. Offered whenever
+                // there is something to clear, not only after a token change: an archived
+                // repository is the same problem arriving slowly.
+                if !model.repositories.isEmpty {
+                    HStack {
+                        Text("Repositories are remembered as polls find them, and never drop out on "
+                             + "their own.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Button("Reset list", action: model.resetRepositories)
+                    }
                 }
             }
         }

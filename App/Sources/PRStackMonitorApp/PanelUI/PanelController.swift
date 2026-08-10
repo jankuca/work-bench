@@ -30,6 +30,11 @@ final class PanelController: ObservableObject {
     /// knowing nothing about windows — and so a preview can pass an empty one.
     var onOpenSettings: () -> Void = {}
 
+    /// What the overflow menu's `Quit` calls. A closure for the same reason as
+    /// ``onOpenSettings``: terminating the process is the shell's business, and a preview
+    /// that quit the app when a menu was exercised would be a surprising preview.
+    var onQuit: () -> Void = {}
+
     private var snapshot: RawSnapshot
     private var local: LocalState
     private var status: PanelStatus
@@ -187,6 +192,8 @@ final class PanelController: ObservableObject {
         pollTask = nil
         status.isRefreshing = false
 
+        var account = AppDefaults.AccountChange.unchanged
+
         switch outcome {
         case .cancelled:
             break
@@ -206,6 +213,11 @@ final class PanelController: ObservableObject {
             // concerned; dropping them here is what stops the file accumulating an entry
             // per pull request the user has ever silenced.
             local.pruneSnoozes(before: clock())
+            // Who this poll answered for, before anything is recorded against it: a token
+            // swapped in Settings points the app at a different account, and the repository
+            // preferences move with it rather than the new account inheriting the old one's
+            // list. Everything below then notes into the account it belongs to.
+            account = AppDefaults.noteViewer(snapshot.viewerLogin)
             // What Settings offers as the repository checklist. Recorded from the poll
             // rather than asked for separately — these are exactly the repositories the
             // user authors pull requests in (IMPLEMENTATION_PLAN §3).
@@ -239,6 +251,21 @@ final class PanelController: ObservableObject {
             engine.record(health, for: .github)
         }
         rebuild()
+
+        // The poll that just landed was sent under the *previous* account's repository
+        // scope, so its list was filtered against repositories this account may have
+        // nothing in — very often to nothing at all. ``noteViewer`` has already put the new
+        // account's scope in place; this is the poll that uses it, and it is why replacing
+        // a token fills the panel in rather than emptying it.
+        if case .switched(let previous, let current) = account {
+            NSLog(
+                "PRStackMonitor: GitHub account changed from %@ to %@ — %@'s repository settings are in use",
+                previous,
+                current,
+                current
+            )
+            refresh()
+        }
     }
 
     // MARK: - Actions
@@ -354,6 +381,10 @@ final class PanelController: ObservableObject {
 
     func openSettings() {
         onOpenSettings()
+    }
+
+    func quit() {
+        onQuit()
     }
 
     /// Called when Settings closes, and when a credential changes under it.

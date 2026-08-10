@@ -392,6 +392,20 @@ plus the All/Selected toggle. Switching to Selected pre-checks whatever is curre
 switch never blanks the panel. Trunk is whatever each repo reports as `defaultBranchRef` — not configured
 per repo, just read.
 
+**The scope, the selection and the seen list are per GitHub account.** Every one of them names repositories,
+and a repository list means nothing across accounts: replacing the token in Settings repoints the app at a
+different person's pull requests, and a `selected` scope carried over from the previous account matches none
+of them — the panel goes quietly empty while the checklist offers repos the new token cannot even see. So
+each poll records `viewer { login }`, and a login that differs from the stored one **parks** the outgoing
+account's three keys under an account-suffixed name and restores the incoming account's, if it has any. An
+account seen for the first time starts where a fresh install does — All, empty list — and the poll that
+noticed the change is immediately followed by another, because the one that just landed was filtered through
+the *previous* account's scope. Switching back restores what was parked: two tokens is precisely the case
+this exists for, and a selection discarded once is a selection nobody makes twice. The tag pattern map is
+deliberately not account-scoped — it is keyed by repository, and a repository is the same repository whoever
+is looking. The accounts tab states the login the last poll answered for, since a write-only token field
+cannot otherwise say which of two tokens is in use.
+
 One GraphQL search per poll (not per repo), **paginated to completion**:
 
 ```graphql
@@ -627,9 +641,10 @@ Linear source is marked stale.
   to be merged. Nothing derivation reads lives in it, so the separate path costs no correctness.
 - Keychain (generic password, one item per service) — GitHub token, Linear key.
 - `UserDefaults` — repo scope mode + selected repos, the repos seen in recent results (what Settings offers as
-  the checklist), **per-repo tag pattern map** (`nameWithOwner` → glob, default `v*`), poll intervals,
-  launch-at-login, per-event sink toggles. M6 reads the tag pattern map directly, with `v*` as the default;
-  M7 adds the editor for it.
+  the checklist), the GitHub login those three belong to, **per-repo tag pattern map** (`nameWithOwner` →
+  glob, default `v*`), poll intervals, launch-at-login, per-event sink toggles. The first three are
+  account-scoped and move when the token does (§3, repo scope); the rest are not. M6 reads the tag pattern
+  map directly, with `v*` as the default; M7 adds the editor for it.
 
 ---
 
@@ -707,11 +722,52 @@ Monochrome-safe by construction: badge **shape and position** differ per state, 
 survives dark menu bars and reduced-colour settings. Verify against `Increase contrast` and
 `Differentiate without colour`. Opening the panel clears unread; it never clears action-needed.
 
+**The canvas is symmetric about the glyph**, 24 × 18 pt with the 15 pt glyph dead centre. A status item
+centres the *image*, so anything reserved on one side only moves the glyph: `1f`'s badge offsets
+(`top:-3 right:-6`) taken literally put it 3.75 pt left of and 2.25 pt below the centre of its own slot,
+which reads as an icon stuck in the corner. Padding the two short sides to match instead would centre it at
+30 × 24 — wider than any neighbour, and as tall as the bar itself. So the badge and the unread dot are tucked
+in: top edge flush with the glyph's, 3 pt of overhang to the right rather than 6. What `1f` is saying is "a
+badge on the top-right corner", and that survives.
+
 ### Panel
 
 440 pt content width, height to content up to 800 pt, then scrolls. Structure, top to bottom: header
 (`Pull requests` · `10 in review · 3 shipping` · refresh · overflow menu) → scrolling body → footer (sync
 dot, `synced 34s ago`, `Mark all read`, `Settings`).
+
+The overflow menu carries `Mark all read`, `Settings…` and **`Quit`**. ⌘Q reaches the same place, but only
+while the app is active, and an app whose entire UI is a popover spends most of its life not being active —
+so the way out has to be inside the popover. (⌘Q exists at all because the app installs an `NSMenu` it never
+displays; see below.)
+
+The footer is where the app answers **"is it actually running, and did it fail?"** — the two questions a menu
+bar app is asked most and answers worst:
+
+- While a poll is in flight the text reads `syncing…` and the dot pulses. It outranks every other footer
+  state, all of which describe the *previous* poll. The dimmed refresh control says the same thing only to
+  someone already looking at that corner, and says nothing at all about the polls that happen on the interval.
+- A transient GitHub failure — `unreachable`, i.e. everything that is not an expired token — gets its message
+  on **a line of its own** under the footer, for as long as it lasts. It is the same text the hover detail
+  carries, and hover is not good enough: a tooltip is something you have to already suspect to find. An
+  expired token is not repeated there — the reconnect banner is already stating it, at the top of the panel,
+  next to the button that fixes it. Nor is Linear's: its failures cost the panel its project headings and
+  nothing else, so they stay a footnote (§4).
+- Never synced *and* failing is a red dot rather than a grey one. Grey is right for "nothing has arrived
+  yet"; here there is no cached list underneath to be recently true, so it is not a fact about timing.
+
+Staleness is still decided by the clock and not by the failure — a poll that failed four seconds ago leaves
+four-second-old rows — which is why the error line is a line and not a change to `synced 34s ago`.
+
+### The menu bar the app never shows
+
+`LSUIElement` plus `.accessory` means there is no menu bar on screen, but `NSApplication` still resolves key
+equivalents by walking `mainMenu` before the event reaches the first responder. With no main menu there is
+nothing to walk: ⌘V is never routed anywhere, and the token fields in Settings have no paste at all, while
+right click → Paste works throughout because that menu is built by the text system from the responder itself.
+The difference reads as a broken text field rather than a missing menu, which is what makes it worth a section
+here. So the app installs an App menu (`Quit`, ⌘Q) and an `Edit` menu (undo, redo, cut, copy, paste, delete,
+select all) at launch. It is a dispatch table, not a UI decision — nothing in it is ever visible.
 
 **Row** (`PRRow`), left to right, matching 2a exactly:
 

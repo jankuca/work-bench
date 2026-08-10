@@ -8,31 +8,20 @@ import PRStackCore
 /// and one of them is a *dashed* outline of the glyph. Neither survives symbol rendering
 /// or template tinting (IMPLEMENTATION_PLAN §1).
 ///
-/// Geometry is design `1f`, point for point: a 15 pt rounded square at 1.6 pt with a 4 pt
-/// dot inside; the unread dot 7 pt at `top:-2 right:-3`; the action badge 13 pt tall at
-/// `top:-3 right:-6`, growing leftwards with the count. The canvas is 22 × 18 because
-/// that is what the badge's overhang needs.
+/// Geometry follows design `1f`: a 15 pt rounded square at 1.6 pt with a 4 pt dot inside,
+/// a 7 pt unread dot and a 13 pt action badge at its top-right corner, the badge growing
+/// leftwards with the count. What does *not* follow `1f` is how far those two overhang the
+/// glyph — see ``overhang``, which is what keeps the glyph centred in the menu bar.
 ///
 /// This file decides nothing. Which state to draw is ``IconState/resolve(github:attentionCount:unreadCount:)``,
 /// which lives in core and is table-tested off-device.
 enum StatusItemIcon {
     // MARK: - Geometry
 
-    /// Sized from what actually gets drawn, not rounded to a convenient number.
-    ///
-    /// The glyph is bottom-left. The badge overhangs it by 6 pt to the right and 3 pt
-    /// above, and ``punchHalo`` expands the badge by a further 1.5 pt in every direction —
-    /// so the widest thing drawn reaches `15 + 6 + 1.5` and the tallest spans
-    /// `3 + 1.5` above the glyph's top. A canvas sized to the glyph plus the badge alone
-    /// would clip the halo along the top and right edges, which is exactly where the badge
-    /// needs its separation from the menu bar's background.
-    private static let canvas = NSSize(width: 22.5, height: 19.5)
     private static let glyphSide: CGFloat = 15
     private static let glyphStroke: CGFloat = 1.6
     private static let glyphRadius: CGFloat = 4
     private static let glyphDot: CGFloat = 4
-    /// Bottom-left, so the overhang above it is the canvas's extra height.
-    private static let glyphOrigin = NSPoint(x: 0, y: 0)
 
     private static let dotSide: CGFloat = 7
     private static let badgeHeight: CGFloat = 13
@@ -43,6 +32,35 @@ enum StatusItemIcon {
     /// punched *out* of the glyph instead of filled, so whatever the menu bar's background
     /// happens to be shows through — the one colour we cannot know at drawing time.
     private static let halo: CGFloat = 1.5
+
+    /// How far the badge and the unread dot reach past the glyph's right edge.
+    ///
+    /// Design `1f` puts the badge at `top:-3 right:-6`, and taking those literally is what
+    /// made the icon sit low and left in the menu bar. A status item centres the *image*,
+    /// so the glyph is only centred if the canvas is symmetric about it — and reserving 6 pt
+    /// of overhang on the right and 3 pt above with nothing to match them on the left and
+    /// below puts the glyph's centre 3.75 pt left of and 2.25 pt below the item's. Padding
+    /// the two short sides instead would restore the design's offsets, at 30 × 24 pt: wider
+    /// than any neighbour in the menu bar, and as tall as the bar itself with no clearance
+    /// above or below.
+    ///
+    /// So the badge is tucked in. Its top edge aligns with the glyph's rather than clearing
+    /// it, and it reaches 3 pt past the right edge rather than 6, which makes the canvas
+    /// 24 × 18 — the standard menu bar icon height, with the glyph exactly in the middle of
+    /// it. What the design is actually saying is "a badge on the top-right corner", and that
+    /// survives the change; being 3.75 pt off-centre forever does not.
+    private static let overhang: CGFloat = 3
+
+    /// Symmetric about the glyph, which is the whole point: ``glyphRect`` sits dead centre,
+    /// so whatever the status item does to position the image happens to the glyph.
+    ///
+    /// Horizontally the widest thing drawn is the badge's halo, `overhang + halo` past the
+    /// glyph; vertically nothing reaches above the glyph's top but that same halo.
+    private static let padding = NSSize(width: overhang + halo, height: halo)
+    private static let canvas = NSSize(
+        width: glyphSide + padding.width * 2,
+        height: glyphSide + padding.height * 2
+    )
 
     private static let disconnectedOpacity: CGFloat = 0.45
     private static let dash: [CGFloat] = [2.4, 2.0]
@@ -105,14 +123,9 @@ enum StatusItemIcon {
         }
     }
 
-    /// The glyph's box, bottom-left of the canvas. Everything else is positioned from it.
+    /// The glyph's box, centred in the canvas. Everything else is positioned from it.
     private static func glyphRect() -> NSRect {
-        NSRect(
-            x: glyphOrigin.x,
-            y: canvas.height - glyphSide - glyphOrigin.y,
-            width: glyphSide,
-            height: glyphSide
-        )
+        NSRect(x: padding.width, y: padding.height, width: glyphSide, height: glyphSide)
     }
 
     private static func drawGlyph(dashed: Bool, filled: Bool, alpha: CGFloat) {
@@ -140,12 +153,12 @@ enum StatusItemIcon {
         NSBezierPath(ovalIn: dot).fill()
     }
 
-    /// The 7 pt unread / in-flight dot, top-right of the glyph.
+    /// The 7 pt unread / in-flight dot, on the glyph's top-right corner.
     private static func drawDot(fill: NSColor) {
         let glyph = glyphRect()
         let rect = NSRect(
-            x: glyph.maxX + 3 - dotSide,
-            y: glyph.minY - 2,
+            x: glyph.maxX + overhang - dotSide,
+            y: glyph.minY,
             width: dotSide,
             height: dotSide
         )
@@ -172,8 +185,13 @@ enum StatusItemIcon {
         let glyph = glyphRect()
         let width = max(badgeMinWidth, textSize.width + badgeTextInset * 2)
         let rect = NSRect(
-            x: glyph.maxX + 6 - width,
-            y: glyph.minY - 3,
+            // Right-aligned to the glyph's overhang, and stopped at the canvas edge. Only
+            // `99+` is ever wide enough to reach it, and reaching it means the halo would
+            // be drawn outside the image and the capsule would arrive with a flat left
+            // side. Half a point of lost overhang on the busiest state the app has is the
+            // cheaper of the two.
+            x: max(halo, glyph.maxX + overhang - width),
+            y: glyph.minY,
             width: width,
             height: badgeHeight
         )

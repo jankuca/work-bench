@@ -167,8 +167,14 @@ public struct SectionPresentation: Equatable, Sendable {
 
 public struct FooterPresentation: Equatable, Sendable {
     public var syncTone: StatusTone
-    /// `synced 34s ago`, `stale · last synced 41m ago`, `never synced`.
+    /// `synced 34s ago`, `stale · last synced 41m ago`, `never synced`, `syncing…`.
     public var syncText: String
+    /// A poll is in flight *right now*.
+    ///
+    /// Separate from ``syncText`` saying so, because the two answer different questions and
+    /// the view needs both: the text is what the footer reads at a glance, and this is what
+    /// lets it be drawn as activity rather than as another resting state.
+    public var isSyncing: Bool
     /// Why the source is unhappy, when it is — the view shows it on hover.
     ///
     /// Kept off ``syncText`` deliberately. "could not reach GitHub: the request timed
@@ -176,6 +182,19 @@ public struct FooterPresentation: Equatable, Sendable {
     /// but it is the first thing wanted once the glance has raised a question, and the
     /// panel is the only place it exists.
     public var detail: String?
+    /// The current GitHub failure, said out loud on a line of its own.
+    ///
+    /// ``detail`` is the same text on hover, and hover is not good enough on its own: a
+    /// failing poll is exactly the moment the user is asking *why*, and a tooltip is
+    /// something you have to already suspect in order to find. So a transient failure gets
+    /// a line under the footer for as long as it lasts.
+    ///
+    /// GitHub only, and never when ``BannerPresentation`` is already up: an expired token
+    /// is stated at the top of the panel next to the button that fixes it, and repeating it
+    /// at the bottom would spend a second line on the one failure already handled. Linear
+    /// keeps ``linearNote`` and the hover detail — its failures cost the panel its project
+    /// headings and nothing else, which is not worth a line (IMPLEMENTATION_PLAN §4).
+    public var errorMessage: String?
     /// `Linear stale`, `Linear disconnected`. Nil while Linear is healthy, and nil while
     /// no key is configured at all — a source the user has never connected is not stale.
     ///
@@ -191,13 +210,17 @@ public struct FooterPresentation: Equatable, Sendable {
     public init(
         syncTone: StatusTone,
         syncText: String,
+        isSyncing: Bool = false,
         detail: String? = nil,
+        errorMessage: String? = nil,
         linearNote: String? = nil,
         showsMarkAllRead: Bool
     ) {
         self.syncTone = syncTone
         self.syncText = syncText
+        self.isSyncing = isSyncing
         self.detail = detail
+        self.errorMessage = errorMessage
         self.linearNote = linearNote
         self.showsMarkAllRead = showsMarkAllRead
     }
@@ -361,6 +384,7 @@ public struct PanelPresentation: Equatable, Sendable {
         return FooterPresentation(
             syncTone: sync.tone,
             syncText: sync.text,
+            isSyncing: status.isRefreshing,
             // Both sources' messages, so the hover detail explains whichever of them the
             // footer is complaining about. GitHub first: it is the one whose failure the
             // rows depend on.
@@ -368,11 +392,22 @@ public struct PanelPresentation: Equatable, Sendable {
                 .compactMap { $0 }
                 .joined(separator: " · ")
                 .nonEmpty,
+            errorMessage: errorMessage(for: status.github),
             linearNote: linearNote(for: status.linear),
             // Offering `Mark all read` with nothing unread is offering an action that
             // does nothing.
             showsMarkAllRead: model.unreadCount > 0
         )
+    }
+
+    /// The failure the footer states rather than hides behind a tooltip.
+    ///
+    /// Only ``SourceHealth/unreachable``. The other three are each already said somewhere
+    /// the user is looking: an expired token by the banner, no token at all by the connect
+    /// prompt, and a healthy source by the absence of any of it.
+    private static func errorMessage(for health: SourceHealth) -> String? {
+        guard case .unreachable(let message) = health else { return nil }
+        return message.nonEmpty
     }
 
     private static func linearNote(for health: SourceHealth) -> String? {
@@ -386,11 +421,25 @@ public struct PanelPresentation: Equatable, Sendable {
     }
 
     private static func syncState(status: PanelStatus, now: Date) -> (tone: StatusTone, text: String) {
+        // A poll in flight outranks everything below, which are all statements about the
+        // *last* one. "Is it actually running?" is the question a menu bar app is asked
+        // most often and the one it is worst at answering — a dimmed refresh control says
+        // it for as long as anyone happens to be looking at that corner, and says nothing
+        // at all about the polls that happen on the interval. The footer is where the
+        // panel already reports on syncing, so this is where it says that it is.
+        if status.isRefreshing { return (.inFlight, "syncing…") }
+
         guard let synced = status.lastSyncedAt else {
             switch status.github {
             case .unconfigured: return (.neutral, "not connected")
             case .unauthorized: return (.danger, "disconnected")
-            case .unreachable, .connected: return (.neutral, "never synced")
+            // Never synced *and* failing is a red dot, not a grey one. Grey would be
+            // right if this were only "nothing has arrived yet", but a source that has
+            // never once answered is not waiting, it is broken — and unlike the case
+            // below there is no cached list underneath to be four seconds old. The
+            // reason is on ``FooterPresentation/errorMessage`` beside it.
+            case .unreachable: return (.danger, "never synced")
+            case .connected: return (.neutral, "never synced")
             }
         }
 

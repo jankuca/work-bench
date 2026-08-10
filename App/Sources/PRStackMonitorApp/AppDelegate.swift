@@ -6,6 +6,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItemController: StatusItemController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Before the status item, because the first thing the user can do is open the
+        // panel and the menu is what makes ⌘V work in the fields behind it. See
+        // ``MainMenu`` for why an app with no visible menu bar needs one.
+        MainMenu.install(into: NSApplication.shared)
         statusItemController = StatusItemController()
     }
 

@@ -18,6 +18,20 @@ enum AppDefaults {
     static let repoScopeModeKey = "repoScopeMode"
     static let selectedRepositoriesKey = "selectedRepositories"
     static let seenRepositoriesKey = "seenRepositories"
+    static let viewerLoginKey = "githubViewerLogin"
+
+    /// The preferences that belong to a GitHub **account** rather than to the machine.
+    ///
+    /// Every one of them names repositories, and a repository list means nothing across
+    /// accounts: the second token's owner has not opened a pull request in any of the first
+    /// one's repositories, so a `selected` scope carried over from them matches nothing and
+    /// the panel goes quietly empty. The tag patterns are deliberately not here — those are
+    /// keyed by repository, and a repository is the same repository whoever is looking.
+    private static let accountScopedKeys = [
+        repoScopeModeKey,
+        selectedRepositoriesKey,
+        seenRepositoriesKey
+    ]
 
     /// The two spellings of ``RepoScope`` as they appear on disk. Not `RawRepresentable`
     /// on `RepoScope` itself: that type carries the selection with it, and the stored form
@@ -116,6 +130,96 @@ enum AppDefaults {
         merged.sort { $0.lowercased() < $1.lowercased() }
         if merged != stored { defaults.set(merged, forKey: seenRepositoriesKey) }
         return merged
+    }
+
+    /// Empties the checklist and the selection under it, and widens the scope back to All.
+    ///
+    /// The list only ever grows — a repository that has stopped producing pull requests
+    /// stays, deliberately, so that unchecking it does not become impossible — which means
+    /// there has to be one way to start it over. Two situations need it and neither
+    /// self-corrects: entries left behind by a token that was replaced before this build
+    /// tracked which account a list belonged to, and repositories that have simply been
+    /// archived. Widening to All is part of the reset rather than a side effect: clearing a
+    /// selection while `selected` is in force is the one state that stops every poll.
+    static func resetRepositories(_ defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: seenRepositoriesKey)
+        defaults.removeObject(forKey: selectedRepositoriesKey)
+        setRepoScope(.all, defaults)
+    }
+
+    // MARK: - The signed-in account
+
+    /// What ``noteViewer(_:_:)`` found.
+    enum AccountChange: Equatable {
+        /// The same account as the last poll, or a poll that could not say who it was for.
+        case unchanged
+        /// The first poll ever to name an account. Whatever is stored was configured under
+        /// it — there has only been one — so it is adopted rather than parked.
+        case adopted(String)
+        case switched(from: String, to: String)
+    }
+
+    /// The account the stored repository preferences currently belong to.
+    static func viewerLogin(_ defaults: UserDefaults = .standard) -> String? {
+        let stored = defaults.string(forKey: viewerLoginKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return stored.isEmpty ? nil : stored
+    }
+
+    /// Records who the poll answered for, and moves the account-scoped preferences with it.
+    ///
+    /// Replacing the token in Settings is not a small edit — it repoints the app at a
+    /// different person's pull requests — and the repository list is the part that cannot
+    /// survive the change: it is the previous account's, and it is what the `selected` scope
+    /// filters against. Left alone, the panel is empty and the checklist offers repositories
+    /// the new token cannot see, with nothing anywhere saying why.
+    ///
+    /// Parked rather than deleted, and restored on the way back. Switching between a work
+    /// token and a personal one is the reason anyone has two, and a selection that was
+    /// discarded the first time is a selection nobody makes twice. An account seen for the
+    /// first time has nothing parked, so it starts where a fresh install does: All
+    /// repositories, an empty list, and the next poll fills it in.
+    ///
+    /// The viewer login is GitHub's own answer to `viewer { login }` on the poll the token
+    /// just made — not the token, which is never stored anywhere but the Keychain.
+    @discardableResult
+    static func noteViewer(_ login: String, _ defaults: UserDefaults = .standard) -> AccountChange {
+        let incoming = login.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A poll that produced no login answers nothing about whose it was, so it is not
+        // evidence of a switch. Both searches would have to come back empty for this.
+        guard !incoming.isEmpty else { return .unchanged }
+
+        let previous = viewerLogin(defaults)
+        guard previous?.lowercased() != incoming.lowercased() else { return .unchanged }
+        defaults.set(incoming, forKey: viewerLoginKey)
+
+        guard let previous else { return .adopted(incoming) }
+        for key in accountScopedKeys {
+            move(key, to: parked(key, for: previous), defaults)
+            move(parked(key, for: incoming), to: key, defaults)
+        }
+        return .switched(from: previous, to: incoming)
+    }
+
+    /// Where an account's preferences wait while another account is signed in. Lower-cased,
+    /// because GitHub logins are case-insensitive and `Jankuca` coming back must find what
+    /// `jankuca` parked.
+    private static func parked(_ key: String, for login: String) -> String {
+        "\(key)@\(login.lowercased())"
+    }
+
+    /// Moves a stored value, leaving nothing behind at either end.
+    ///
+    /// Absent has to stay absent: an account with nothing parked must arrive at this
+    /// build's defaults, and copying rather than moving would leave it looking at the
+    /// account it replaced.
+    private static func move(_ source: String, to destination: String, _ defaults: UserDefaults) {
+        if let value = defaults.object(forKey: source) {
+            defaults.set(value, forKey: destination)
+        } else {
+            defaults.removeObject(forKey: destination)
+        }
+        defaults.removeObject(forKey: source)
     }
 
     // MARK: - Reading

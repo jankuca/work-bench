@@ -45,6 +45,9 @@ final class StatusItemController: NSObject {
         // later (IMPLEMENTATION_PLAN §1). Registered before anything can publish.
         events.register(IconSink(presenter: self))
         controller.onOpenSettings = { [weak self] in self?.showSettings() }
+        // `terminate` rather than `stop`: this is the user asking the app to go away, and
+        // it runs the delegate's `applicationShouldTerminate` path like ⌘Q does.
+        controller.onQuit = { NSApp.terminate(nil) }
         configure()
     }
 

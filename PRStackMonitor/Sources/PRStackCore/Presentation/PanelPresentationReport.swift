@@ -36,15 +36,17 @@ public enum PanelPresentationReport {
             lines.append("connect title=\(quoted(prompt.title)) detail=\(quoted(prompt.detail))")
         }
 
-        // `linear=` is emitted only when there is a note to emit. A healthy Linear is the
-        // overwhelmingly common case, and spending a token on it in every golden would
-        // make the M5 diff look like every fixture changed when none of them did.
-        lines.append(
-            "footer tone=\(panel.footer.syncTone.rawValue)"
-                + " text=\(quoted(panel.footer.syncText))"
-                + (panel.footer.linearNote.map { " linear=\(quoted($0))" } ?? "")
-                + " markAllRead=\(panel.footer.showsMarkAllRead)"
-        )
+        // `linear=`, `syncing=` and `error=` are emitted only when there is something to
+        // emit. A healthy source polling on its interval is the overwhelmingly common
+        // case, and spending three tokens on saying so in every golden would make each
+        // diff that adds one look like every fixture changed when none of them did.
+        var footer = ["footer", "tone=\(panel.footer.syncTone.rawValue)"]
+        footer.append("text=\(quoted(panel.footer.syncText))")
+        if panel.footer.isSyncing { footer.append("syncing=true") }
+        if let error = panel.footer.errorMessage { footer.append("error=\(quoted(error))") }
+        if let linear = panel.footer.linearNote { footer.append("linear=\(quoted(linear))") }
+        footer.append("markAllRead=\(panel.footer.showsMarkAllRead)")
+        lines.append(footer.joined(separator: " "))
         return lines.joined(separator: "\n") + "\n"
     }
 

@@ -26,8 +26,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let window = window ?? makeWindow()
         self.window = window
         // Fresh every time it is shown: a token can be revoked in Keychain Access while the
-        // window sits behind the panel.
-        model.refreshCredentialSources()
+        // window sits behind the panel, and a poll under a new token can replace the whole
+        // repository list underneath it.
+        model.reload()
         window.makeKeyAndOrderFront(nil)
     }
 
