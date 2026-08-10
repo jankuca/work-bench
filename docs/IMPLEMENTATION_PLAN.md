@@ -748,9 +748,12 @@ displays; see below.)
 The footer is where the app answers **"is it actually running, and did it fail?"** — the two questions a menu
 bar app is asked most and answers worst:
 
-- While a poll is in flight the text reads `syncing…` and the dot pulses. It outranks every other footer
-  state, all of which describe the *previous* poll. The dimmed refresh control says the same thing only to
-  someone already looking at that corner, and says nothing at all about the polls that happen on the interval.
+- While a poll is in flight the text reads `syncing…` and the dot pulses — unless Reduce Motion is on, when
+  it stays still. A `repeatForever` that runs for the whole of every poll is what that preference exists to
+  stop, and the text carries the state without it, which is the test for whether the motion was decoration.
+  It outranks every other footer state, all of which describe the *previous* poll. The dimmed refresh control
+  says the same thing only to someone already looking at that corner, and says nothing at all about the polls
+  that happen on the interval.
 - A transient GitHub failure — `unreachable`, i.e. everything that is not an expired token — gets its message
   on **a line of its own** under the footer, for as long as it lasts. It is the same text the hover detail
   carries, and hover is not good enough: a tooltip is something you have to already suspect to find. An
