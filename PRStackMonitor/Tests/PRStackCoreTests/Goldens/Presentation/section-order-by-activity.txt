@@ -1,13 +1,13 @@
 header title="Pull requests" summary="4 in review" refreshing=false attention=0
 section heading="Payments" count=1 muted=false clearAll=-
   row id=acme/billing#801 title="Most recent project" emphasis=normal chip=neutral/dot tint=false unread=true spine=none track=empty|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(PAY-801) num(#801) phrase(in review|neutral) age(3d)
+    meta num(#801) phrase(in review|neutral) age(3d) issue(PAY-801)
 section heading="Platform" count=1 muted=false clearAll=-
   row id=acme/billing#802 title="Middle project" emphasis=normal chip=neutral/dot tint=false unread=true spine=none track=empty|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(PLT-802) num(#802) phrase(in review|neutral) age(4d)
+    meta num(#802) phrase(in review|neutral) age(4d) issue(PLT-802)
 section heading="Billing" count=1 muted=false clearAll=-
   row id=acme/billing#800 title="Least recent project" emphasis=normal chip=neutral/dot tint=false unread=true spine=none track=empty|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(BIL-800) num(#800) phrase(in review|neutral) age(5d)
+    meta num(#800) phrase(in review|neutral) age(5d) issue(BIL-800)
 section heading="Other" count=1 muted=false clearAll=-
   row id=acme/billing#803 title="No ticket at all" emphasis=normal chip=neutral/dot tint=false unread=true spine=none track=empty|empty|empty reviewers=[]+0 dismissible=false
     meta num(#803) phrase(in review|neutral) age(1d)

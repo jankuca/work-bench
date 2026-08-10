@@ -784,13 +784,16 @@ select all) at launch. It is a dispatch table, not a UI decision — nothing in 
 - Spine: 1.5 pt hairline at the chip's centre line, drawn from `top: -8` and/or `bottom: -8` depending on
   the member's position in the run. Top member draws downward only, base member upward only.
 - Title, 12.5 pt, single line, ellipsis; weight 500 → 560 as the row gains urgency.
-- Meta line, 11 pt: Linear identifier (indigo, clickable) with a `+N` affix when the PR resolves more than
-  one ticket — `BIL-312 +2`, the affix in tertiary grey so it reads as a count, not a second link — repo name
-  **only when the list spans more than one repo**, `#number`, **one** status phrase, age. When
-  `primaryIssue` is nil the identifier token is **omitted entirely** — no placeholder, no `Other` label — and
-  the line simply starts at the repo name or `#number`. This matches design 2a, where the Other-section row
-  reads `#4051 · merge conflict · 2d`. The section heading already says `Other`; repeating it per row would
-  spend the meta line's scarcest asset on the absence of information. Clicking the
+- Meta line, 11 pt: `#number` first, repo name **only when the list spans more than one repo**, **one** status
+  phrase, age, snooze if any, and the Linear identifier (indigo, clickable) **last** — after the age — with a
+  `+N` affix when the PR resolves more than one ticket: `#4014 · waiting on #4012 · 3h · BIL-312 +2`. The
+  number leads because it is what the row is called and the one token every row carries; the ticket trails
+  because it points *out* of the panel. The affix is tertiary grey so it reads as a count, not a second link,
+  and it is set at the line's own 11 pt — a menu's title otherwise takes the system control size and renders a
+  point or two larger than the tokens beside it. When `primaryIssue` is nil the identifier token is **omitted
+  entirely** — no placeholder, no `Other` label — and the line simply ends at the age. This matches design 2a,
+  where the Other-section row reads `#4051 · merge conflict · 2d`. The section heading already says `Other`;
+  repeating it per row would spend the meta line's scarcest asset on the absence of information. Clicking the
   identifier opens the primary issue; clicking `+N` opens a small menu listing every linked ticket with its
   project, each opening in the browser. The status phrase is the only coloured *status* token —
   the identifier's indigo is a link affordance, not a state signal, which is why it's the one other colour

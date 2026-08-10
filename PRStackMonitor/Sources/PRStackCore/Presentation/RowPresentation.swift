@@ -109,31 +109,33 @@ public struct SpineDraw: Hashable, Sendable {
 /// One token on the meta line. The view joins them with a separator; the order here is
 /// the order they render in.
 public enum MetaToken: Hashable, Sendable {
-    /// The primary Linear issue. Indigo, opens the issue.
-    case issue(identifier: String, url: URL)
-    /// `+2` — how many further tickets this pull request resolves. Tertiary grey, so it
-    /// reads as a count rather than a second link, and it opens a menu of all of them.
-    case additionalIssues(count: Int)
+    case number(Int)
     /// `owner/name`, only when the list spans more than one repository (PRD §12.3).
     case repository(String)
-    case number(Int)
     /// The one status phrase. The only coloured *status* token on the line.
     case phrase(String, tone: StatusTone)
     case age(String)
     /// `snoozed 2h`. Tertiary — a snooze is a fact about the user, not about the pull
     /// request.
     case snooze(String)
+    /// The primary Linear issue. Indigo, opens the issue. Last on the line: the pull
+    /// request's own number is what the row is called, and the ticket is where the row
+    /// points.
+    case issue(identifier: String, url: URL)
+    /// `+2` — how many further tickets this pull request resolves. Tertiary grey, so it
+    /// reads as a count rather than a second link, and it opens a menu of all of them.
+    case additionalIssues(count: Int)
 
     /// What the token reads as, for the accessibility label and the text report.
     public var text: String {
         switch self {
-        case .issue(let identifier, _): return identifier
-        case .additionalIssues(let count): return "+\(count)"
-        case .repository(let name): return name
         case .number(let number): return "#\(number)"
+        case .repository(let name): return name
         case .phrase(let phrase, _): return phrase
         case .age(let age): return age
         case .snooze(let snooze): return snooze
+        case .issue(let identifier, _): return identifier
+        case .additionalIssues(let count): return "+\(count)"
         }
     }
 }
@@ -292,23 +294,25 @@ public struct RowPresentation: Equatable, Sendable {
     ) -> [MetaToken] {
         var tokens: [MetaToken] = []
 
-        // No placeholder when there is no ticket: design 2a's Other-section row reads
-        // `#4051 · merge conflict · 2d`, and the section heading already says `Other`
-        // (IMPLEMENTATION_PLAN §5).
+        // The number leads: it is what the row is called, it is on every row, and it is
+        // the one token whose position never depends on what else the row happens to have.
+        tokens.append(.number(row.pullRequest.number))
+        if showsRepoName {
+            tokens.append(.repository(row.pullRequest.repo))
+        }
+        tokens.append(.phrase(phrase(for: row), tone: tone))
+        tokens.append(.age(age(for: row, now: now)))
+        if let deadline = row.snoozedUntil {
+            tokens.append(.snooze("snoozed " + RelativeTime.remaining(until: deadline, now: now)))
+        }
+        // The ticket trails the line, after the age. No placeholder when there is none:
+        // design 2a's Other-section row reads `#4051 · merge conflict · 2d`, and the
+        // section heading already says `Other` (IMPLEMENTATION_PLAN §5).
         if let issue = row.primaryIssue {
             tokens.append(.issue(identifier: issue.identifier, url: issue.url))
             if row.additionalIssueCount > 0 {
                 tokens.append(.additionalIssues(count: row.additionalIssueCount))
             }
-        }
-        if showsRepoName {
-            tokens.append(.repository(row.pullRequest.repo))
-        }
-        tokens.append(.number(row.pullRequest.number))
-        tokens.append(.phrase(phrase(for: row), tone: tone))
-        tokens.append(.age(age(for: row, now: now)))
-        if let deadline = row.snoozedUntil {
-            tokens.append(.snooze("snoozed " + RelativeTime.remaining(until: deadline, now: now)))
         }
         return tokens
     }

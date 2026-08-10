@@ -1,5 +1,5 @@
 header title="Pull requests" summary="" refreshing=false attention=0
 section heading="Done" count=1 muted=true clearAll="Clear all"
   row id=acme/billing#901 title="Closed with changes requested" emphasis=dim chip=neutral/bar tint=false unread=true spine=none track=empty|empty|empty reviewers=[]+0 dismissible=true
-    meta issue(BIL-901) num(#901) phrase(closed without merging|neutral) age(yesterday)
+    meta num(#901) phrase(closed without merging|neutral) age(yesterday) issue(BIL-901)
 footer tone=success text="synced 34s ago" markAllRead=true

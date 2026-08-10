@@ -1,11 +1,11 @@
 header title="Pull requests" summary="4 in review" refreshing=false attention=0
 section heading="Billing" count=4 muted=false clearAll=-
   row id=acme/billing#203 title="Longer chain, second" emphasis=dim chip=neutral/bar tint=false unread=true spine=down track=empty|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(BIL-203) num(#203) phrase(waiting on #202|neutral) age(1d)
+    meta num(#203) phrase(waiting on #202|neutral) age(1d) issue(BIL-203)
   row id=acme/billing#202 title="Longer chain, first" emphasis=dim chip=neutral/bar tint=false unread=true spine=both track=empty|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(BIL-202) num(#202) phrase(waiting on #200|neutral) age(1d)
+    meta num(#202) phrase(waiting on #200|neutral) age(1d) issue(BIL-202)
   row id=acme/billing#200 title="Shared base" emphasis=normal chip=neutral/dot tint=false unread=true spine=up track=empty|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(BIL-200) num(#200) phrase(in review|neutral) age(1d)
+    meta num(#200) phrase(in review|neutral) age(1d) issue(BIL-200)
   row id=acme/billing#201 title="Sibling leaf" emphasis=dim chip=neutral/bar tint=false unread=true spine=none track=empty|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(BIL-201) num(#201) phrase(waiting on #200|neutral) age(1d)
+    meta num(#201) phrase(waiting on #200|neutral) age(1d) issue(BIL-201)
 footer tone=success text="synced 34s ago" markAllRead=true

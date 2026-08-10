@@ -264,7 +264,7 @@ private extension View {
     }
 }
 
-/// The meta line: identifier · repo · #number · phrase · age.
+/// The meta line: #number · repo · phrase · age · identifier.
 ///
 /// Laid out as an `HStack` of separate views rather than one attributed string because
 /// the identifier and the `+N` affix are both click targets, and because the phrase's
@@ -300,10 +300,17 @@ struct MetaLineView: View {
         case .additionalIssues:
             // Tertiary grey, so it reads as a count rather than a second link — but it
             // still opens the full list, which is the only way to reach the other tickets.
-            Menu(token.text) {
+            Menu {
                 ForEach(Array(issues.enumerated()), id: \.offset) { item in
                     Button(menuTitle(for: item.element)) { onOpenIssue(item.element) }
                 }
+            } label: {
+                // The font goes on the label, not on the `Menu`: a menu's title takes the
+                // system control size and ignores the line's environment font, which is
+                // what made `+2` render a couple of points larger than every token beside
+                // it.
+                Text(token.text)
+                    .font(Tokens.text(Tokens.Row.metaSize))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)

@@ -1,7 +1,7 @@
 header title="Pull requests" summary="2 in review" refreshing=false attention=0
 section heading="Billing" count=2 muted=false clearAll=-
   row id=acme/web#1601 title="Web side" emphasis=normal chip=neutral/dot tint=false unread=true spine=none track=empty|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(BIL-1601) repo(acme/web) num(#1601) phrase(in review|neutral) age(1d)
+    meta num(#1601) repo(acme/web) phrase(in review|neutral) age(1d) issue(BIL-1601)
   row id=acme/billing#1600 title="Billing side" emphasis=normal chip=neutral/dot tint=false unread=true spine=none track=empty|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(BIL-1600) repo(acme/billing) num(#1600) phrase(in review|neutral) age(1d)
+    meta num(#1600) repo(acme/billing) phrase(in review|neutral) age(1d) issue(BIL-1600)
 footer tone=success text="synced 34s ago" markAllRead=true

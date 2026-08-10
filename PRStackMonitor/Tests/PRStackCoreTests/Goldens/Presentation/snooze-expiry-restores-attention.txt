@@ -1,7 +1,7 @@
 header title="Pull requests" summary="2 in review" refreshing=false attention=2
 section heading="Billing" count=2 muted=false clearAll=-
   row id=acme/billing#1311 title="Snooze expires exactly now" emphasis=strong chip=danger/dot tint=true unread=true spine=none track=failing|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(BIL-1311) num(#1311) phrase(1 check failed|danger) age(1d)
+    meta num(#1311) phrase(1 check failed|danger) age(1d) issue(BIL-1311)
   row id=acme/billing#1310 title="Snooze expired an hour ago" emphasis=strong chip=danger/dot tint=true unread=true spine=none track=failing|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(BIL-1310) num(#1310) phrase(1 check failed|danger) age(1d)
+    meta num(#1310) phrase(1 check failed|danger) age(1d) issue(BIL-1310)
 footer tone=success text="synced 34s ago" markAllRead=true
