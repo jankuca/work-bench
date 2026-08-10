@@ -518,6 +518,10 @@ struct GitHubPanelSource: PanelSource {
     /// keep in step and no invalidation to get wrong.
     var scope: RepoScope { AppDefaults.repoScope() }
 
+    /// Read per poll for the same reason as the scope: Settings writes `UserDefaults`, the
+    /// next poll picks it up, and there is no second copy to invalidate.
+    var includesDrafts: Bool { AppDefaults.showsDrafts() }
+
     /// One transport for the life of the source, shared by both requests.
     ///
     /// Not per poll. Each `URLSession` brings its own connection pool that outlives the
@@ -558,7 +562,12 @@ struct GitHubPanelSource: PanelSource {
         )
 
         do {
-            let fetched = try await poll.run(scope: scope, local: plan.local, now: plan.now)
+            let fetched = try await poll.run(
+                scope: scope,
+                includesDrafts: includesDrafts,
+                local: plan.local,
+                now: plan.now
+            )
             // Linear never fails the poll. It cannot: every row is already complete without
             // it, and losing it costs only the project headings for identifiers that have
             // never been cached (IMPLEMENTATION_PLAN §4).

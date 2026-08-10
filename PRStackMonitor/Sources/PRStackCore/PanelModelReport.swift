@@ -13,6 +13,7 @@ public enum PanelModelReport {
                 + " attention=\(model.attentionCount)"
                 + " unread=\(model.unreadCount)"
                 + " open=\(model.summary.openCount)"
+                + " draft=\(model.summary.draftCount)"
                 + " shipping=\(model.summary.shippingCount)"
         )
         for section in model.sections {

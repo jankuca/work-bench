@@ -48,6 +48,9 @@ final class SettingsModel: ObservableObject {
 
     @Published var isAllRepositories: Bool
     @Published private(set) var repositories: [RepositorySetting]
+    /// Whether the polls ask GitHub for drafts as well. Off by default — see
+    /// ``AppDefaults/showsDrafts(_:)``.
+    @Published private(set) var showsDrafts: Bool
     /// The GitHub login the last poll answered for, and therefore whose repository list is
     /// on screen. Nil until a poll has named one.
     ///
@@ -95,6 +98,7 @@ final class SettingsModel: ObservableObject {
         // and opening it the first time cannot disagree.
         isAllRepositories = true
         repositories = []
+        showsDrafts = false
         enabledEvents = Dictionary(
             uniqueKeysWithValues: DomainEventKind.allCases.map { ($0, events.preferences.allows($0)) }
         )
@@ -113,6 +117,7 @@ final class SettingsModel: ObservableObject {
     func reload() {
         githubAccount = AppDefaults.viewerLogin(defaults)
         isAllRepositories = AppDefaults.repoScope(defaults).isAll
+        showsDrafts = AppDefaults.showsDrafts(defaults)
 
         let selected = Set(AppDefaults.selectedRepositories(defaults).map { $0.lowercased() })
         let patterns = AppDefaults.tagPatterns(defaults)
@@ -157,6 +162,18 @@ final class SettingsModel: ObservableObject {
         guard let index = repositories.firstIndex(where: { $0.name == name }) else { return }
         repositories[index].isSelected = isSelected
         writeScope()
+    }
+
+    /// Whether drafts are fetched at all — the qualifier is dropped from the search rather
+    /// than the rows being filtered afterwards, so turning this off costs nothing.
+    ///
+    /// Stored, not polled, like the scope above: the next poll reads it, and the window
+    /// closing brings that poll forward. Turning it *on* is the one direction where the wait
+    /// is visible — the rows cannot appear until a search has asked for them — which is why
+    /// the footer under the toggle says when they will.
+    func setShowsDrafts(_ showsDrafts: Bool) {
+        self.showsDrafts = showsDrafts
+        AppDefaults.setShowsDrafts(showsDrafts, defaults)
     }
 
     /// The per-repository release-tag glob. Blank clears the override back to `v*`.

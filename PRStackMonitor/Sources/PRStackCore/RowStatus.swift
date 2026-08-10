@@ -12,6 +12,15 @@ public enum RowStatus: Hashable, Sendable {
     case shipped(tag: String)
     case merged
     // Open pull requests only, first match wins.
+    /// Work in progress, only ever present when the user has asked for drafts (§3).
+    ///
+    /// First among the open statuses, and that ordering is the point rather than an
+    /// accident: a draft is not in review, cannot merge, and its conflicts and red checks
+    /// are not a verdict on anything that has been offered to anyone. Resolving it ahead of
+    /// the three danger statuses is what keeps drafts out of the attention set, and
+    /// therefore out of the icon and the events it drives — which is what makes the
+    /// preference safe to turn on.
+    case draft
     case conflicted
     case changesRequested
     case checksFailing
@@ -20,10 +29,11 @@ public enum RowStatus: Hashable, Sendable {
     case approved
     case inReview
 
-    /// Statuses 4–6. Attention is this set *and* the row not being snoozed — see
+    /// Statuses 5–7. Attention is this set *and* the row not being snoozed — see
     /// ``PanelRow/isAttention``, which is the value anything else should read.
     ///
-    /// `blocked` is deliberately excluded: it is the layer below's problem.
+    /// `blocked` is deliberately excluded: it is the layer below's problem. So is `draft`,
+    /// which is the author's own — see the case's own note.
     public var isAttentionCandidate: Bool {
         switch self {
         case .conflicted, .changesRequested, .checksFailing: return true
@@ -46,6 +56,7 @@ public enum RowStatus: Hashable, Sendable {
         case .closed: return "closed"
         case .shipped(let tag): return "shipped:\(tag)"
         case .merged: return "merged"
+        case .draft: return "draft"
         case .conflicted: return "conflicted"
         case .changesRequested: return "changesRequested"
         case .checksFailing: return "checksFailing"
@@ -63,6 +74,7 @@ public enum RowStatus: Hashable, Sendable {
             .closed,
             .shipped(tag: sampleTag),
             .merged,
+            .draft,
             .conflicted,
             .changesRequested,
             .checksFailing,
@@ -109,7 +121,12 @@ enum RowStatusResolver {
             break
         }
 
-        // 4–9: open pull requests, first match wins.
+        // 4–10: open pull requests, first match wins.
+        //
+        // A draft resolves before every live signal below it — see ``RowStatus/draft``. It
+        // is only ever reached when the user has turned drafts on, because with the
+        // preference off the search never returns one.
+        if pullRequest.isDraft { return .draft }
         if pullRequest.mergeable == .conflicting { return .conflicted }
         if pullRequest.reviewDecision == .changesRequested { return .changesRequested }
         if pullRequest.checks.isFailing { return .checksFailing }

@@ -15,6 +15,7 @@ import GitHubKit
 /// poll.
 enum AppDefaults {
     static let tagPatternsKey = "tagPatterns"
+    static let showsDraftsKey = "showsDrafts"
     static let repoScopeModeKey = "repoScopeMode"
     static let selectedRepositoriesKey = "selectedRepositories"
     static let seenRepositoriesKey = "seenRepositories"
@@ -67,6 +68,32 @@ enum AppDefaults {
             defaults.removeObject(forKey: tagPatternsKey)
         } else {
             defaults.set(patterns.byRepository, forKey: tagPatternsKey)
+        }
+    }
+
+    // MARK: - Drafts
+
+    /// Whether the poll's searches include draft pull requests.
+    ///
+    /// Off unless the user has said otherwise, which is the PRD's definition of the panel
+    /// (§2) — the pull requests that have entered review. Deliberately **not**
+    /// account-scoped: it says what the user wants to look at, and that does not change when
+    /// the token does, unlike a repository list which means nothing under another account.
+    ///
+    /// `bool(forKey:)` answers `false` for a value of the wrong type, which is the right
+    /// failure here: a preference nobody can read falls back to the default rather than
+    /// widening every search.
+    static func showsDrafts(_ defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: showsDraftsKey)
+    }
+
+    static func setShowsDrafts(_ showsDrafts: Bool, _ defaults: UserDefaults = .standard) {
+        // Removed rather than stored as `false`, so "off" reads the same as a fresh install
+        // and `defaults read` does not suggest a preference nobody set.
+        if showsDrafts {
+            defaults.set(true, forKey: showsDraftsKey)
+        } else {
+            defaults.removeObject(forKey: showsDraftsKey)
         }
     }
 

@@ -166,12 +166,21 @@ public struct GitHubClient {
     /// `extraQualifiers` are appended to the search verbatim. The plan's query is
     /// deliberately unbounded in time, so this is how a caller narrows it — `is:open` for
     /// a quick look, or the dynamic merged-PR lower bound M6 needs.
+    ///
+    /// `includesDrafts` widens the search to work in progress. Off by default, and the
+    /// caller passing it is the app reading one preference per poll — see
+    /// ``SearchQuery/build(scope:includesDrafts:extraQualifiers:)``.
     public func fetchPullRequests(
         scope: RepoScope,
+        includesDrafts: Bool = false,
         extraQualifiers: [String] = [],
         startingAfter cursor: String? = nil
     ) async throws -> PullRequestFetch {
-        guard let query = SearchQuery.build(scope: scope, extraQualifiers: extraQualifiers) else {
+        guard let query = SearchQuery.build(
+            scope: scope,
+            includesDrafts: includesDrafts,
+            extraQualifiers: extraQualifiers
+        ) else {
             // An empty selection is not the same query as `all`, and must not be run as
             // one. No request goes out.
             return PullRequestFetch(

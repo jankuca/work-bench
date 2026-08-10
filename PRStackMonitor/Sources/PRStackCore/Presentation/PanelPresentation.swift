@@ -115,7 +115,7 @@ public struct PanelStatus: Equatable, Sendable {
 
 public struct HeaderPresentation: Equatable, Sendable {
     public var title: String
-    /// `10 in review · 3 shipping`. Empty when there is nothing to count.
+    /// `10 in review · 2 drafts · 3 shipping`. Empty when there is nothing to count.
     public var summary: String
     public var isRefreshing: Bool
 
@@ -353,11 +353,15 @@ public struct PanelPresentation: Equatable, Sendable {
 
     // MARK: Header
 
-    /// `10 in review · 3 shipping`, dropping either half when it is zero — `0 shipping`
-    /// is a count of nothing, and the panel below already shows its absence.
+    /// `10 in review · 2 drafts · 3 shipping`, dropping any part that is zero — `0 shipping`
+    /// is a count of nothing, and the panel below already shows its absence. The drafts part
+    /// is therefore absent entirely unless the user has turned drafts on.
     private static func summary(for summary: PanelSummary) -> String {
         var parts: [String] = []
         if summary.openCount > 0 { parts.append("\(summary.openCount) in review") }
+        if summary.draftCount > 0 {
+            parts.append("\(summary.draftCount) draft\(summary.draftCount == 1 ? "" : "s")")
+        }
         if summary.shippingCount > 0 { parts.append("\(summary.shippingCount) shipping") }
         return parts.joined(separator: " · ")
     }

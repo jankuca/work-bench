@@ -20,7 +20,8 @@ public enum RepoScope: Equatable, Sendable {
     ///
     /// GitHub's search would reject the whole query for one malformed qualifier, taking
     /// every other repository's pull requests with it, so a bad entry is dropped rather
-    /// than sent. ``SearchQuery/build(scope:)`` reports what it dropped.
+    /// than sent. ``SearchQuery/build(scope:includesDrafts:extraQualifiers:)`` reports what
+    /// it dropped.
     public var normalizedRepositories: [String] {
         guard case .selected(let repositories) = self else { return [] }
         var seen: Set<String> = []
@@ -69,19 +70,34 @@ public struct SearchQuery: Equatable, Sendable {
         self.droppedRepositories = droppedRepositories
     }
 
-    /// The base qualifiers, from IMPLEMENTATION_PLAN §3. Drafts are excluded at the
-    /// source rather than filtered afterwards, so they never cost points.
-    public static let baseQualifiers = "is:pr author:@me -is:draft"
+    /// The base qualifiers, from IMPLEMENTATION_PLAN §3.
+    public static let baseQualifiers = "is:pr author:@me"
+
+    /// Appended unless the caller asks for drafts.
+    ///
+    /// Drafts are dropped at the source rather than filtered after the fact, so with the
+    /// preference off they cost no points and no page of the search — which is the whole
+    /// reason the exclusion is a qualifier and not a `filter` over the results.
+    public static let withoutDrafts = "-is:draft"
 
     /// Builds the query for a scope, or `nil` when the scope selects nothing.
+    ///
+    /// `includesDrafts` is the Settings preference (`Show draft pull requests`), off by
+    /// default: PRD §2 defines the panel as the pull requests that have entered review, and
+    /// a user who wants their work in progress in there has to say so.
     ///
     /// `nil` is the important case. An empty selection must **not** fall back to the base
     /// qualifiers: that string is exactly the `all` query, so "the user has unchecked
     /// every repository" would silently widen to "every repository the user has ever
     /// opened a pull request in". The client answers an empty selection with an empty
     /// result and no request at all.
-    public static func build(scope: RepoScope, extraQualifiers: [String] = []) -> SearchQuery? {
+    public static func build(
+        scope: RepoScope,
+        includesDrafts: Bool = false,
+        extraQualifiers: [String] = []
+    ) -> SearchQuery? {
         var qualifiers = [baseQualifiers]
+        if !includesDrafts { qualifiers.append(withoutDrafts) }
         var dropped: [String] = []
 
         if case .selected(let requested) = scope {

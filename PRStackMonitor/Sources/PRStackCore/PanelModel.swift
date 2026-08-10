@@ -5,7 +5,7 @@ public struct PanelRow: Equatable, Sendable {
     public var pullRequest: PullRequest
     public var status: RowStatus
     public var releaseStage: ReleaseStage
-    /// Status 4–6 **and** not snoozed. This is the value the tint, the title weight and
+    /// Status 5–7 **and** not snoozed. This is the value the tint, the title weight and
     /// the icon's red badge all read.
     public var isAttention: Bool
     /// Snoozed with a wake time still in the future.
@@ -71,13 +71,20 @@ public struct PanelSection: Equatable, Sendable {
 
 /// The header's counts. Core decides what is counted; the view decides the wording.
 public struct PanelSummary: Equatable, Sendable {
-    /// Open pull requests — "10 in review".
+    /// Open pull requests that are actually in review — "10 in review".
+    ///
+    /// Drafts are **not** in here. They are open, so counting them would be defensible
+    /// arithmetic and a false sentence: the header says `in review`, and a draft is the
+    /// one pull request that by definition has not entered it.
     public var openCount: Int
+    /// Open drafts — "2 drafts". Always zero unless the user has turned drafts on.
+    public var draftCount: Int
     /// Merged, waiting for a release tag — "3 shipping".
     public var shippingCount: Int
 
-    public init(openCount: Int, shippingCount: Int) {
+    public init(openCount: Int, draftCount: Int = 0, shippingCount: Int) {
         self.openCount = openCount
+        self.draftCount = draftCount
         self.shippingCount = shippingCount
     }
 }

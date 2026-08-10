@@ -105,6 +105,35 @@ final class GitHubPollTests: XCTestCase {
         XCTAssertTrue(result.isComplete)
     }
 
+    /// One preference, both halves. A poll whose open search covered drafts and whose
+    /// closed search did not would put a draft in the panel and then lose it the moment it
+    /// was closed, which reads as the row being dismissed.
+    func testTheDraftPreferenceReachesBothSearches() async throws {
+        let transport = StubTransport(responses: [
+            .json(SearchPage.json(numbers: [], hasNextPage: false, endCursor: nil)),
+            .json(SearchPage.json(numbers: [], hasNextPage: false, endCursor: nil))
+        ])
+
+        _ = try await GitHubPoll(client: client(transport))
+            .run(scope: .all, includesDrafts: true, local: .empty, now: now)
+
+        XCTAssertFalse(try searchQuery(transport, 0).contains("-is:draft"))
+        XCTAssertFalse(try searchQuery(transport, 1).contains("-is:draft"))
+    }
+
+    /// And the default is still the narrow query, in both halves.
+    func testDraftsAreExcludedFromBothSearchesByDefault() async throws {
+        let transport = StubTransport(responses: [
+            .json(SearchPage.json(numbers: [], hasNextPage: false, endCursor: nil)),
+            .json(SearchPage.json(numbers: [], hasNextPage: false, endCursor: nil))
+        ])
+
+        _ = try await GitHubPoll(client: client(transport)).run(scope: .all, local: .empty, now: now)
+
+        XCTAssertTrue(try searchQuery(transport, 0).contains("-is:draft"))
+        XCTAssertTrue(try searchQuery(transport, 1).contains("-is:draft"))
+    }
+
     /// The persisted merges are what widen the closed search. Every other poll test starts
     /// from `.empty`, so without this one, dropping `local.unboundMerges` from the call
     /// would leave the suite green while a six-week-old merge quietly left the query.

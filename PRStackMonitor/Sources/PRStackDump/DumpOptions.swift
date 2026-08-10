@@ -36,6 +36,9 @@ Live GitHub
                         every repository the viewer authors pull requests in.
   --qualifier <q>       Append a raw search qualifier, e.g. --qualifier is:open.
                         Repeatable.
+  --drafts              Include draft pull requests. Off by default, matching the app's
+                        `Show draft pull requests` setting: without it `-is:draft` is part
+                        of the search, so drafts cost neither points nor pages.
   --page-size N         Search page size, 1–100 (default 50). Set it low to watch
                         pagination run past the first page on a small account.
   --page-cap N          Stop after N pages (default 10).
@@ -89,6 +92,7 @@ struct DumpOptions {
     var now: Date?
     var repositories: [String] = []
     var qualifiers: [String] = []
+    var includesDrafts = false
     var pageSize = 50
     var pageCap = 10
     var pointBudget = PointBudget.defaultPoints
@@ -150,6 +154,8 @@ struct DumpOptions {
                 options.repositories.append(try next("--repo"))
             case "--qualifier":
                 options.qualifiers.append(try next("--qualifier"))
+            case "--drafts":
+                options.includesDrafts = true
             case "--page-size":
                 options.pageSize = try nextInt("--page-size")
             case "--page-cap":
@@ -233,6 +239,9 @@ struct DumpOptions {
             let liveOnly = [
                 options.repositories.isEmpty ? nil : "--repo",
                 options.qualifiers.isEmpty ? nil : "--qualifier",
+                // A fixture's drafts are whatever the fixture holds; this flag decides what
+                // a search asks GitHub for, and there is no search on this path.
+                options.includesDrafts ? "--drafts" : nil,
                 options.token == nil ? nil : "--token",
                 options.emitSnapshotPath == nil ? nil : "--emit-snapshot",
                 options.linearToken == nil ? nil : "--linear-token",
