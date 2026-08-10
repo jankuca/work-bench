@@ -169,6 +169,48 @@ final class GraphQLErrorTests: XCTestCase {
         XCTAssertEqual(errors.first?.description, "RATE_LIMITED: boom")
     }
 
+    /// The path is what turns "something is forbidden" into "this field is forbidden".
+    /// A partial failure arrives as one error per affected node, every one of them carrying
+    /// the same sentence, so the path is the only part of the line that names the selection
+    /// the server refused — and therefore the permission that is missing.
+    func testDescriptionNamesTheFieldThatFailed() {
+        let body = Data(
+            """
+            {"errors": [{
+              "message": "Resource not accessible by personal access token",
+              "type": "FORBIDDEN",
+              "path": ["search", "nodes", 2, "commits", "nodes", 0, "commit", "statusCheckRollup"]
+            }]}
+            """.utf8
+        )
+        XCTAssertEqual(
+            GraphQLErrorsOnly.read(body).first?.description,
+            "FORBIDDEN: Resource not accessible by personal access token"
+                + " (at search.nodes.2.commits.nodes.0.commit.statusCheckRollup)"
+        )
+    }
+
+    /// Linear classifies in `extensions` and sends no top-level `type`, so without the
+    /// fallback its failures print as a bare sentence with no classification at all.
+    func testDescriptionFallsBackToTheExtensionsCode() {
+        let body = Data(
+            #"{"errors": [{"message": "Entity not found: Issue", "path": ["a3"], "extensions": {"code": "ENTITY_NOT_FOUND"}}]}"#.utf8
+        )
+        XCTAssertEqual(
+            GraphQLErrorsOnly.read(body).first?.description,
+            "ENTITY_NOT_FOUND: Entity not found: Issue (at a3)"
+        )
+    }
+
+    /// An error with neither classification nor path is still just its message — the
+    /// additions above must not decorate a line that has nothing to add.
+    func testDescriptionOfABareErrorIsJustTheMessage() {
+        XCTAssertEqual(
+            GraphQLErrorsOnly.read(Data(#"{"errors": [{"message": "boom"}]}"#.utf8)).first?.description,
+            "boom"
+        )
+    }
+
     func testAResponseWithNoErrorsReadsAsNone() {
         XCTAssertTrue(GraphQLErrorsOnly.read(Data(#"{"data": {"a0": null}}"#.utf8)).isEmpty)
         XCTAssertTrue(GraphQLErrorsOnly.read(Data("not json at all".utf8)).isEmpty)
