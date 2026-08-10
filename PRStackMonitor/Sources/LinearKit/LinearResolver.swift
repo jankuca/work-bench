@@ -56,6 +56,20 @@ public struct LinearResolution: Equatable, Sendable {
     }
 }
 
+/// How much of a resolution is allowed to talk to Linear.
+public enum LinearResolutionMode: Equatable, Sendable {
+    /// The normal path: cache first, one batched request for what is missing or stale.
+    case fetch
+    /// Answer from the cache and send nothing.
+    ///
+    /// This is what a source in backoff gets (IMPLEMENTATION_PLAN §4). It is not the same
+    /// as skipping resolution: every cached identifier still attaches, so the rows keep
+    /// their project headings and only identifiers Linear has never answered for fall to
+    /// `Other` — which is exactly what the outage path already does, minus the request that
+    /// is going to fail anyway.
+    case cacheOnly
+}
+
 /// Scans, resolves, caches, and hands back pull requests with `linearIssues` filled.
 ///
 /// This is the whole of M5's data path in one type. `SyncEngine` calls it with the pull
@@ -72,7 +86,11 @@ public struct LinearResolver {
         self.store = store
     }
 
-    public func resolve(pullRequests: [PullRequest], now: Date) async -> LinearResolution {
+    public func resolve(
+        pullRequests: [PullRequest],
+        now: Date,
+        mode: LinearResolutionMode = .fetch
+    ) async -> LinearResolution {
         // Scanned once per pull request and kept, because this order *is* the contract:
         // the primary issue is the first of these with a project, and rebuilding the row's
         // list by walking this list — rather than by appending cache hits and then response
@@ -103,6 +121,18 @@ public struct LinearResolver {
         var cache = store.load()
         let toFetch = cache.staleOrMissing(among: identifiers, now: now)
         let cacheHits = identifiers.count - toFetch.count
+
+        guard mode == .fetch else {
+            // Backing off. Same answer as a failed poll — cached headings, nothing written
+            // — but reported as `nil` rather than as an outage: the source's health is
+            // whatever the failure that started the backoff said it was, and overwriting it
+            // here on every deferred poll would be reporting a request that was never sent.
+            return LinearResolution(
+                pullRequests: attach(scanned: scanned, to: pullRequests, using: cache),
+                health: nil,
+                cacheHits: cacheHits
+            )
+        }
 
         guard !toFetch.isEmpty else {
             // Every identifier was fresh in cache. Same rule as above: no request, so

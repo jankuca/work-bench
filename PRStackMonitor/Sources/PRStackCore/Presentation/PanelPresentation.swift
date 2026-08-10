@@ -41,7 +41,9 @@ public enum SourceHealth: Equatable, Sendable {
 
 /// Everything outside the snapshot that the panel chrome reads.
 ///
-/// `SyncEngine` owns this at M8; M3 sets it from a single fetch.
+/// Assembled by whoever is polling: the health of each source, when the last poll
+/// succeeded, and — since M8 — how often the next one is due, which is what the footer
+/// measures staleness against.
 public struct PanelStatus: Equatable, Sendable {
     public var github: SourceHealth
     /// Linear's health is a **footer condition, never a banner and never an icon state**.
@@ -55,17 +57,27 @@ public struct PanelStatus: Equatable, Sendable {
     public var lastSyncedAt: Date?
     /// A poll in flight. The header's refresh control spins on it.
     public var isRefreshing: Bool
+    /// The interval the scheduler is currently polling at (``SyncSchedule/interval``), or
+    /// nil while it is suspended or before one has been chosen.
+    ///
+    /// The footer reads it so that "stale" means *behind its own schedule* rather than a
+    /// fixed age: five-minute-old data is current when the machine is on battery at 15
+    /// minutes, and a laptop that woke from an overnight sleep is stale the moment it does,
+    /// without waiting for a threshold to expire (IMPLEMENTATION_PLAN §4).
+    public var pollInterval: TimeInterval?
 
     public init(
         github: SourceHealth,
         linear: SourceHealth = .unconfigured,
         lastSyncedAt: Date? = nil,
-        isRefreshing: Bool = false
+        isRefreshing: Bool = false,
+        pollInterval: TimeInterval? = nil
     ) {
         self.github = github
         self.linear = linear
         self.lastSyncedAt = lastSyncedAt
         self.isRefreshing = isRefreshing
+        self.pollInterval = pollInterval
     }
 
     public static let unconfigured = PanelStatus(github: .unconfigured, linear: .unconfigured)
@@ -86,6 +98,17 @@ public struct PanelStatus: Equatable, Sendable {
     /// missed polls at M8's foreground interval, which is the point at which "synced 6m
     /// ago" stops being a detail and starts being a warning.
     public static let staleAfter: TimeInterval = 5 * 60
+
+    /// How old the data may be before the footer calls it stale: one poll interval, but
+    /// never less than ``staleAfter``.
+    ///
+    /// The floor is what keeps a 30-second panel-open interval from declaring 40-second-old
+    /// rows stale — a single skipped tick is not a problem worth a warning. Above it the
+    /// interval leads, so a cadence the user cannot see is not silently held to a
+    /// five-minute promise it never made.
+    public var staleThreshold: TimeInterval {
+        max(PanelStatus.staleAfter, pollInterval ?? 0)
+    }
 }
 
 // MARK: - Pieces
@@ -378,7 +401,7 @@ public struct PanelPresentation: Equatable, Sendable {
         // A failed poll does not by itself make what is on screen stale: a poll that
         // failed four seconds ago still leaves four-second-old rows. The clock decides,
         // and an unreachable source only means the clock will keep running.
-        if !status.github.isConnected || now.timeIntervalSince(synced) >= PanelStatus.staleAfter {
+        if !status.github.isConnected || now.timeIntervalSince(synced) >= status.staleThreshold {
             return (.inFlight, "stale · " + age)
         }
         return (.success, "synced " + RelativeTime.past(since: synced, now: now))

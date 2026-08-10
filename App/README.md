@@ -92,9 +92,8 @@ why there is no entitlements file yet.
 ## What is here, and what is not
 
 The panel is real as of M3: design 2a's tokens, rows, spine, sections, header and footer,
-plus the all-clear and first-run/disconnected states. It renders live pull requests — the
-popover polls GitHub once at launch, once when it opens, and once per press of the refresh
-control.
+plus the all-clear and first-run/disconnected states. It renders live pull requests, on
+the schedule `SyncEngine` keeps (see below).
 
 The menu bar icon is real as of M4. It is drawn here rather than picked from SF Symbols
 (`StatusItemIcon.swift`, geometry from design `1f`), but *which* state it draws is decided
@@ -132,6 +131,26 @@ per-event toggles. Every edit is written as it is made; the poll it implies come
 window closes, so typing a tag glob does not spend a request per keystroke. A credential
 change is the exception and polls immediately — that is how the reconnect banner comes down.
 
+Polling is scheduled as of M8. `SyncEngine/` holds one timer, never a timer per condition:
+it watches system sleep *and* display sleep (two subscriptions — `willSleep` does not fire
+when only the screen goes dark), reads the power source through IOKit, and asks
+`SyncPolicy` which of the plan's six intervals applies. The table is strictly ordered and
+lives in `PRStackCore`, so CI pins the ordering that actually matters — asleep and low
+battery outrank an open panel, and below them the fastest applicable interval wins.
+
+Failure is per source. A GitHub timeout backs GitHub off with jittered exponential delay
+and leaves the rows on screen under a footer that has gone stale; an expired Linear key
+never touches the icon, the banner or the badge, and a backing-off Linear still resolves
+every cached identifier — what it defers is the request, not the panel. Manual refresh
+polls now and restarts the interval without changing which one applies; a credential change
+in Settings does the same and clears both backoffs, which is how a reconnect takes effect
+immediately.
+
+"Stale" in the footer now means *behind its own schedule* rather than older than a fixed
+age, with five minutes as the floor: six-minute-old rows are current when the machine is on
+battery at fifteen-minute intervals, and a laptop that wakes from an overnight sleep says so
+the moment it does.
+
 Almost none of *what* it shows is decided in this package. `PRStackCore`'s presentation
 layer resolves every row down to a title, an emphasis tier, a semantic tone, a meta line
 and a release track; `PanelUI` turns those into geometry and colour. That split is what
@@ -140,9 +159,6 @@ build.
 
 Not here yet:
 
-- **Sync** (M8). `PanelController` polls at launch, on open and on demand. There is no
-  interval table, no sleep or battery awareness, no backoff, and no per-source reconnect
-  banner beyond the one an expired GitHub token raises.
 - **Polish** (M9). The dark palette exists in `Tokens.swift` and the rows carry
   accessibility labels, but neither has had its pass.
 

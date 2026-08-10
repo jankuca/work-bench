@@ -473,6 +473,45 @@ final class PanelPresentationTests: XCTestCase {
         XCTAssertEqual(current.footer.syncText, "synced 34s ago")
     }
 
+    /// Stale means *behind its own schedule*, not older than a fixed age (M8). The
+    /// five-minute floor is what keeps a skipped 30-second tick from raising a warning;
+    /// above it the current interval leads, so a cadence the user cannot see is not held
+    /// to a promise it never made.
+    func testStalenessMeasuresAgainstTheCurrentInterval() {
+        let model = PanelModel(
+            sections: [],
+            showsRepoNames: false,
+            attentionCount: 0,
+            unreadCount: 0,
+            summary: PanelSummary(openCount: 1, shippingCount: 0)
+        )
+        func footer(interval: TimeInterval?, syncedAgo: TimeInterval) -> FooterPresentation {
+            PanelPresentation.make(
+                model: model,
+                status: PanelStatus(
+                    github: .connected,
+                    linear: .connected,
+                    lastSyncedAt: now.addingTimeInterval(-syncedAgo),
+                    pollInterval: interval
+                ),
+                now: now
+            ).footer
+        }
+
+        // Panel open at 30 s: three missed ticks are still inside the floor.
+        XCTAssertEqual(footer(interval: 30, syncedAgo: 90).syncTone, .success)
+        // On battery at 15 minutes: six-minute-old rows are exactly on schedule, and the
+        // fixed threshold alone would have called them stale.
+        XCTAssertEqual(footer(interval: 15 * 60, syncedAgo: 6 * 60).syncText, "synced 6m ago")
+        XCTAssertEqual(
+            footer(interval: 15 * 60, syncedAgo: 16 * 60).syncText,
+            "stale · last synced 16m ago"
+        )
+        // Suspended — asleep — carries no interval, so the floor decides. A laptop that
+        // woke from an overnight sleep reads stale immediately.
+        XCTAssertEqual(footer(interval: nil, syncedAgo: 8 * 3600).syncTone, .inFlight)
+    }
+
     /// Three strings nothing else reaches: the footer before any poll has succeeded.
     func testFooterBeforeTheFirstSync() throws {
         let unconfigured = try panel("empty-state", github: .unconfigured, syncedAgo: nil)
