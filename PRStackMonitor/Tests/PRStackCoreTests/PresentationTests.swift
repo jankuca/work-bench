@@ -125,7 +125,9 @@ final class RowPresentationTests: XCTestCase {
 
         let presented = try present(pr, local: local)
 
-        XCTAssertEqual(presented.meta.last?.text, "snoozed 2h")
+        // Also the no-ticket case of where the line ends: at the snooze, not at the age,
+        // since the snooze token outlives the identifier this row does not have.
+        XCTAssertEqual(presented.meta.map(\.text), ["#100", "merge conflict", "3h", "snoozed 2h"])
         // Snooze silences the ask without hiding the status.
         XCTAssertFalse(presented.isTinted)
         XCTAssertEqual(presented.emphasis, .dim)
