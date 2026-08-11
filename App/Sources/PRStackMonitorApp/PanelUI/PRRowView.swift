@@ -321,6 +321,10 @@ struct MetaLineView: View {
             .menuIndicator(.hidden)
             .fixedSize()
             .foregroundStyle(Tokens.textTertiary.color)
+            // Pulled back against the stack's own spacing: the affix belongs to the
+            // identifier in front of it, not to the line, so it sits a third of a gap
+            // away rather than the full one every other token gets.
+            .padding(.leading, Tokens.Row.metaAffixGap - Tokens.Row.metaGap)
 
         case .repository:
             // Truncates before the number does: the number is what the row is called.

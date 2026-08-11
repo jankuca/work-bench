@@ -790,7 +790,8 @@ select all) at launch. It is a dispatch table, not a UI decision — nothing in 
   number leads because it is what the row is called and the one token every row carries; the ticket trails
   because it points *out* of the panel. The affix is tertiary grey so it reads as a count, not a second link,
   and it is set at the line's own 11 pt — a menu's title otherwise takes the system control size and renders a
-  point or two larger than the tokens beside it. When `primaryIssue` is nil the identifier token is **omitted
+  point or two larger than the tokens beside it. It also sits a **third of the line's gap** from the identifier
+  rather than the full one: it is a suffix on `BIL-312`, and at the token gap the two read as two tokens. When `primaryIssue` is nil the identifier token is **omitted
   entirely** — no placeholder, no `Other` label — and the line simply ends at the age. This matches design 2a,
   where the Other-section row reads `#4051 · merge conflict · 2d`. The section heading already says `Other`;
   repeating it per row would spend the meta line's scarcest asset on the absence of information. Clicking the
