@@ -165,6 +165,17 @@ final class CodableTests: XCTestCase {
             ReadDigest.make(for: pullRequest, releaseStage: .unmerged).value,
             "rd=changesRequested;ck=failing:2;mg=mergeable;cc=7;lc=1767950000;rs=unmerged"
         )
+
+        // A draft appends one part and changes nothing else, which is what keeps the digest
+        // above — every pull request that is not a draft — stable across the build that
+        // introduced drafts. Marking this one ready for review turns it back into the
+        // string above, and that difference is the unread dot.
+        var wip = pullRequest
+        wip.isDraft = true
+        XCTAssertEqual(
+            ReadDigest.make(for: wip, releaseStage: .unmerged).value,
+            "rd=changesRequested;ck=failing:2;mg=mergeable;cc=7;lc=1767950000;rs=unmerged;dr=1"
+        )
     }
 
     func testPullRequestDecodesWithMinimalFixtureFields() throws {

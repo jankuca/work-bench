@@ -1,7 +1,7 @@
 import SwiftUI
 import PRStackCore
 
-/// `Pull requests` · `10 in review · 3 shipping` · refresh · overflow menu.
+/// `Pull requests` · `10 in review · 2 drafts · 3 shipping` · refresh · overflow menu.
 struct PanelHeaderView: View {
     var header: HeaderPresentation
     var onRefresh: () -> Void

@@ -27,7 +27,11 @@ FIXTURE ?= panel-2a
 # LINEAR_CACHE points the identifier → project cache at a file, so running `make fetch`
 # twice shows the second run answering from cache. NO_LINEAR=1 skips resolution entirely,
 # which is what the panel looks like with no Linear key configured.
+#
+# DRAFTS=1 adds draft pull requests, which is the app's `Show draft pull requests` setting:
+# without it `-is:draft` is part of the search and drafts cost neither points nor pages.
 REPOS ?=
+DRAFTS ?=
 PAGE_SIZE ?= 50
 EMIT ?=
 LINEAR_CACHE ?=
@@ -63,7 +67,7 @@ help:
 	@echo "make test       run the portable core's tests"
 	@echo "make dump       derive a fixture and print the panel (FIXTURE=$(FIXTURE))"
 	@echo "make panel      same fixture, rendered as the row view reads it"
-	@echo "make fetch      derive live GitHub + Linear data (REPOS='o/a o/b' PAGE_SIZE=$(PAGE_SIZE))"
+	@echo "make fetch      derive live GitHub + Linear data (REPOS='o/a o/b' PAGE_SIZE=$(PAGE_SIZE) DRAFTS=1)"
 	@echo "make releases   same, plus release tracking against STATE=$(STATE)"
 	@echo "make clean      remove build products"
 
@@ -133,6 +137,7 @@ panel:
 fetch:
 	@swift run --package-path $(CORE_PACKAGE) prstack-dump --github \
 		--page-size $(PAGE_SIZE) \
+		$(if $(DRAFTS),--drafts,) \
 		$(foreach repo,$(REPOS),--repo $(repo)) \
 		$(if $(EMIT),--emit-snapshot $(EMIT),) \
 		$(if $(LINEAR_CACHE),--linear-cache $(LINEAR_CACHE),) \
@@ -146,6 +151,7 @@ releases:
 	@swift run --package-path $(CORE_PACKAGE) prstack-dump --github --releases \
 		--page-size $(PAGE_SIZE) \
 		--state $(STATE) \
+		$(if $(DRAFTS),--drafts,) \
 		$(foreach repo,$(REPOS),--repo $(repo)) \
 		$(foreach pattern,$(TAG_PATTERNS),--tag-pattern $(pattern)) \
 		$(if $(LINEAR_CACHE),--linear-cache $(LINEAR_CACHE),) \

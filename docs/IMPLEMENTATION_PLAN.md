@@ -236,12 +236,16 @@ closed PR carries whatever stale review metadata it had at close, and must not f
 
 Then, for open PRs only, first match wins:
 
-4. `conflicted` — mergeable == conflicting → red
-5. `changesRequested` — review decision → red
-6. `checksFailing` — check rollup failing → red
-7. `blocked(on: PRID)` — parent PR still open → neutral grey, meta reads `waiting on #NNNN`
-8. `approved` / `readyToMerge` — green (`readyToMerge` when approved **and** checks green **and** mergeable)
-9. `inReview` — default fallback
+4. `draft` — `isDraft`, and therefore only ever when `Show draft pull requests` is on (§3) → neutral grey,
+   meta reads `draft`. Ahead of 5–7 deliberately: a draft's conflict and its red checks are not a verdict on
+   anything that has been offered to anyone, and resolving it first is what keeps drafts out of **Attention**
+   below
+5. `conflicted` — mergeable == conflicting → red
+6. `changesRequested` — review decision → red
+7. `checksFailing` — check rollup failing → red
+8. `blocked(on: PRID)` — parent PR still open → neutral grey, meta reads `waiting on #NNNN`
+9. `approved` / `readyToMerge` — green (`readyToMerge` when approved **and** checks green **and** mergeable)
+10. `inReview` — default fallback
 
 Fixtures pin the ordering hazard directly: a closed PR with no review metadata, and a closed PR carrying a
 stale `changesRequested` decision, must both resolve to `closed` and land in Done.
@@ -250,9 +254,9 @@ Invariant from the PRD (§5.2): *a row that needs attention always has a matchin
 appears in a tinted row.* Encode this as a unit test over all `RowStatus` × tint combinations, not as a
 convention.
 
-**Attention** = statuses 4–6, and only when the row is not snoozed. That set drives the warm tint, the bolder
-title weight, and the red badge count. Note 7 (`blocked`) is deliberately **not** attention — it's the layer
-below's problem.
+**Attention** = statuses 5–7, and only when the row is not snoozed. That set drives the warm tint, the bolder
+title weight, and the red badge count. Note 8 (`blocked`) is deliberately **not** attention — it's the layer
+below's problem, and neither is 4 (`draft`), which is the author's own.
 
 Under tags-only release tracking (§3) there is no deploy-failure signal, so no deploy state can reach
 attention. See the note there — this is the one place the model is narrower than the PRD.
@@ -366,7 +370,10 @@ run ordering, since API order alone would let whole runs swap places between pol
 ### Unread
 
 Per PR, store a digest of `(reviewDecision, checkRollup, mergeable, commentCount, lastCommentAt, releaseStage)`
-at the moment the panel was last open. Unread = digest differs. Opening the panel rewrites all digests;
+at the moment the panel was last open. Unread = digest differs. A draft appends one more part, **only while
+it is a draft** — so marking one ready for review changes the digest and lights the dot, which is how that
+transition gets noticed when the row was already on screen, while every non-draft digest stays byte for byte
+what it was and an upgrade does not mark a whole panel unread. Opening the panel rewrites all digests;
 `Mark all read` does the same on demand. Dismissal (Done rows) is permanent — a tombstone set that
 suppresses the PR forever, even if a later event touches it (PRD §5.3).
 
@@ -386,6 +393,17 @@ behind a `TokenProvider`.
 - **All** — every repo the user authors PRs in. Query qualifier is just `is:pr author:@me -is:draft`.
 - **Selected** — a checklist of repos. Multiple `repo:` qualifiers in one search query are OR'd, so this is
   still a single request, not one per repo.
+
+**Drafts** are a third setting on the same tab, `Show draft pull requests`, **off by default** — the panel is
+the PRs that have entered review (PRD §1), and work in progress is opt-in. It is one qualifier: off appends
+`-is:draft` to both searches, so a draft costs neither a point nor a page; on drops it from both. Not
+account-scoped, unlike the repo keys — it says what the user wants to look at, which does not change when the
+token does. Drafts that do arrive get their **own row status**, resolved *ahead* of conflicted /
+changes-requested / checks-failing rather than after them: a draft is not in review, cannot merge, and its red
+checks are not a verdict on anything that has been offered to anyone. That ordering is what keeps drafts out of
+the attention set, and therefore out of the icon and the events it drives — which is what makes the setting
+safe to turn on. The header counts them separately (`8 in review · 2 drafts · 3 shipping`) because `in review`
+has to mean in review.
 
 Settings shows the same list either way: the union of repos seen in recent results, each with a checkbox,
 plus the All/Selected toggle. Switching to Selected pre-checks whatever is currently visible, so the mode
@@ -415,6 +433,7 @@ One GraphQL search per poll (not per repo), **paginated to completion**:
 ```graphql
 rateLimit { cost remaining resetAt }
 search(query: "is:pr author:@me -is:draft <repo qualifiers>", type: ISSUE, first: 50, after: $cursor) {
+# `-is:draft` is dropped from the query when `Show draft pull requests` is on.
   pageInfo { hasNextPage endCursor }
   nodes { ... on PullRequest {
     number title body url headRefName baseRefName isDraft state createdAt updatedAt mergedAt
@@ -737,8 +756,9 @@ badge on the top-right corner", and that survives.
 ### Panel
 
 440 pt content width, height to content up to 800 pt, then scrolls. Structure, top to bottom: header
-(`Pull requests` · `10 in review · 3 shipping` · refresh · overflow menu) → scrolling body → footer (sync
-dot, `synced 34s ago`, `Mark all read`, `Settings`).
+(`Pull requests` · `10 in review [· 2 drafts] · 3 shipping` — the bracketed count is there only when drafts
+are on — · refresh · overflow menu) → scrolling body → footer (sync dot, `synced 34s ago`, `Mark all read`,
+`Settings`).
 
 The overflow menu carries `Mark all read`, `Settings…` and **`Quit`**. ⌘Q reaches the same place, but only
 while the app is active, and an app whose entire UI is a popover spends most of its life not being active —

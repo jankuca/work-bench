@@ -50,10 +50,23 @@ public struct ReadDigest: Hashable, Sendable, Codable {
     }
 
     /// The digest of `(reviewDecision, checkRollup, mergeable, commentCount,
-    /// lastCommentAt, releaseStage)` — IMPLEMENTATION_PLAN §2.
+    /// lastCommentAt, releaseStage)`, plus draft state — IMPLEMENTATION_PLAN §2.
+    ///
+    /// The draft marker is **only present while the pull request is a draft**, rather than
+    /// being a seventh `dr=` part that is always there. Two things fall out of that, and
+    /// both are the point:
+    ///
+    /// - With drafts off, every digest is byte for byte what it was before drafts existed,
+    ///   so upgrading does not invalidate the persisted digests and mark the whole panel
+    ///   unread for people who never asked for this.
+    /// - Marking a draft ready for review changes the digest with nothing else about the
+    ///   pull request having moved, which is what puts the unread dot on it. That
+    ///   transition is one the panel is *for* — with drafts off it shows up as the row
+    ///   appearing, and with drafts on the row is already there, so it needs to be said
+    ///   some other way.
     public static func make(for pullRequest: PullRequest, releaseStage: ReleaseStage) -> ReadDigest {
         let lastComment = pullRequest.lastCommentAt.map { String(Int($0.timeIntervalSince1970.rounded())) } ?? "-"
-        let parts = [
+        var parts = [
             "rd=" + (pullRequest.reviewDecision?.rawValue ?? "-"),
             "ck=" + pullRequest.checks.digestToken,
             "mg=" + pullRequest.mergeable.rawValue,
@@ -61,6 +74,7 @@ public struct ReadDigest: Hashable, Sendable, Codable {
             "lc=" + lastComment,
             "rs=" + releaseStage.digestToken
         ]
+        if pullRequest.isDraft { parts.append("dr=1") }
         return ReadDigest(value: parts.joined(separator: ";"))
     }
 }

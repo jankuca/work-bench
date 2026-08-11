@@ -23,6 +23,7 @@ enum GitHubSource {
         do {
             fetch = try await client.fetchPullRequests(
                 scope: options.scope,
+                includesDrafts: options.includesDrafts,
                 extraQualifiers: options.qualifiers
             )
         } catch let error as GitHubError {
@@ -65,7 +66,12 @@ enum GitHubSource {
 
         let result: GitHubPollResult
         do {
-            result = try await pipeline.run(scope: options.scope, local: local, now: now)
+            result = try await pipeline.run(
+                scope: options.scope,
+                includesDrafts: options.includesDrafts,
+                local: local,
+                now: now
+            )
         } catch let error as GitHubError {
             throw DumpFailure(describe(error))
         }

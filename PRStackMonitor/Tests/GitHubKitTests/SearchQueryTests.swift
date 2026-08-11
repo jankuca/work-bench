@@ -58,6 +58,29 @@ final class SearchQueryTests: XCTestCase {
         XCTAssertTrue(query.droppedRepositories.isEmpty)
     }
 
+    /// The default is the PRD's definition of the panel — what has entered review — so the
+    /// exclusion has to be in the query nobody asked anything of.
+    func testDraftsAreExcludedUnlessAskedFor() throws {
+        let excluded = try XCTUnwrap(SearchQuery.build(scope: .all, includesDrafts: false))
+        XCTAssertEqual(excluded.text, "is:pr author:@me -is:draft")
+
+        let included = try XCTUnwrap(SearchQuery.build(scope: .all, includesDrafts: true))
+        // Dropped from the query rather than filtered out of the results: with drafts on,
+        // GitHub is being asked a wider question, not the same one with a wider answer.
+        XCTAssertEqual(included.text, "is:pr author:@me")
+    }
+
+    func testDraftsSurviveEveryOtherQualifier() throws {
+        let query = try XCTUnwrap(
+            SearchQuery.build(
+                scope: .selected(["acme/billing"]),
+                includesDrafts: true,
+                extraQualifiers: ["is:open"]
+            )
+        )
+        XCTAssertEqual(query.text, "is:pr author:@me repo:acme/billing is:open")
+    }
+
     func testExtraQualifiersAreAppended() throws {
         let all = try XCTUnwrap(SearchQuery.build(scope: .all, extraQualifiers: ["is:open"]))
         XCTAssertEqual(all.text, "is:pr author:@me -is:draft is:open")

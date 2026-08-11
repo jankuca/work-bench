@@ -80,7 +80,11 @@ public enum Derivation {
             attentionCount: rows.filter(\.isAttention).count,
             unreadCount: rows.filter(\.isUnread).count,
             summary: PanelSummary(
-                openCount: rows.filter { $0.pullRequest.state == .open }.count,
+                // `status != .draft` rather than `!pullRequest.isDraft`: the status is the
+                // one derived truth about a row, and it already accounts for a draft that
+                // was closed — which is a Done row and belongs in neither count.
+                openCount: rows.filter { $0.pullRequest.state == .open && $0.status != .draft }.count,
+                draftCount: rows.filter { $0.status == .draft }.count,
                 shippingCount: rows.filter { $0.status == .merged }.count
             )
         )

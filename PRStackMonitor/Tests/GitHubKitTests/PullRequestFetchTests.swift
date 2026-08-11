@@ -201,6 +201,17 @@ final class PullRequestFetchTests: XCTestCase {
         )
     }
 
+    func testDraftPreferenceReachesTheQuery() async throws {
+        let transport = StubTransport(responses: [
+            .json(SearchPage.json(numbers: [4012], hasNextPage: false, endCursor: nil))
+        ])
+        _ = try await client(transport).fetchPullRequests(scope: .all, includesDrafts: true)
+        XCTAssertEqual(
+            try transport.requestVariables(0)["query"] as? String,
+            "is:pr author:@me"
+        )
+    }
+
     // MARK: - Handing off to derivation
 
     func testTheFetchBecomesASnapshotDerivationCanRead() async throws {

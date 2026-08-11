@@ -67,24 +67,32 @@ extension GitHubClient {
     /// The open half of a poll — the rows the panel is mostly about.
     public func fetchOpenPullRequests(
         scope: RepoScope,
+        includesDrafts: Bool = false,
         startingAfter cursor: String? = nil
     ) async throws -> PullRequestFetch {
         try await fetchPullRequests(
             scope: scope,
+            includesDrafts: includesDrafts,
             extraQualifiers: MergedPullRequestSearch.openQualifiers,
             startingAfter: cursor
         )
     }
 
     /// The closed half, bounded by the oldest merge still waiting for a tag.
+    ///
+    /// `includesDrafts` reaches this half too, and it is not redundant: a merge is never a
+    /// draft, but a draft abandoned and closed is, and Done showing it while the open list
+    /// showed the same pull request an hour earlier is the consistent reading.
     public func fetchClosedPullRequests(
         scope: RepoScope,
+        includesDrafts: Bool = false,
         unbound: [PRID: UnboundMerge],
         now: Date,
         startingAfter cursor: String? = nil
     ) async throws -> PullRequestFetch {
         try await fetchPullRequests(
             scope: scope,
+            includesDrafts: includesDrafts,
             extraQualifiers: MergedPullRequestSearch.qualifiers(unbound: unbound, now: now),
             startingAfter: cursor
         )

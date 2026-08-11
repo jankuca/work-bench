@@ -134,8 +134,9 @@ struct CredentialField: View {
     }
 }
 
-/// Repository scope and the per-repository release-tag glob, in one list because they are
-/// two columns of the same question.
+/// What the polls cover: which repositories, whether drafts count, and the per-repository
+/// release-tag glob. The scope and the glob share one list because they are two columns of
+/// the same question; drafts sit above it because they narrow the same search.
 struct RepositoriesSettingsView: View {
     @ObservedObject var model: SettingsModel
 
@@ -150,6 +151,16 @@ struct RepositoriesSettingsView: View {
             } footer: {
                 Text("Both modes cost one search request per poll — selecting fewer repositories "
                      + "does not make the app faster, only quieter.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Show draft pull requests", isOn: drafts)
+            } footer: {
+                Text("Off by default: the panel is about pull requests that have entered review. "
+                     + "Drafts appear as their own status, never count towards attention, and "
+                     + "arrive with the next poll — closing this window starts one.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             }
@@ -200,6 +211,10 @@ struct RepositoriesSettingsView: View {
     /// pre-checking rule (§3) in the model rather than in the binding.
     private var scope: Binding<Bool> {
         Binding(get: { model.isAllRepositories }, set: { model.setAllRepositories($0) })
+    }
+
+    private var drafts: Binding<Bool> {
+        Binding(get: { model.showsDrafts }, set: { model.setShowsDrafts($0) })
     }
 }
 

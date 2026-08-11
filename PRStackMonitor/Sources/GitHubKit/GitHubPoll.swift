@@ -31,10 +31,18 @@ public struct GitHubPoll {
         self.recovery = recovery
     }
 
-    public func run(scope: RepoScope, local: LocalState, now: Date) async throws -> GitHubPollResult {
-        let open = try await client.fetchOpenPullRequests(scope: scope)
+    /// `includesDrafts` is the Settings preference, read once per poll and applied to both
+    /// searches so the two halves cannot disagree about what a poll covers.
+    public func run(
+        scope: RepoScope,
+        includesDrafts: Bool = false,
+        local: LocalState,
+        now: Date
+    ) async throws -> GitHubPollResult {
+        let open = try await client.fetchOpenPullRequests(scope: scope, includesDrafts: includesDrafts)
         let closed = try await client.fetchClosedPullRequests(
             scope: scope,
+            includesDrafts: includesDrafts,
             unbound: local.unboundMerges,
             now: now
         )
@@ -107,8 +115,8 @@ public struct GitHubPoll {
     }
 }
 
-/// What ``GitHubPoll/run(scope:local:now:)`` produced: the rows, and everything the caller
-/// has to fold back into `LocalState` and the footer.
+/// What ``GitHubPoll/run(scope:includesDrafts:local:now:)`` produced: the rows, and
+/// everything the caller has to fold back into `LocalState` and the footer.
 public struct GitHubPollResult: Equatable, Sendable {
     public var viewerLogin: String
     /// Open first, then closed, de-duplicated. Linear resolution runs over these before

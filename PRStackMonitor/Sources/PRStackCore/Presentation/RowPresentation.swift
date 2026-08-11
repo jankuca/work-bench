@@ -334,6 +334,8 @@ public struct RowPresentation: Equatable, Sendable {
             return "released in \(tag)"
         case .merged:
             return "awaiting release"
+        case .draft:
+            return "draft"
         case .conflicted:
             return "merge conflict"
         case .changesRequested:
@@ -434,7 +436,10 @@ public struct RowPresentation: Equatable, Sendable {
         // the "nothing for you here" cases rather than staying at full weight.
         if row.isSuppressed || row.status.belongsInDone { return .dim }
         switch row.status {
-        case .merged, .blocked: return .dim
+        // A draft dims with the rest of the "present but not asking" cases. It is the
+        // user's own unfinished work sitting alongside pull requests that are waiting on
+        // someone, and full weight would put it ahead of them.
+        case .merged, .blocked, .draft: return .dim
         default: return .normal
         }
     }
@@ -464,7 +469,7 @@ extension StatusTone {
             self = .success
         case .merged:
             self = .merged
-        case .closed, .blocked, .inReview:
+        case .closed, .blocked, .inReview, .draft:
             self = .neutral
         }
     }
@@ -485,7 +490,9 @@ extension ChipGlyph {
         switch status {
         case .conflicted:
             self = .slash
-        case .blocked, .closed:
+        case .blocked, .closed, .draft:
+            // The bar is "nothing is happening here", which is exactly a draft: it is not
+            // waiting on a reviewer, it is waiting on its author.
             self = .bar
         default:
             self = .dot
