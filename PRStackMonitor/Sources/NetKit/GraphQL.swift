@@ -123,9 +123,24 @@ public struct GraphQLError: Decodable, Equatable, Sendable, CustomStringConverti
         }
     }
 
+    /// `FORBIDDEN: Resource not accessible (at search.nodes.2.commits...statusCheckRollup)`.
+    ///
+    /// The path is the whole reason this is worth more than `message`. A partial failure
+    /// arrives as one error per affected node, all carrying the same sentence, and without
+    /// the path there is nothing in the output to say *which field* the server refused —
+    /// forty identical `FORBIDDEN` lines name neither the permission that is missing nor
+    /// the selection to drop. ``path`` is already parsed for exactly this; it was simply
+    /// never rendered.
+    ///
+    /// ``code`` stands in when ``type`` is absent, which is how Linear classifies: it sends
+    /// `ENTITY_NOT_FOUND` in `extensions` and no top-level `type`, so a resolver failure
+    /// would otherwise print as a bare sentence with no classification at all.
     public var description: String {
-        guard let type else { return message }
-        return "\(type): \(message)"
+        var text = (type ?? code).map { "\($0): \(message)" } ?? message
+        if let path, !path.isEmpty {
+            text += " (at \(path.joined(separator: ".")))"
+        }
+        return text
     }
 }
 

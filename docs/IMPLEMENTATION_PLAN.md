@@ -383,10 +383,20 @@ suppresses the PR forever, even if a later event touches it (PRD §5.3).
 
 ### GitHub
 
-Auth: **fine-grained personal access token**, pasted in Settings, scopes read-only (`Contents: read`,
-`Pull requests: read`, `Metadata: read` — Contents covers tags and commit comparison). No OAuth app, no callback
-URL, no Apple involvement. Device Flow can replace this later without touching the sync layer — hide it all
-behind a `TokenProvider`.
+Auth: **classic personal access token**, pasted in Settings, scope `repo` (or `public_repo` when every
+repository in scope is public). No OAuth app, no callback URL, no Apple involvement. Device Flow can replace
+this later without touching the sync layer — hide it all behind a `TokenProvider`.
+
+This was originally specified as a read-only fine-grained token (`Contents: read`, `Pull requests: read`,
+`Metadata: read`) and that is not sufficient: the fine-grained token satisfies the search and then fails
+`statusCheckRollup` on every node with FORBIDDEN, costing the panel its CI status entirely. Per GitHub Support,
+Checks cannot be granted to a fine-grained token at all — the capability existed, hit edge cases, and was
+withdrawn — so a GitHub App is the only alternative to a classic token.
+
+The cost of the switch is that `repo` is read/write over all private repositories, against a fine-grained token
+that was read-only and per-repository; classic scopes have no read-only tier covering checks. The sync layer
+only reads. A GitHub App installation token is the way to get checks back *and* narrow the grant, and is the
+right target once the panel is otherwise settled.
 
 **Repo scope** is a two-mode setting:
 

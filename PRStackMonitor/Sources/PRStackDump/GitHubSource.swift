@@ -158,8 +158,14 @@ enum GitHubSource {
             no GitHub token found.
 
             Pass --token, export PRSTACK_GITHUB_TOKEN, or store one in the login keychain.
-            A fine-grained personal access token with read-only Contents, Pull requests and
-            Metadata is all this needs (IMPLEMENTATION_PLAN §3).
+            A classic personal access token with the `repo` scope — or `public_repo` if every
+            repository in scope is public (IMPLEMENTATION_PLAN §3).
+
+            A fine-grained token authenticates and answers the search, then fails
+            `statusCheckRollup` on every pull request with FORBIDDEN, so CI status comes back
+            empty. GitHub Support's answer is that Checks cannot be granted to a fine-grained
+            token at all — the capability existed, hit edge cases, and was withdrawn — which
+            leaves a GitHub App as the only alternative to a classic token.
             """
         default:
             return error.description
