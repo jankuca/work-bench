@@ -239,6 +239,28 @@ final class PullRequestMapperTests: XCTestCase {
         XCTAssertEqual(pullRequest.reviews.first { $0.login == "kai" }?.state, .changesRequested)
     }
 
+    /// The author exclusion compares against a login, and a team is named by its slug.
+    /// A team whose slug happens to match the author's login is a different reviewer.
+    func testATeamSlugMatchingTheAuthorLoginIsStillRequested() {
+        let requests = ReviewRequestConnectionDTO(nodes: [
+            ReviewRequestDTO(requestedReviewer: RequestedReviewerDTO(typeName: "Team", slug: "avery"))
+        ])
+        XCTAssertEqual(
+            PullRequestMapper.reviewers(from: nil, requests: requests, author: "avery").map(\.login),
+            ["avery"]
+        )
+    }
+
+    /// The same name as a `User` request is the author asking themselves, and still goes.
+    func testTheAuthorsOwnUserRequestIsDropped() {
+        let requests = ReviewRequestConnectionDTO(nodes: [
+            ReviewRequestDTO(requestedReviewer: RequestedReviewerDTO(typeName: "User", login: "avery"))
+        ])
+        XCTAssertTrue(
+            PullRequestMapper.reviewers(from: nil, requests: requests, author: "avery").isEmpty
+        )
+    }
+
     /// A `Bot` or a `Mannequin` request answers with neither `login` nor `slug`, so there
     /// is nothing to draw an avatar from.
     func testUnnamedRequestedReviewersAreDropped() {

@@ -207,10 +207,19 @@ enum PullRequestMapper {
             // A `Bot` or a `Mannequin` reaches here with neither `login` nor `slug`
             // selected. There is nothing to draw an avatar from, so it is dropped rather
             // than rendered as a `?`.
-            guard let name = node.requestedReviewer?.name else { continue }
-            guard name != author, !seen.contains(name), names.insert(name).inserted else { continue }
+            guard let reviewer = node.requestedReviewer, let name = reviewer.name else { continue }
+            // `author` is a login, and a team's name is a slug. Comparing the two is a
+            // category error: a team whose slug happens to match the author's login is a
+            // different reviewer and stays.
+            if !reviewer.isTeam, name == author { continue }
+            // `seen` is login-keyed, so a team slug colliding with a submitted reviewer's
+            // login is dropped here. That collision is resolved the same way one layer up
+            // — `RowPresentation.badges(for:)` is keyed on `login` too — so distinguishing
+            // the namespaces here alone would move the drop without changing the row.
+            // Showing both needs the kind carried on `ReviewerState`, not a richer key.
+            guard !seen.contains(name), names.insert(name).inserted else { continue }
 
-            let avatar: String? = node.requestedReviewer?.avatarUrl
+            let avatar: String? = reviewer.avatarUrl
             result.append(
                 ReviewerState(
                     login: name,

@@ -115,6 +115,10 @@ struct RequestedReviewerDTO: Decodable, Equatable {
         }
         return nil
     }
+
+    /// Whether ``name`` is a team slug rather than a user login. The two are separate
+    /// namespaces on GitHub, so anything comparing a name against a login has to ask.
+    var isTeam: Bool { typeName == "Team" }
 }
 
 struct CommitConnectionDTO: Decodable, Equatable {
