@@ -35,8 +35,28 @@ enum Tokens {
         ///
         /// Derived rather than written out as its own hex pair so a lighter token can never
         /// drift off the hue it is meant to be a lighter version of.
+        ///
+        /// Lighter is not the same as quieter, and only one of those is symmetric across
+        /// the appearances: white is *away* from a dark field. To soften a colour rather
+        /// than lift it, use ``faded(into:light:dark:)``.
         func lightened(light lightAmount: Double, dark darkAmount: Double) -> Adaptive {
-            Adaptive(light: mixWhite(light, lightAmount), dark: mixWhite(dark, darkAmount))
+            let white = NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
+            Adaptive(
+                light: blend(light, white, lightAmount),
+                dark: blend(dark, white, darkAmount)
+            )
+        }
+
+        /// The same colour, mixed toward `surface` in each appearance.
+        ///
+        /// This is the one that means "less visible": each appearance moves toward its own
+        /// background, so the token loses contrast in both rather than gaining it in one.
+        /// Passing ``Tokens/field`` is the usual case — the surface a row sits on.
+        func faded(into surface: Adaptive, light lightAmount: Double, dark darkAmount: Double) -> Adaptive {
+            Adaptive(
+                light: blend(light, surface.light, lightAmount),
+                dark: blend(dark, surface.dark, darkAmount)
+            )
         }
     }
 
@@ -85,17 +105,16 @@ enum Tokens {
     static let amberRing = amber.lightened(light: 0.36, dark: 0.24)
     static let accentRing = accent.lightened(light: 0.36, dark: 0.24)
 
-    /// Lifted much further than the coloured rings, and deliberately not by their step.
+    /// Faded toward the field rather than lifted toward white, and much further than the
+    /// coloured rings move at all.
     ///
     /// Neutral is the ring on a reviewer who has said nothing — commented, or asked and
-    /// still thinking. It is the only ring carrying no verdict, and at the colour rings'
-    /// step it still reads as a state of its own rather than as the absence of one.
-    ///
-    /// Note this lifts toward white in *both* appearances, which is not symmetric in
-    /// effect: in light appearance the ring settles just under ``neutralChip`` and softens
-    /// against the field, while in dark appearance a lighter grey is a brighter one. That
-    /// is the intent — the two appearances agree on the colour, not on the emphasis.
-    static let neutralRing = textTertiary.lightened(light: 0.62, dark: 0.50)
+    /// still thinking. It is the only ring carrying no verdict, so it is the only one that
+    /// should recede instead of register, and receding is a different operation from
+    /// lightening: white softens a ring on the light field and *sharpens* the same ring on
+    /// the dark one. Moving each appearance toward its own background is what costs
+    /// contrast in both.
+    static let neutralRing = textTertiary.faded(into: field, light: 0.62, dark: 0.62)
 
     static let neutralChip = Adaptive(light: hex(0xE0E1E5), dark: hex(0x35353A))
     static let spineLine = Adaptive(light: hex(0xDDDEE3), dark: hex(0x3C3C42))
@@ -249,17 +268,19 @@ enum Tokens {
     }
 }
 
-/// Mixes `amount` of white into `color`, in sRGB.
+/// Moves `color` `amount` of the way to `target`, in sRGB.
 ///
-/// Component-wise rather than an HSB brightness bump: the status colours are already at or
-/// near full brightness in dark appearance, so only losing saturation makes them lighter.
-private func mixWhite(_ color: NSColor, _ amount: Double) -> NSColor {
+/// Component-wise rather than an HSB interpolation: the status colours are already at or
+/// near full brightness in dark appearance, so only losing saturation changes them, and a
+/// hue-space walk between two greys of different lightness has no hue to walk along.
+private func blend(_ color: NSColor, _ target: NSColor, _ amount: Double) -> NSColor {
     let base = color.usingColorSpace(.sRGB) ?? color
-    func lift(_ component: CGFloat) -> CGFloat { component + (1 - component) * CGFloat(amount) }
+    let onto = target.usingColorSpace(.sRGB) ?? target
+    func mix(_ from: CGFloat, _ to: CGFloat) -> CGFloat { from + (to - from) * CGFloat(amount) }
     return NSColor(
-        srgbRed: lift(base.redComponent),
-        green: lift(base.greenComponent),
-        blue: lift(base.blueComponent),
+        srgbRed: mix(base.redComponent, onto.redComponent),
+        green: mix(base.greenComponent, onto.greenComponent),
+        blue: mix(base.blueComponent, onto.blueComponent),
         alpha: base.alphaComponent
     )
 }
