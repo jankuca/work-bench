@@ -756,9 +756,9 @@ badge on the top-right corner", and that survives.
 ### Panel
 
 440 pt content width, height to content up to 800 pt, then scrolls. Structure, top to bottom: header
-(`Pull requests` · `10 in review · 3 shipping` — plus `· 2 drafts` when drafts are on — · refresh · overflow
-menu) → scrolling body → footer (sync
-dot, `synced 34s ago`, `Mark all read`, `Settings`).
+(`Pull requests` · `10 in review [· 2 drafts] · 3 shipping` — the bracketed count is there only when drafts
+are on — · refresh · overflow menu) → scrolling body → footer (sync dot, `synced 34s ago`, `Mark all read`,
+`Settings`).
 
 The overflow menu carries `Mark all read`, `Settings…` and **`Quit`**. ⌘Q reaches the same place, but only
 while the app is active, and an app whose entire UI is a popover spends most of its life not being active —
