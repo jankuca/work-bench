@@ -1,24 +1,24 @@
 header title="Pull requests" summary="6 in review · 1 shipping" refreshing=false attention=4
 section heading="Payments" count=1 muted=false clearAll=-
   row id=acme/web#4102 title="Checkout retry" emphasis=strong chip=danger/slash tint=true unread=true spine=none track=passing|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(PAY-77) repo(acme/web) num(#4102) phrase(merge conflict|danger) age(1h)
+    meta num(#4102) repo(acme/web) phrase(merge conflict|danger) age(1h) issue(PAY-77)
 section heading="Billing" count=5 muted=false clearAll=-
   row id=acme/billing#4014 title="Invoice renderer polish" emphasis=dim chip=neutral/bar tint=false unread=false spine=down track=passing|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(BIL-312) more(+1) repo(acme/billing) num(#4014) phrase(waiting on #4012|neutral) age(3h)
+    meta num(#4014) repo(acme/billing) phrase(waiting on #4012|neutral) age(3h) issue(BIL-312) more(+1)
   row id=acme/billing#4012 title="Invoice renderer" emphasis=strong chip=danger/dot tint=true unread=false spine=both track=passing|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(BIL-311) repo(acme/billing) num(#4012) phrase(changes requested|danger) age(21h)
+    meta num(#4012) repo(acme/billing) phrase(changes requested|danger) age(21h) issue(BIL-311)
   row id=acme/billing#4008 title="Invoice model" emphasis=normal chip=success/dot tint=false unread=false spine=up track=passing|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(BIL-300) repo(acme/billing) num(#4008) phrase(ready to merge|success) age(2d)
+    meta num(#4008) repo(acme/billing) phrase(ready to merge|success) age(2d) issue(BIL-300)
   row id=acme/billing#4030 title="Dunning emails" emphasis=dim chip=merged/dot tint=false unread=false spine=none track=empty|passing|empty reviewers=[]+0 dismissible=false
-    meta issue(BIL-305) repo(acme/billing) num(#4030) phrase(awaiting release|merged) age(18h)
+    meta num(#4030) repo(acme/billing) phrase(awaiting release|merged) age(18h) issue(BIL-305)
   row id=acme/billing#4001 title="Tax rounding" emphasis=strong chip=danger/dot tint=true unread=false spine=none track=failing|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(BIL-290) repo(acme/billing) num(#4001) phrase(2 checks failed|danger) age(3d)
+    meta num(#4001) repo(acme/billing) phrase(2 checks failed|danger) age(3d) issue(BIL-290)
 section heading="Other" count=1 muted=false clearAll=-
   row id=acme/web#4051 title="Bump deps" emphasis=strong chip=danger/slash tint=true unread=false spine=none track=empty|empty|empty reviewers=[]+0 dismissible=false
-    meta repo(acme/web) num(#4051) phrase(merge conflict|danger) age(2d)
+    meta num(#4051) repo(acme/web) phrase(merge conflict|danger) age(2d)
 section heading="Done" count=2 muted=true clearAll="Clear all"
   row id=acme/billing#3990 title="Refund webhook" emphasis=dim chip=success/dot tint=false unread=true spine=none track=empty|passing|passing reviewers=[]+0 dismissible=true
-    meta issue(BIL-280) repo(acme/billing) num(#3990) phrase(released in v1.4.0|success) age(5d ago)
+    meta num(#3990) repo(acme/billing) phrase(released in v1.4.0|success) age(5d ago) issue(BIL-280)
   row id=acme/web#3975 title="Old experiment" emphasis=dim chip=neutral/bar tint=false unread=false spine=none track=empty|empty|empty reviewers=[]+0 dismissible=true
-    meta repo(acme/web) num(#3975) phrase(closed without merging|neutral) age(6d ago)
+    meta num(#3975) repo(acme/web) phrase(closed without merging|neutral) age(6d ago)
 footer tone=success text="synced 34s ago" markAllRead=true

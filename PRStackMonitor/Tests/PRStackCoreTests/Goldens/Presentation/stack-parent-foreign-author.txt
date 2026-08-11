@@ -1,7 +1,7 @@
 header title="Pull requests" summary="2 in review" refreshing=false attention=0
 section heading="Billing" count=2 muted=false clearAll=-
   row id=acme/billing#501 title="On top of a colleague's branch" emphasis=normal chip=neutral/dot tint=false unread=true spine=none track=empty|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(BIL-501) num(#501) phrase(in review|neutral) age(1d)
+    meta num(#501) phrase(in review|neutral) age(1d) issue(BIL-501)
   row id=acme/billing#500 title="Shared base by a colleague" emphasis=normal chip=neutral/dot tint=false unread=true spine=none track=empty|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(BIL-500) num(#500) phrase(in review|neutral) age(1d)
+    meta num(#500) phrase(in review|neutral) age(1d) issue(BIL-500)
 footer tone=success text="synced 34s ago" markAllRead=true

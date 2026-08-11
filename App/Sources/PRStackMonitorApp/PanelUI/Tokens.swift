@@ -130,6 +130,10 @@ enum Tokens {
         static let titleSize: CGFloat = 12.5
         static let metaSize: CGFloat = 11
         static let metaGap: CGFloat = 7
+        /// What separates the `+N` affix from the identifier it counts — a third of a
+        /// `metaGap`. At the full gap the two read as two tokens, and the affix is not one:
+        /// it is a suffix on the identifier, the way `+2` is on `BIL-312`.
+        static let metaAffixGap: CGFloat = 2.5
         static let stackGap: CGFloat = 2
         static let avatar: CGFloat = 18
         static let avatarOverlap: CGFloat = -2

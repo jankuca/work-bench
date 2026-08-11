@@ -36,7 +36,7 @@ final class RowPresentationTests: XCTestCase {
 
     // MARK: - Meta line
 
-    /// Identifier · repo · number · phrase · age, in that order (IMPLEMENTATION_PLAN §5).
+    /// Number · repo · phrase · age · identifier, in that order (IMPLEMENTATION_PLAN §5).
     func testMetaLineOrder() throws {
         var pr = pullRequest()
         pr.reviewDecision = .approved
@@ -46,7 +46,23 @@ final class RowPresentationTests: XCTestCase {
 
         XCTAssertEqual(
             presented.meta.map(\.text),
-            ["BIL-312", "acme/web", "#100", "approved", "3h"]
+            ["#100", "acme/web", "approved", "3h", "BIL-312"]
+        )
+    }
+
+    /// The ticket trails the age, so a snoozed row's wake time does not separate it from
+    /// the identifier it belongs to.
+    func testIdentifierComesAfterTheSnoozeToken() throws {
+        var pr = pullRequest()
+        pr.mergeable = .conflicting
+        pr.linearIssues = [IssueRef(identifier: "BIL-312", projectID: "p", projectName: "Billing")]
+        let local = LocalState(snoozedUntil: [pr.id: now.addingTimeInterval(2 * 60 * 60)])
+
+        let presented = try present(pr, local: local)
+
+        XCTAssertEqual(
+            presented.meta.map(\.text),
+            ["#100", "merge conflict", "3h", "snoozed 2h", "BIL-312"]
         )
     }
 
@@ -58,7 +74,7 @@ final class RowPresentationTests: XCTestCase {
         XCTAssertFalse(presented.meta.contains { $0.text == "acme/web" })
     }
 
-    /// No identifier, no placeholder — the line simply starts at the number. The `Other`
+    /// No identifier, no placeholder — the line simply ends at the age. The `Other`
     /// heading already says the ticket is missing.
     func testNoIssueOmitsTheIdentifierEntirely() throws {
         var pr = pullRequest()
@@ -81,8 +97,8 @@ final class RowPresentationTests: XCTestCase {
 
         let presented = try present(pr)
 
-        XCTAssertEqual(presented.meta.first?.text, "BIL-312")
-        XCTAssertEqual(presented.meta.dropFirst().first?.text, "+2")
+        XCTAssertEqual(presented.meta.dropLast().last?.text, "BIL-312")
+        XCTAssertEqual(presented.meta.last?.text, "+2")
         XCTAssertEqual(presented.issues.map(\.identifier), ["BIL-312", "BIL-313", "SRC-9"])
     }
 
@@ -99,7 +115,7 @@ final class RowPresentationTests: XCTestCase {
         let presented = try present(pr)
 
         XCTAssertEqual(presented.issues.map(\.identifier), ["BIL-312", "ORP-1", "ORP-2"])
-        XCTAssertEqual(presented.meta.first?.text, "BIL-312")
+        XCTAssertEqual(presented.meta.dropLast().last?.text, "BIL-312")
     }
 
     func testSnoozedRowShowsItsRemainingTime() throws {
@@ -109,7 +125,9 @@ final class RowPresentationTests: XCTestCase {
 
         let presented = try present(pr, local: local)
 
-        XCTAssertEqual(presented.meta.last?.text, "snoozed 2h")
+        // Also the no-ticket case of where the line ends: at the snooze, not at the age,
+        // since the snooze token outlives the identifier this row does not have.
+        XCTAssertEqual(presented.meta.map(\.text), ["#100", "merge conflict", "3h", "snoozed 2h"])
         // Snooze silences the ask without hiding the status.
         XCTAssertFalse(presented.isTinted)
         XCTAssertEqual(presented.emphasis, .dim)

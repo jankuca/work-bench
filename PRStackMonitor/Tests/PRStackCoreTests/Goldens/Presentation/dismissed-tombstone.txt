@@ -1,5 +1,5 @@
 header title="Pull requests" summary="1 in review" refreshing=false attention=0
 section heading="Billing" count=1 muted=false clearAll=-
   row id=acme/billing#1401 title="Still open" emphasis=normal chip=neutral/dot tint=false unread=true spine=none track=empty|empty|empty reviewers=[]+0 dismissible=false
-    meta issue(BIL-1401) num(#1401) phrase(in review|neutral) age(1d)
+    meta num(#1401) phrase(in review|neutral) age(1d) issue(BIL-1401)
 footer tone=success text="synced 34s ago" markAllRead=true

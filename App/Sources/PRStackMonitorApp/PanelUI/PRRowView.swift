@@ -264,7 +264,12 @@ private extension View {
     }
 }
 
-/// The meta line: identifier · repo · #number · phrase · age.
+/// The meta line: #number · [repo ·] phrase · age · [snooze ·] [identifier · +N].
+///
+/// Everything in brackets is conditional — the repo name on the list spanning more than
+/// one repository, the snooze on a wake time still ahead, the identifier on the pull
+/// request naming a ticket at all. ``RowPresentation`` decides all of it; this view only
+/// draws what arrives.
 ///
 /// Laid out as an `HStack` of separate views rather than one attributed string because
 /// the identifier and the `+N` affix are both click targets, and because the phrase's
@@ -300,15 +305,26 @@ struct MetaLineView: View {
         case .additionalIssues:
             // Tertiary grey, so it reads as a count rather than a second link — but it
             // still opens the full list, which is the only way to reach the other tickets.
-            Menu(token.text) {
+            Menu {
                 ForEach(Array(issues.enumerated()), id: \.offset) { item in
                     Button(menuTitle(for: item.element)) { onOpenIssue(item.element) }
                 }
+            } label: {
+                // The font goes on the label, not on the `Menu`: a menu's title takes the
+                // system control size and ignores the line's environment font, which is
+                // what made `+2` render a couple of points larger than every token beside
+                // it.
+                Text(token.text)
+                    .font(Tokens.text(Tokens.Row.metaSize))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
             .foregroundStyle(Tokens.textTertiary.color)
+            // Pulled back against the stack's own spacing: the affix belongs to the
+            // identifier in front of it, not to the line, so it sits a third of a gap
+            // away rather than the full one every other token gets.
+            .padding(.leading, Tokens.Row.metaAffixGap - Tokens.Row.metaGap)
 
         case .repository:
             // Truncates before the number does: the number is what the row is called.
