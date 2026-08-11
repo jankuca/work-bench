@@ -84,7 +84,18 @@ enum Tokens {
     static let mergedRing = mergedPurple.lightened(light: 0.36, dark: 0.24)
     static let amberRing = amber.lightened(light: 0.36, dark: 0.24)
     static let accentRing = accent.lightened(light: 0.36, dark: 0.24)
-    static let neutralRing = textTertiary.lightened(light: 0.36, dark: 0.24)
+
+    /// Lifted much further than the coloured rings, and deliberately not by their step.
+    ///
+    /// Neutral is the ring on a reviewer who has said nothing — commented, or asked and
+    /// still thinking. It is the only ring carrying no verdict, and at the colour rings'
+    /// step it still reads as a state of its own rather than as the absence of one.
+    ///
+    /// Note this lifts toward white in *both* appearances, which is not symmetric in
+    /// effect: in light appearance the ring settles just under ``neutralChip`` and softens
+    /// against the field, while in dark appearance a lighter grey is a brighter one. That
+    /// is the intent — the two appearances agree on the colour, not on the emphasis.
+    static let neutralRing = textTertiary.lightened(light: 0.62, dark: 0.50)
 
     static let neutralChip = Adaptive(light: hex(0xE0E1E5), dark: hex(0x35353A))
     static let spineLine = Adaptive(light: hex(0xDDDEE3), dark: hex(0x3C3C42))
