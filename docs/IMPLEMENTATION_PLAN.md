@@ -451,6 +451,11 @@ search(query: "is:pr author:@me -is:draft <repo qualifiers>", type: ISSUE, first
     repository { nameWithOwner  defaultBranchRef { name } }
     comments(last: 1) { totalCount nodes { createdAt } }   # totalCount + lastCommentAt
     reviews(last: 20) { nodes { author { login avatarUrl } state submittedAt } }
+    reviewRequests(first: 10) { nodes { requestedReviewer {
+      __typename
+      ... on User { login avatarUrl }
+      ... on Team { slug }
+    } } }
     commits(last: 1) { nodes { commit { statusCheckRollup {
       state
       contexts(first: 20) {
@@ -471,6 +476,14 @@ search(query: "is:pr author:@me -is:draft <repo qualifiers>", type: ISSUE, first
 compile. The rollup `state` alone drives the green/red/amber segment; the per-context nodes exist so the
 failing check's name can appear in the status phrase (`2 checks failed`).
 
+`reviewRequests` is the second half of the avatar row and is not optional for it. `reviews` contains
+*submissions* only, so a PR waiting on reviewers who have not looked at it yet has no avatars at all without
+it — the state the row is most needed for. `requestedReviewer` is a union as well; `User` and `Team` are the
+members a person recognises in an avatar, and `Bot`/`Mannequin` fall through unnamed and are dropped. The
+author's own reviews are dropped too: every review comment on GitHub belongs to a `PullRequestReview`, so
+replying to a reviewer on your own PR submits a `COMMENTED` review by you, and since the search is
+`author:@me` that would put your own avatar on nearly every row.
+
 Loop on `pageInfo.hasNextPage`, passing `endCursor` as `after`, until exhausted. This is not optional in
 either scope: All mode would otherwise silently drop everything past the 50th PR, and Selected mode would
 drop repos whose PRs happen to sort onto a later page. A safety cap of 10 pages (500 PRs) guards against a
@@ -488,7 +501,8 @@ merged-PR query select it.
 ### Rate limiting — points, not requests
 
 GraphQL bills **points computed from node counts**, not one point per request. The nested
-`reviews(last: 20)` and `contexts(first: 20)` selections multiply against 50 PRs per page, so request counts
+`reviews(last: 20)`, `reviewRequests(first: 10)` and `contexts(first: 20)` selections multiply against 50 PRs
+per page, so request counts
 alone are a poor proxy for the 5,000/hr budget. Every query therefore selects
 `rateLimit { cost remaining resetAt }` and the client records the *actual* cost of each call rather than
 estimating it.

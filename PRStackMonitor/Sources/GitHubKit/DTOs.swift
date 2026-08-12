@@ -82,6 +82,45 @@ struct ReviewDTO: Decodable, Equatable {
     var submittedAt: Date? = nil
 }
 
+struct ReviewRequestConnectionDTO: Decodable, Equatable {
+    var nodes: [ReviewRequestDTO?]? = nil
+}
+
+struct ReviewRequestDTO: Decodable, Equatable {
+    var requestedReviewer: RequestedReviewerDTO? = nil
+}
+
+/// One member of the `RequestedReviewer` union. A `User` answers with `login`, a `Team`
+/// with `slug`, and the two remaining members (`Bot`, `Mannequin`) answer with neither,
+/// which is what ``name`` returning nil means.
+struct RequestedReviewerDTO: Decodable, Equatable {
+    var typeName: String? = nil
+    // User
+    var login: String? = nil
+    var avatarUrl: String? = nil
+    // Team
+    var slug: String? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case typeName = "__typename"
+        case login
+        case avatarUrl
+        case slug
+    }
+
+    /// What to put under the avatar, whichever half of the union answered.
+    var name: String? {
+        for candidate in [login, slug] {
+            if let candidate, !candidate.isEmpty { return candidate }
+        }
+        return nil
+    }
+
+    /// Whether ``name`` is a team slug rather than a user login. The two are separate
+    /// namespaces on GitHub, so anything comparing a name against a login has to ask.
+    var isTeam: Bool { typeName == "Team" }
+}
+
 struct CommitConnectionDTO: Decodable, Equatable {
     var nodes: [CommitWrapperDTO?]? = nil
 }
@@ -160,6 +199,7 @@ struct PullRequestNodeDTO: Decodable, Equatable {
     var repository: RepositoryDTO? = nil
     var comments: CommentConnectionDTO? = nil
     var reviews: ReviewConnectionDTO? = nil
+    var reviewRequests: ReviewRequestConnectionDTO? = nil
     var commits: CommitConnectionDTO? = nil
 
     private enum CodingKeys: String, CodingKey {
@@ -182,6 +222,7 @@ struct PullRequestNodeDTO: Decodable, Equatable {
         case repository
         case comments
         case reviews
+        case reviewRequests
         case commits
     }
 

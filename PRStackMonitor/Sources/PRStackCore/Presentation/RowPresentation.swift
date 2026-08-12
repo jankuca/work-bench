@@ -478,9 +478,10 @@ extension StatusTone {
         switch state {
         case .approved: self = .success
         case .changesRequested: self = .danger
-        // A comment is not a verdict, and a dismissed review has been withdrawn. Neither
-        // is a state to colour: only the two that gate the merge get one.
-        case .commented, .pending, .dismissed: self = .neutral
+        // A comment is not a verdict, a dismissed review has been withdrawn, and a
+        // requested reviewer has not answered yet. None is a state to colour: only the
+        // two that gate the merge get one.
+        case .commented, .pending, .dismissed, .requested: self = .neutral
         }
     }
 }

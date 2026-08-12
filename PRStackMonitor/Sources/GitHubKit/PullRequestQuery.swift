@@ -17,6 +17,13 @@ enum PullRequestQuery {
     /// `contexts` returns the `StatusCheckRollupContext` union, so it needs inline
     /// fragments on both members — `CheckRun` and `StatusContext`. A bare selection set
     /// does not compile server-side.
+    ///
+    /// `reviewRequests` is the other half of the reviewer list and is not optional for it.
+    /// `reviews` only ever contains people who have *submitted* something, so a pull
+    /// request waiting on two reviewers who have not looked at it yet has an empty avatar
+    /// row without this — the exact case the row exists to show. `requestedReviewer` is a
+    /// union too (`User`, `Team`, `Bot`, `Mannequin`); the two that a person recognises in
+    /// an avatar are selected and the rest fall through as unnamed and are dropped.
     static let text = """
     query PullRequestSearch($query: String!, $pageSize: Int!, $cursor: String) {
       rateLimit { limit cost remaining resetAt }
@@ -35,6 +42,15 @@ enum PullRequestQuery {
             repository { nameWithOwner defaultBranchRef { name } }
             comments(last: 1) { totalCount nodes { createdAt } }
             reviews(last: 20) { nodes { author { login avatarUrl } state submittedAt } }
+            reviewRequests(first: 10) {
+              nodes {
+                requestedReviewer {
+                  __typename
+                  ... on User { login avatarUrl }
+                  ... on Team { slug }
+                }
+              }
+            }
             commits(last: 1) {
               nodes {
                 commit {

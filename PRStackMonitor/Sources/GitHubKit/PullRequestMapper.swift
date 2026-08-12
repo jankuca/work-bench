@@ -50,7 +50,11 @@ enum PullRequestMapper {
                 state: state(node.state),
                 authorLogin: node.author?.login ?? "",
                 reviewDecision: reviewDecision(node.reviewDecision),
-                reviews: reviewers(from: node.reviews),
+                reviews: reviewers(
+                    from: node.reviews,
+                    requests: node.reviewRequests,
+                    author: node.author?.login
+                ),
                 checks: checks(from: node.commits),
                 mergeable: mergeable(node.mergeable),
                 mergeCommit: node.mergeCommit?.oid,
@@ -108,30 +112,48 @@ enum PullRequestMapper {
 
     // MARK: - Reviewers
 
-    /// One row per reviewer, collapsed from that reviewer's review history.
+    /// One row per reviewer: everyone who has submitted a review, then everyone who has
+    /// been asked for one and has not.
     ///
-    /// Two rules, both of which match what GitHub itself shows and neither of which falls
-    /// out of "take the last node":
+    /// Four rules, all of which match what GitHub itself shows and none of which falls out
+    /// of "take the last node":
     ///
     /// - A `PENDING` review is an unsubmitted draft, visible to nobody but its author. It
     ///   is dropped, not rendered as a reviewer who has done nothing.
     /// - `COMMENTED` does not overwrite a standing `APPROVED` or `CHANGES_REQUESTED`. A
     ///   reviewer who approves and then leaves a remark is still an approver, and letting
     ///   the remark win would quietly turn a green avatar ring grey.
+    /// - **The author is not one of their own reviewers.** Every review comment on GitHub
+    ///   belongs to a `PullRequestReview`, so replying to a reviewer on your own pull
+    ///   request submits a `COMMENTED` review by you. Kept, it puts the author's own
+    ///   avatar in the row of people reviewing them — which, since the panel lists only
+    ///   `author:@me` pull requests, is every reply you have ever left.
+    /// - **An open review request is a reviewer.** `reviews` is submissions only, so a
+    ///   pull request waiting on people who have not looked at it yet would otherwise show
+    ///   an empty avatar row — the state the row is most needed for. Requests answer
+    ///   ``ReviewState/requested``, which tones neutral: asked, no verdict.
     ///
-    /// The result is ordered by when each reviewer's retained review was submitted, with
-    /// the login as a tie-break, so the avatar row is stable across polls rather than
-    /// following API order.
+    /// Submitted reviews are ordered by submission time with the login as a tie-break, and
+    /// requests follow in name order, so the avatar row is stable across polls rather than
+    /// following API order. Requests come last on purpose: the row renders only
+    /// `avatarLimit` of them, and a reviewer who has actually answered outranks one who
+    /// has been asked when something has to become `+2`. A re-requested reviewer who
+    /// already has a review keeps the review — the verdict still stands and is the more
+    /// informative of the two.
     ///
-    /// Bounded by `reviews(last: 20)` — the plan's query (§3). A reviewer whose only
-    /// approval sits further back than the last twenty reviews is not represented here.
-    /// That is accepted rather than overlooked: the selection multiplies against 50 pull
-    /// requests per page and is billed in points, and paginating reviews would cost a
-    /// request per pull request, which the per-poll budget exists to prevent. The row's
-    /// *status* does not depend on this — `reviewDecision` is a separate field and is
-    /// always GitHub's current answer — so what lags on an unusually long review thread is
-    /// one avatar's ring, not the panel's correctness.
-    static func reviewers(from connection: ReviewConnectionDTO?) -> [ReviewerState] {
+    /// Bounded by `reviews(last: 20)` and `reviewRequests(first: 10)` — the plan's query
+    /// (§3). A reviewer whose only approval sits further back than the last twenty reviews
+    /// is not represented here. That is accepted rather than overlooked: the selections
+    /// multiply against 50 pull requests per page and are billed in points, and paginating
+    /// reviews would cost a request per pull request, which the per-poll budget exists to
+    /// prevent. The row's *status* does not depend on this — `reviewDecision` is a separate
+    /// field and is always GitHub's current answer — so what lags on an unusually long
+    /// review thread is one avatar's ring, not the panel's correctness.
+    static func reviewers(
+        from connection: ReviewConnectionDTO?,
+        requests: ReviewRequestConnectionDTO? = nil,
+        author: String? = nil
+    ) -> [ReviewerState] {
         struct Entry {
             var login: String
             var avatarURL: URL?
@@ -144,6 +166,7 @@ enum PullRequestMapper {
 
         for node in (connection?.nodes ?? []).compactMap({ $0 }) {
             guard let login = node.author?.login, !login.isEmpty else { continue }
+            guard login != author else { continue }
             guard let state = reviewState(node.state), state != .pending else { continue }
 
             let sticky = state == .approved || state == .changesRequested || state == .dismissed
@@ -159,7 +182,7 @@ enum PullRequestMapper {
             )
         }
 
-        return entries.values
+        let submitted = entries.values
             .sorted { left, right in
                 let leftDate = left.submittedAt ?? .distantPast
                 let rightDate = right.submittedAt ?? .distantPast
@@ -167,6 +190,46 @@ enum PullRequestMapper {
                 return left.login < right.login
             }
             .map { ReviewerState(login: $0.login, avatarURL: $0.avatarURL, state: $0.state) }
+
+        return submitted + requested(from: requests, excluding: Set(entries.keys), author: author)
+    }
+
+    /// The open review requests, minus anyone already answered for by a submitted review.
+    private static func requested(
+        from connection: ReviewRequestConnectionDTO?,
+        excluding seen: Set<String>,
+        author: String?
+    ) -> [ReviewerState] {
+        var names: Set<String> = []
+        var result: [ReviewerState] = []
+
+        for node in (connection?.nodes ?? []).compactMap({ $0 }) {
+            // A `Bot` or a `Mannequin` reaches here with neither `login` nor `slug`
+            // selected. There is nothing to draw an avatar from, so it is dropped rather
+            // than rendered as a `?`.
+            guard let reviewer = node.requestedReviewer, let name = reviewer.name else { continue }
+            // `author` is a login, and a team's name is a slug. Comparing the two is a
+            // category error: a team whose slug happens to match the author's login is a
+            // different reviewer and stays.
+            if !reviewer.isTeam, name == author { continue }
+            // `seen` is login-keyed, so a team slug colliding with a submitted reviewer's
+            // login is dropped here. That collision is resolved the same way one layer up
+            // — `RowPresentation.badges(for:)` is keyed on `login` too — so distinguishing
+            // the namespaces here alone would move the drop without changing the row.
+            // Showing both needs the kind carried on `ReviewerState`, not a richer key.
+            guard !seen.contains(name), names.insert(name).inserted else { continue }
+
+            let avatar: String? = reviewer.avatarUrl
+            result.append(
+                ReviewerState(
+                    login: name,
+                    avatarURL: avatar.flatMap(URL.init(string:)),
+                    state: .requested
+                )
+            )
+        }
+
+        return result.sorted { $0.login < $1.login }
     }
 
     // MARK: - Checks
