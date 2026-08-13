@@ -41,7 +41,7 @@ enum Tokens {
         /// than lift it, use ``faded(into:light:dark:)``.
         func lightened(light lightAmount: Double, dark darkAmount: Double) -> Adaptive {
             let white = NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
-            Adaptive(
+            return Adaptive(
                 light: blend(light, white, lightAmount),
                 dark: blend(dark, white, darkAmount)
             )
