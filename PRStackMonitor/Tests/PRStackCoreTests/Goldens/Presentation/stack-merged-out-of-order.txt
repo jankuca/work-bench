@@ -2,8 +2,8 @@ header title="Pull requests" summary="2 in review · 1 shipping" refreshing=fals
 section heading="Billing" count=3 muted=false clearAll=-
   row id=acme/billing#102 title="Ledger top" emphasis=dim chip=neutral/bar tint=false unread=true spine=down track=empty|empty|empty reviewers=[]+0 dismissible=false
     meta num(#102) phrase(waiting on #101|neutral) age(1d) issue(BIL-3)
-  row id=acme/billing#101 title="Ledger middle" emphasis=normal chip=neutral/dot tint=false unread=true spine=up track=empty|empty|empty reviewers=[]+0 dismissible=false
+  row id=acme/billing#101 title="Ledger middle" emphasis=normal chip=neutral/dot tint=false unread=true spine=both track=empty|empty|empty reviewers=[]+0 dismissible=false
     meta num(#101) phrase(in review|neutral) age(1d) issue(BIL-2)
-  row id=acme/billing#100 title="Ledger base" emphasis=dim chip=merged/dot tint=false unread=true spine=none track=empty|passing|empty reviewers=[]+0 dismissible=false
+  row id=acme/billing#100 title="Ledger base" emphasis=dim chip=merged/dot tint=false unread=true spine=up track=empty|passing|empty reviewers=[]+0 dismissible=false
     meta num(#100) phrase(awaiting release|merged) age(1d) issue(BIL-1)
 footer tone=success text="synced 34s ago" markAllRead=true

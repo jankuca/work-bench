@@ -33,11 +33,22 @@ public enum Derivation {
     public static func derive(snapshot: RawSnapshot, local: LocalState, now: Date) -> PanelModel {
         // Dismissal is a permanent tombstone: the pull request leaves the model entirely
         // and can never be resurrected by a later event (PRD §5.3). Dismissal is only
-        // offered on Done rows, and stacks are built from open pull requests only, so
-        // dropping these here can never break a run.
+        // offered on Done rows, and a Done row is never a stack member, so dropping these
+        // here can never break a run.
         let visible = snapshot.pullRequests.filter { !local.dismissed.contains($0.id) }
         let byID = Dictionary(visible.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let layout = StackLayout.build(pullRequests: visible, viewerLogin: snapshot.viewerLogin)
+        // The layout needs the stages before it can be built: a merge stays in its stack
+        // until a release contains it (``StackLayout/build``). Keyed the same way as `byID`,
+        // first occurrence winning, so the two cannot disagree about a repeated id.
+        let stages = Dictionary(
+            visible.map { ($0.id, releaseStage(for: $0, local: local)) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let layout = StackLayout.build(
+            pullRequests: visible,
+            viewerLogin: snapshot.viewerLogin,
+            releaseStages: stages
+        )
 
         var rows: [PanelRow] = []
         rows.reserveCapacity(visible.count)
@@ -47,7 +58,7 @@ public enum Derivation {
             let status = RowStatusResolver.resolve(
                 pullRequest: pullRequest,
                 releaseStage: stage,
-                parent: layout.parentOf[pullRequest.id]
+                parent: layout.blockingParentOf[pullRequest.id]
             )
             let deadline = local.snoozedUntil[pullRequest.id]
             let isSuppressed = deadline.map { now < $0 } ?? false

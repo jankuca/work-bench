@@ -63,14 +63,29 @@ public struct StackPlacement: Equatable, Sendable {
 
 /// The parent/child structure derived from head and base branches.
 public struct StackLayout: Equatable, Sendable {
-    /// Open parent for each pull request that has one. Members of a cycle are removed
-    /// entirely, so they are neither blocked nor drawn with a spine.
+    /// Structural parent for each pull request that has one — the member whose head branch
+    /// this one is based on, merged or not. Members of a cycle are removed entirely, so
+    /// they are neither blocked nor drawn with a spine.
     public var parentOf: [PRID: PRID]
+    /// The parent a pull request is actually *waiting on*: its structural parent, but only
+    /// while that parent is still open.
+    ///
+    /// The two differ for the layer sitting directly on a merge. Its branch is already in
+    /// trunk, so nothing is holding the child back and `blocked` would be a lie — but the
+    /// merge is still on screen until a release contains it, and the run has to keep
+    /// drawing through it. ``parentOf`` is the shape; this is the verdict.
+    public var blockingParentOf: [PRID: PRID]
     public var groups: [StackGroup]
     public var placement: [PRID: StackPlacement]
 
-    public init(parentOf: [PRID: PRID], groups: [StackGroup], placement: [PRID: StackPlacement]) {
+    public init(
+        parentOf: [PRID: PRID],
+        blockingParentOf: [PRID: PRID],
+        groups: [StackGroup],
+        placement: [PRID: StackPlacement]
+    ) {
         self.parentOf = parentOf
+        self.blockingParentOf = blockingParentOf
         self.groups = groups
         self.placement = placement
     }
@@ -81,38 +96,71 @@ public struct StackLayout: Equatable, Sendable {
 
     /// Builds the layout from the pull requests in one snapshot.
     ///
-    /// Only the viewer's own **open** pull requests enter the branch index. That single
-    /// filter is what makes three of the §2 edge cases fall out for free: a merged parent
-    /// drops out and its children re-target trunk, a parent authored by someone else never
+    /// Only the viewer's own pull requests enter the branch index, and only while they are
+    /// still in flight — open, or merged and not yet contained in a release. Two of the §2
+    /// edge cases fall out of that filter for free: a parent authored by someone else never
     /// matches, and a parent in another repository never matches because the repository is
     /// part of the index key.
-    public static func build(pullRequests: [PullRequest], viewerLogin: String) -> StackLayout {
+    ///
+    /// A merge stays in the index rather than dropping out of it, which is the one place
+    /// this departs from the plan's original "merged parent drops out". GitHub keeps showing
+    /// the stack after the base merges — the child's base branch is still the merged pull
+    /// request's head branch until the branch is deleted and the child re-targeted — and a
+    /// panel that reflowed the sleeve the instant the base merged disagreed with it, hiding
+    /// the merge at the bottom of the section as a loose row while its own children were
+    /// still drawn as a stack above. The merge leaves the run when it leaves the panel: once
+    /// a release contains it the row moves to Done, and the sleeve reflows then.
+    ///
+    /// `releaseStages` is the stage per pull request, as ``Derivation`` resolved it. An
+    /// absent entry reads as "no binding yet", which is what a merge with no release
+    /// recorded against it means.
+    public static func build(
+        pullRequests: [PullRequest],
+        viewerLogin: String,
+        releaseStages: [PRID: ReleaseStage] = [:]
+    ) -> StackLayout {
         struct BranchKey: Hashable {
             let repo: String
             let ref: String
         }
 
         let stackable = pullRequests
-            .filter { $0.state == .open && $0.authorLogin == viewerLogin }
+            .filter { $0.authorLogin == viewerLogin && isInFlight($0, releaseStages: releaseStages) }
             .sorted { $0.number < $1.number }
 
-        var index: [BranchKey: PRID] = [:]
+        var index: [BranchKey: PullRequest] = [:]
         for pullRequest in stackable {
             let key = BranchKey(repo: pullRequest.repo, ref: pullRequest.headRef)
-            // Two open pull requests from the same head branch is not a real GitHub state,
-            // but if it ever happens the lower number wins so the layout stays deterministic.
-            if index[key] == nil { index[key] = pullRequest.id }
+            guard let claimed = index[key] else {
+                index[key] = pullRequest
+                continue
+            }
+            // Two *open* pull requests from one head branch is not a real GitHub state, but
+            // one merge plus one open pull request is entirely ordinary once merges stay in
+            // the index: a branch merged, then reused or reopened under the same name. The
+            // open one is the live parent. Between two of the same kind the lower number
+            // wins — `stackable` is sorted, so that is the one already claimed — and the
+            // layout stays deterministic either way.
+            if claimed.state != .open, pullRequest.state == .open {
+                index[key] = pullRequest
+            }
         }
 
         var parentOf: [PRID: PRID] = [:]
         for pullRequest in stackable {
             let key = BranchKey(repo: pullRequest.repo, ref: pullRequest.baseRef)
-            if let parent = index[key], parent != pullRequest.id {
-                parentOf[pullRequest.id] = parent
+            if let parent = index[key], parent.id != pullRequest.id {
+                parentOf[pullRequest.id] = parent.id
             }
         }
 
         parentOf = breakCycles(in: parentOf, nodes: stackable.map(\.id))
+
+        // Only an open parent blocks. Derived here rather than in the resolver because this
+        // is where a cycle has already had its parents taken away, and a row that leads into
+        // one must not come out blocked on a pull request the layout gave up on.
+        let openIDs = Set(stackable.filter { $0.state == .open }.map(\.id))
+        let blockingParentOf = parentOf.filter { openIDs.contains($0.value) }
 
         var children: [PRID: [PRID]] = [:]
         for (child, parent) in parentOf {
@@ -191,7 +239,33 @@ public struct StackLayout: Equatable, Sendable {
             }
         }
 
-        return StackLayout(parentOf: parentOf, groups: groups, placement: placement)
+        return StackLayout(
+            parentOf: parentOf,
+            blockingParentOf: blockingParentOf,
+            groups: groups,
+            placement: placement
+        )
+    }
+
+    /// Whether a pull request is still part of the stack it was opened into.
+    ///
+    /// Open always is. A merge is until a release contains it — at which point the row is
+    /// Done, and a group straddling the Done heading is one the panel cannot draw. Closed
+    /// without merging never is: nothing was contributed to the branch below it.
+    private static func isInFlight(
+        _ pullRequest: PullRequest,
+        releaseStages: [PRID: ReleaseStage]
+    ) -> Bool {
+        switch pullRequest.state {
+        case .open:
+            return true
+        case .closed:
+            return false
+        case .merged:
+            guard let stage = releaseStages[pullRequest.id] else { return true }
+            if case .released = stage { return false }
+            return true
+        }
     }
 
     /// Longest chain wins the spine; the higher pull request number breaks ties so the

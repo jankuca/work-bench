@@ -1,0 +1,6 @@
+panel repoNames=false attention=0 unread=3 open=2 draft=0 shipping=0
+section kind=project id=proj-billing name=Billing
+  row id=acme/billing#102 status=blocked:acme/billing#101 attention=false suppressed=false unread=true spine=top run=acme/billing#101 group=acme/billing#101 issue=BIL-3 extra=0
+  row id=acme/billing#101 status=inReview attention=false suppressed=false unread=true spine=base run=acme/billing#101 group=acme/billing#101 issue=BIL-2 extra=0
+section kind=done
+  row id=acme/billing#100 status=shipped:v2.3.0 attention=false suppressed=false unread=true spine=none run=- group=- issue=BIL-1 extra=0
