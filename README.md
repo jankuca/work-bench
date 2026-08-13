@@ -23,8 +23,9 @@ Without a GitHub token the panel shows the connect prompt; paste one in Settings
 `$PRSTACK_GITHUB_TOKEN`. A Linear key (`$PRSTACK_LINEAR_KEY`) is optional and only affects
 identifier resolution.
 
-`make run` signs ad-hoc unless a local signing certificate exists. That works, but the
-signature changes on every rebuild, so macOS re-prompts for Keychain access each run —
+`make run` signs ad-hoc unless a signing identity named `PRStackMonitor Local` exists on
+this Mac. That works, but the signature changes on every rebuild, so macOS re-prompts for
+Keychain access each run —
 [`App/README.md`](App/README.md) has the one-time setup that fixes it.
 
 ## Other targets
