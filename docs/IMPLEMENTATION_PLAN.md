@@ -799,6 +799,14 @@ it for free, and the key has to mean the same thing under both), and Settings op
 per open rather than held; opening Settings closes the panel, so a change is always in force by the next time
 the panel appears.
 
+**`Close the panel` does not rest on `.transient` alone.** AppKit closes a transient popover in response to
+events it is in a position to see, and a status item in an accessory app whose `NSApp.activate()` quietly did
+not take is in no position to see any of them — the observed behaviour was a panel that stayed open on
+click-away whatever the code asked for. So the shell closes it itself as well, from two events of its own: a
+global mouse-down monitor, live only while an autoclosing panel is open, and `didResignActive`. Both are
+idempotent with AppKit getting there first, neither is armed for a panel asked to stay open, and a global
+monitor never sees this app's own clicks — so the popover's interior and the menu bar icon cannot trip it.
+
 Two things follow from a panel that outlives the app being frontmost, and both are part of the feature rather
 than polish:
 

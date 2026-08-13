@@ -27,6 +27,16 @@ final class StatusItemController: NSObject {
     /// the life of the process, exactly like the status item it owns, so there is no moment
     /// at which unregistering them would be anything but ceremony.
     private var activationTokens: [any NSObjectProtocol] = []
+    /// The outside-click monitor, live only while an autoclosing panel is on screen.
+    ///
+    /// Owned exactly the way ``HoverKeyMonitor`` owns its own: one optional token, cleared
+    /// before it is removed, and every teardown through one place. Removing a token twice
+    /// over-releases, and a close and a resign fire for the same user action.
+    private var outsideClickMonitor: Any?
+    /// How the panel currently on screen was opened, which is not always what the preference
+    /// says *now* — the preference is read once per open and everything about that open then
+    /// answers to this.
+    private var dismissal: AppDefaults.PanelDismissal = .onBlur
     /// Built the first time Settings is asked for, and kept from then on.
     ///
     /// Lazily, because building it reads the Keychain to say where each credential is
@@ -65,7 +75,8 @@ final class StatusItemController: NSObject {
         popover.contentViewController = PanelHostingController(rootView: PanelView(controller: controller))
         // Re-read on every open; see ``togglePopover(_:)``. Set here as well so the popover
         // is never briefly configured for a behaviour the user did not choose.
-        popover.behavior = AppDefaults.panelDismissal().behavior
+        dismissal = AppDefaults.panelDismissal()
+        popover.behavior = dismissal.behavior
         popover.animates = false
         popover.delegate = self
 
@@ -99,7 +110,8 @@ final class StatusItemController: NSObject {
         // AppKit acts on it — a popover arms its dismissal when it is shown — and the only
         // place the preference is edited closes the panel to get at itself, so the next open
         // is always the first moment a change could matter.
-        popover.behavior = AppDefaults.panelDismissal().behavior
+        dismissal = AppDefaults.panelDismissal()
+        popover.behavior = dismissal.behavior
 
         // A status-item popover does not receive key events unless the app is active.
         // Activating on open is the standard arrangement, and it is what makes the
@@ -119,6 +131,40 @@ final class StatusItemController: NSObject {
             controller: controller,
             onCancel: { [weak self] in self?.closePanel() }
         )
+        startOutsideClickMonitor()
+    }
+
+    /// Closes an autoclosing panel on a click in another app, which is `.transient`'s own
+    /// job and is done here as well because it has not proved reliable on a status item:
+    /// AppKit closes a transient popover in response to events it is in a position to see,
+    /// and an app whose activation quietly did not take is in no position to see any of
+    /// them. The observed behaviour — a panel that stayed open on click-away whatever the
+    /// code asked for — is what this exists to answer.
+    ///
+    /// Only for the autoclosing choice: a panel asked to stay open is the one thing this
+    /// must never close. Clicks *inside* the popover and on the menu bar icon are the app's
+    /// own events and a global monitor never sees them, so the two paths cannot fight;
+    /// ``closePanel()`` is idempotent besides, for the case where `.transient` got there
+    /// first.
+    private func startOutsideClickMonitor() {
+        stopOutsideClickMonitor()
+        guard dismissal == .onBlur else { return }
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            // A hop to the main actor rather than `MainActor.assumeIsolated` as the key
+            // monitor does: that one has to answer *now* whether it swallowed the event and
+            // is documented onto the main thread by the local-monitor contract, while this
+            // one only has a popover to close and nothing to hand back. A wrong assumption
+            // there would be a crash on a click in another app.
+            Task { @MainActor [weak self] in self?.closePanel() }
+        }
+    }
+
+    private func stopOutsideClickMonitor() {
+        guard let token = outsideClickMonitor else { return } // already stopped
+        outsideClickMonitor = nil                             // clear BEFORE removing
+        NSEvent.removeMonitor(token)
     }
 
     /// Every dismissal that is not AppKit's own: the menu bar icon, `esc`, and Settings
@@ -160,6 +206,14 @@ final class StatusItemController: NSObject {
         // Activation happens all day with the panel closed — Settings, a resign the panel is
         // already gone for — and none of it is about the panel.
         guard popover.isShown else { return }
+        // The second half of the same belt and braces as the outside-click monitor: losing
+        // the foreground is the plainest statement there is that the user's attention has
+        // gone elsewhere, and an autoclosing panel is meant to be gone with it. Ordinarily
+        // `.transient` has already closed it and this finds nothing to do.
+        if !isActive, dismissal == .onBlur {
+            closePanel()
+            return
+        }
         controller.panelDidChangeFocus(isActive)
     }
 
@@ -191,9 +245,10 @@ extension StatusItemController: IconPresenter {
 
 extension StatusItemController: NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
-        // Both halves of the same dismissal, and both idempotent: a close and a resign
-        // fire for one user action, and `stop()` is written to survive being called twice.
+        // Every half of the same dismissal, and all of them idempotent: a close and a resign
+        // fire for one user action, and each `stop` is written to survive being called twice.
         keys.stop()
+        stopOutsideClickMonitor()
         controller.panelDidClose()
     }
 }
