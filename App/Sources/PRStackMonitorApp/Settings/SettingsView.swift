@@ -1,11 +1,11 @@
 import SwiftUI
 import PRStackCore
 
-/// The Settings window: accounts, repositories, notifications.
+/// The Settings window: accounts, repositories, the panel, notifications.
 ///
-/// Three tabs because they answer three different questions — what am I connected to, what
-/// am I watching, what do I want to hear about — and because the repository tab is a list
-/// that wants the room.
+/// A tab per question — what am I connected to, what am I watching, how does the panel
+/// behave, what do I want to hear about — and because the repository tab is a list that
+/// wants the room.
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
 
@@ -15,6 +15,8 @@ struct SettingsView: View {
                 .tabItem { Label("Accounts", systemImage: "person.crop.circle") }
             RepositoriesSettingsView(model: model)
                 .tabItem { Label("Repositories", systemImage: "folder") }
+            PanelSettingsView(model: model)
+                .tabItem { Label("Panel", systemImage: "macwindow") }
             EventSettingsView(model: model)
                 .tabItem { Label("Notifications", systemImage: "bell") }
         }
@@ -254,6 +256,54 @@ struct RepositoryRow: View {
             get: { repository.tagPattern },
             set: { model.setTagPattern($0, for: repository.name) }
         )
+    }
+}
+
+/// What happens to the panel when the user's attention goes elsewhere.
+///
+/// One question, and it is here rather than in the panel's own overflow menu because the
+/// answer changes how the panel *dismisses* — a control that changes dismissal, offered in a
+/// menu inside the thing being dismissed, is a control the user cannot see the effect of
+/// without losing it. The popover reads this each time it opens, and opening this window
+/// closes it, so a choice made here is in force the very next time the panel appears.
+struct PanelSettingsView: View {
+    @ObservedObject var model: SettingsModel
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("When I click away", selection: keepsOpen) {
+                    Text("Close the panel").tag(false)
+                    Text("Leave the panel open").tag(true)
+                }
+                .pickerStyle(.radioGroup)
+            } footer: {
+                Text("Closing on click-away is how a menu bar popover normally behaves. Left "
+                     + "open, the panel stays on screen while you work in another app and "
+                     + "closes when you press esc, click the menu bar icon, or open this "
+                     + "window. Clicks land on the row under the pointer straight away — "
+                     + "there is no first click spent bringing the app forward.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Text("A panel left open keeps polling at the open cadence — every 30 seconds "
+                     + "— for as long as it is on screen, because what it is on screen for is "
+                     + "being current. Anything arriving while you are in another app still "
+                     + "lights the menu bar and still gets its unread dot; clicking back into "
+                     + "the panel clears the menu bar and leaves the dots to be read, and "
+                     + "looking away again clears those. Each visit is an open.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var keepsOpen: Binding<Bool> {
+        Binding(get: { model.keepsPanelOpen }, set: { model.setKeepsPanelOpen($0) })
     }
 }
 

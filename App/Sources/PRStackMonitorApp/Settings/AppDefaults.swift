@@ -16,6 +16,7 @@ import GitHubKit
 enum AppDefaults {
     static let tagPatternsKey = "tagPatterns"
     static let showsDraftsKey = "showsDrafts"
+    static let panelDismissalKey = "panelDismissal"
     static let repoScopeModeKey = "repoScopeMode"
     static let selectedRepositoriesKey = "selectedRepositories"
     static let seenRepositoriesKey = "seenRepositories"
@@ -95,6 +96,46 @@ enum AppDefaults {
         } else {
             defaults.removeObject(forKey: showsDraftsKey)
         }
+    }
+
+    // MARK: - Panel dismissal
+
+    /// What closes the panel.
+    ///
+    /// Stored rather than inferred because the two answers suit two different ways of using
+    /// the app, and neither is wrong: a panel you consult and dismiss, and a panel you leave
+    /// on screen beside the work it is about.
+    /// The two spellings as they appear on disk, taken from the case names like
+    /// ``ScopeMode`` above.
+    enum PanelDismissal: String {
+        /// The standard menu bar arrangement, and the default: the panel closes the moment
+        /// the user's attention goes anywhere else.
+        case onBlur
+        /// The panel stays on screen until it is dismissed on purpose — the menu bar icon,
+        /// `esc`, or Settings taking over.
+        case manual
+    }
+
+    /// Machine-scoped, deliberately, like ``showsDrafts(_:)``: it says how the user wants
+    /// the panel to behave, and that does not change when the token does.
+    ///
+    /// A spelling this build does not know falls back to `onBlur` rather than to the
+    /// stickier of the two — a preference nobody can read must not leave a panel on screen
+    /// that the user cannot account for.
+    static func panelDismissal(_ defaults: UserDefaults = .standard) -> PanelDismissal {
+        guard let raw = defaults.string(forKey: panelDismissalKey),
+              let dismissal = PanelDismissal(rawValue: raw)
+        else { return .onBlur }
+        return dismissal
+    }
+
+    static func setPanelDismissal(_ dismissal: PanelDismissal, _ defaults: UserDefaults = .standard) {
+        // Removed rather than stored, so the default reads the same as a fresh install.
+        guard dismissal != .onBlur else {
+            defaults.removeObject(forKey: panelDismissalKey)
+            return
+        }
+        defaults.set(dismissal.rawValue, forKey: panelDismissalKey)
     }
 
     // MARK: - Repository scope

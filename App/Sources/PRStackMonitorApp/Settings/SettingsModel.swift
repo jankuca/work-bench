@@ -51,6 +51,9 @@ final class SettingsModel: ObservableObject {
     /// Whether the polls ask GitHub for drafts as well. Off by default — see
     /// ``AppDefaults/showsDrafts(_:)``.
     @Published private(set) var showsDrafts: Bool
+    /// Whether the panel stays on screen when the user's attention goes elsewhere. Off by
+    /// default, which is the standard menu bar behaviour.
+    @Published private(set) var keepsPanelOpen: Bool
     /// The GitHub login the last poll answered for, and therefore whose repository list is
     /// on screen. Nil until a poll has named one.
     ///
@@ -99,6 +102,7 @@ final class SettingsModel: ObservableObject {
         isAllRepositories = true
         repositories = []
         showsDrafts = false
+        keepsPanelOpen = false
         enabledEvents = Dictionary(
             uniqueKeysWithValues: DomainEventKind.allCases.map { ($0, events.preferences.allows($0)) }
         )
@@ -118,6 +122,7 @@ final class SettingsModel: ObservableObject {
         githubAccount = AppDefaults.viewerLogin(defaults)
         isAllRepositories = AppDefaults.repoScope(defaults).isAll
         showsDrafts = AppDefaults.showsDrafts(defaults)
+        keepsPanelOpen = AppDefaults.panelDismissal(defaults) == .manual
 
         let selected = Set(AppDefaults.selectedRepositories(defaults).map { $0.lowercased() })
         let patterns = AppDefaults.tagPatterns(defaults)
@@ -223,6 +228,19 @@ final class SettingsModel: ObservableObject {
     private func writeScope() {
         let selected = repositories.filter(\.isSelected).map(\.name)
         AppDefaults.setRepoScope(isAllRepositories ? .all : .selected(selected), defaults)
+    }
+
+    // MARK: - The panel
+
+    /// Whether clicking away leaves the panel on screen.
+    ///
+    /// Not polled, and nothing to invalidate: no request depends on it, and the popover reads
+    /// the preference each time it is opened. It cannot already be open while this is being
+    /// edited — opening this window closes it — so the choice is always in force by the time
+    /// the user can see the difference.
+    func setKeepsPanelOpen(_ keepsOpen: Bool) {
+        keepsPanelOpen = keepsOpen
+        AppDefaults.setPanelDismissal(keepsOpen ? .manual : .onBlur, defaults)
     }
 
     // MARK: - Credentials
