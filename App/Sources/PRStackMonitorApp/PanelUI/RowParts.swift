@@ -2,30 +2,35 @@ import SwiftUI
 import PRStackCore
 
 // The four small pieces a row is built from. Split out because each one has a geometry
-// that has to survive the others changing: the chip's halo is what lets the spine pass
-// behind it, and the reviewer ring is what makes a state readable without colour.
+// that has to survive the others changing: the sleeve is what makes a stack read as one
+// object, and the reviewer ring is what makes a state readable without colour.
 
 /// The 16 pt status chip, with its 6 pt mark.
 ///
-/// The `haloColor` is the row's own background. Painting a 3 pt ring of it around the
-/// chip is what lets the spine run *behind* the chip and still read as a continuous line
-/// — the alternative is clipping the spine per row, which needs every row to know its
-/// neighbours' geometry (§5).
+/// The `haloColor` is the row's own background, painted as a 3 pt ring so the chip keeps
+/// a clean edge against whatever it sits on. It is `nil` on a stacked row: there the
+/// ``StackSleeveView`` is what surrounds the chip, and a ring of opaque row background
+/// would punch a hole through the sleeve at every member.
 struct StatusChipView: View {
     var tone: StatusTone
     var glyph: ChipGlyph
-    var haloColor: Color
+    var haloColor: Color?
 
     var body: some View {
         RoundedRectangle(cornerRadius: Tokens.Row.chipRadius, style: .continuous)
             .fill(Tokens.chip(tone))
             .frame(width: Tokens.Row.chip, height: Tokens.Row.chip)
             .overlay(mark)
-            .background(
-                RoundedRectangle(cornerRadius: Tokens.Row.chipRadius + Tokens.Row.chipHalo, style: .continuous)
-                    .fill(haloColor)
-                    .padding(-Tokens.Row.chipHalo)
-            )
+            .background(halo)
+    }
+
+    @ViewBuilder
+    private var halo: some View {
+        if let haloColor {
+            RoundedRectangle(cornerRadius: Tokens.Row.chipRadius + Tokens.Row.chipHalo, style: .continuous)
+                .fill(haloColor)
+                .padding(-Tokens.Row.chipHalo)
+        }
     }
 
     @ViewBuilder
@@ -48,27 +53,53 @@ struct StatusChipView: View {
     }
 }
 
-/// The 1.5 pt hairline through the chip's centre line.
+/// The rounded sleeve that groups the chips of one stack run.
 ///
-/// Drawn as a background behind the chip column and extended past the row's bounds by
-/// ``Tokens/Spine/overhang`` in each direction it draws, so it crosses the gap between
-/// two rows. The top member draws downward only and the base upward only, which is what
-/// makes a run's ends visible as ends.
-struct StackSpineView: View {
+/// Each member draws only its own band, and the bands tile into one continuous sleeve —
+/// no row ever needs to know its neighbours' geometry (§5). What makes that work is the
+/// chip column being stretched to the row's *content* height before this is used as its
+/// background: a band that runs from `-paddingTop` to `height + paddingBottom` is exactly
+/// the full row, and rows sit in a `VStack` with no spacing, so consecutive bands meet
+/// edge to edge without overlapping into each other.
+///
+/// The ends are where the run becomes visible as a run. A member that does not draw
+/// upward is the top of its run, so the band stops ``Tokens/Stack/inset`` above the chip
+/// and rounds; the same downward for the base. A middle member squares both ends and
+/// fills its row.
+struct StackSleeveView: View {
     var draw: SpineDraw
 
     var body: some View {
         GeometryReader { proxy in
-            let mid = proxy.size.height / 2
-            let top = draw.drawsUp ? -Tokens.Spine.overhang : mid
-            let bottom = draw.drawsDown ? proxy.size.height + Tokens.Spine.overhang : mid
+            // The chip is centred in the stretched column, and the caps are measured from
+            // the chip rather than from the row: the sleeve wraps the icons, so its ends
+            // have to sit the same distance from the chip as its sides do.
+            let chipTop = (proxy.size.height - Tokens.Row.chip) / 2
+            let top = draw.drawsUp
+                ? -Tokens.Row.paddingTop
+                : chipTop - Tokens.Stack.inset
+            let bottom = draw.drawsDown
+                ? proxy.size.height + Tokens.Row.paddingBottom
+                : chipTop + Tokens.Row.chip + Tokens.Stack.inset
 
-            Tokens.spineLine.color
-                .frame(width: Tokens.Spine.width, height: max(0, bottom - top))
-                .offset(x: (proxy.size.width - Tokens.Spine.width) / 2, y: top)
+            UnevenRoundedRectangle(
+                topLeadingRadius: draw.drawsUp ? 0 : Tokens.Stack.capRadius,
+                bottomLeadingRadius: draw.drawsDown ? 0 : Tokens.Stack.capRadius,
+                bottomTrailingRadius: draw.drawsDown ? 0 : Tokens.Stack.capRadius,
+                topTrailingRadius: draw.drawsUp ? 0 : Tokens.Stack.capRadius,
+                style: .continuous
+            )
+            .fill(Tokens.stackSleeve.color)
+            .frame(
+                width: proxy.size.width + Tokens.Stack.inset * 2,
+                height: max(0, bottom - top)
+            )
+            // A `GeometryReader` places its child at the top leading corner, so the
+            // sleeve is pulled back by its own inset to sit centred on the chip column.
+            .offset(x: -Tokens.Stack.inset, y: top)
         }
         .opacity(draw.isVisible ? 1 : 0)
-        // The line is decoration for a relationship the status phrase already states
+        // The grouping is decoration for a relationship the status phrase already states
         // ("waiting on #4127"), so reading it aloud would be repetition.
         .accessibilityHidden(true)
     }

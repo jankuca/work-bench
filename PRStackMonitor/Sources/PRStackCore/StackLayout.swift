@@ -1,14 +1,16 @@
 import Foundation
 
-/// Where a row sits in a stack run, which is what the spine hairline is drawn from.
+/// Where a row sits in a stack run, which is what the sleeve around the chips is drawn
+/// from: a member continues the sleeve toward each neighbour it has, and caps it where it
+/// does not.
 public enum SpinePosition: String, Sendable {
-    /// Not part of a run of two or more — no spine.
+    /// Not part of a run of two or more — no sleeve.
     case none
-    /// Top-most member: draws downward only.
+    /// Top-most member: the sleeve caps above it and continues below.
     case top
-    /// Draws both ways.
+    /// Continues both ways.
     case middle
-    /// Bottom member, the one targeting trunk: draws upward only.
+    /// Bottom member, the one targeting trunk: continues above, caps below.
     case base
 }
 
@@ -21,7 +23,7 @@ public struct StackRun: Equatable, Sendable {
     }
 
     public var base: PRID? { members.last }
-    /// A run of one is a positioning fact, not a stack: no spine is drawn for it.
+    /// A run of one is a positioning fact, not a stack: nothing is drawn around it.
     public var drawsSpine: Bool { members.count >= 2 }
 }
 
@@ -44,7 +46,7 @@ public struct StackGroup: Equatable, Sendable {
 /// Where a single row sits in the stack structure.
 public struct StackPlacement: Equatable, Sendable {
     public var spine: SpinePosition
-    /// The base of the row's run, when that run draws a spine.
+    /// The base of the row's run, when that run is drawn as a stack.
     public var runBase: PRID?
     /// The root of the row's stack group, when it has one. Rows inherit their section
     /// from this pull request's project so a group can never straddle two headings.

@@ -2,13 +2,13 @@ import AppKit
 import SwiftUI
 import PRStackCore
 
-/// One row, left to right: unread gutter, status chip on the spine, title over meta,
-/// reviewers, release track — and a ✕ on Done rows.
+/// One row, left to right: unread gutter, status chip in the stack sleeve, title over
+/// meta, reviewers, release track — and a ✕ on Done rows.
 ///
 /// The row makes no decisions. Which phrase, which tone, whether the repo name appears,
-/// which way the spine draws: all of that arrived resolved in ``RowPresentation``, which
-/// is a type this package cannot even build against a Mac-only API. What is left here is
-/// geometry and colour.
+/// where the row sits in its stack: all of that arrived resolved in ``RowPresentation``,
+/// which is a type this package cannot even build against a Mac-only API. What is left
+/// here is geometry and colour.
 struct PRRowView: View {
     var row: RowPresentation
     var isHovered: Bool
@@ -126,8 +126,8 @@ struct PRRowView: View {
     }
 
     /// What sits immediately behind the chip and the avatars — the tint when there is one,
-    /// the panel field otherwise. Both need it opaque: a halo drawn in a clear colour
-    /// stops hiding the spine.
+    /// the panel field otherwise. Both need it opaque: the reviewer rings are cut apart by
+    /// a 1 pt gap of this colour, and a clear one would let the ring behind show through.
     private var haloColor: Color {
         row.isTinted ? Tokens.rowTint(row.chipTone) : fieldColor
     }
@@ -145,11 +145,20 @@ struct PRRowView: View {
     }
 
     private var chipColumn: some View {
-        StatusChipView(tone: row.chipTone, glyph: row.chipGlyph, haloColor: haloColor)
-            .frame(width: Tokens.Row.chip)
-            // The spine is behind the chip and its halo, and it runs past the row's own
-            // bounds, so it must not participate in layout.
-            .background(StackSpineView(draw: row.spine))
+        StatusChipView(
+            tone: row.chipTone,
+            glyph: row.chipGlyph,
+            // On a stacked row the sleeve is the chip's surround; see ``StatusChipView``.
+            haloColor: row.spine.isVisible ? nil : haloColor
+        )
+        .frame(width: Tokens.Row.chip)
+        // Stretched to the row's content height so the sleeve knows how tall its band has
+        // to be. The chip stays centred — a frame with no alignment given centres — and
+        // the column is 16 pt wide either way, so nothing else in the row moves.
+        .frame(maxHeight: .infinity)
+        // The sleeve is behind the chip and reaches past the column on all four sides, so
+        // it must not participate in layout.
+        .background(StackSleeveView(draw: row.spine))
     }
 
     private var titleAndMeta: some View {

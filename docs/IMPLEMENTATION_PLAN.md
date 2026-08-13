@@ -2,7 +2,7 @@
 
 Swift / macOS menu bar app. Source of truth for scope: [`design/PRD.dc.html`](../design/PRD.dc.html).
 Source of truth for visuals: iteration **2a** at the top of [`design/Tray App.dc.html`](../design/Tray%20App.dc.html)
-("Single scroll, stacks drawn as a spine"). The numbered iterations `1a`–`1f` below it are superseded,
+("Single scroll, stacks wrapped in a sleeve"). The numbered iterations `1a`–`1f` below it are superseded,
 except as a reference for states 2a doesn't draw: `1c` (release grouping), `1e` (first run + expired token),
 `1f` (tray icon state set). `1d`'s collapsed stacks are **not** being built — see §5.
 
@@ -172,7 +172,7 @@ extension is a drop-in rather than a retrofit.
   dismissal. `MenuBarExtra(.window)` makes both awkward. The popover *content* is SwiftUI via
   `NSHostingView`.
 - **SwiftUI for the panel.** The list is ~10–25 rows; `LazyVStack` in a `ScrollView` is sufficient and gives
-  us the exact geometry control the design needs (the spine cannot be drawn with `List` insets).
+  us the exact geometry control the design needs (the stack sleeve cannot be drawn with `List` insets).
 - **Deployment target macOS 14.** Buys `Observable`, `ScrollView` refinements, `SMAppService`. No reason to
   go older for a personal tool.
 - **No third-party dependencies.** Hand-rolled GraphQL requests (they're just POSTed strings), `Codable`
@@ -277,14 +277,15 @@ Each case below is a **named fixture with golden assertions** in `PRStackCoreTes
 intention — fixture names in parentheses:
 
 - **Merged out of order** (`stack-merged-out-of-order`) — merged parent drops out; children re-target trunk;
-  spine reflows silently.
+  the sleeve reflows silently.
 - **Fork, two PRs share a base** (`stack-fork-sibling-runs`) — the design assumes a linear chain. Decision:
-  the longest chain keeps the spine; sibling branches render as their own runs directly beneath. No error
+  the longest chain keeps the primary run; sibling branches render as their own runs, each in its own
+  sleeve, directly beneath. No error
   state. Golden asserts both runs and their relative order.
 - **Cycle** (`stack-cycle-guard`) — impossible in git but cheap to guard: visited-set, break, and emit the
-  members as loose PRs. Golden asserts no spine is drawn.
+  members as loose PRs. Golden asserts no sleeve is drawn.
 - **Parent in another repo** (`stack-parent-foreign-repo`) and **parent authored by someone else**
-  (`stack-parent-foreign-author`) — not a stack; each row renders normally with no spine and no
+  (`stack-parent-foreign-author`) — not a stack; each row renders normally with no sleeve and no
   `blocked` status.
 
 ### Project grouping (Linear)
@@ -332,7 +333,7 @@ PR** — the bottom-most member, the one targeting trunk — and every member re
 its own primary issue. The base is the stack's anchor and the member least likely to change, so this is the
 stable choice; picking by majority would let a single new top-most PR relocate the whole run. A member whose
 own project differs still shows its own identifier in its meta line, so the divergence is visible without
-splitting the spine. Fixture: `stack-spanning-projects`.
+splitting the sleeve. Fixture: `stack-spanning-projects`.
 
 Resolution keeps the **full identifier** as the key throughout. Linear's `issue(id:)` accepts the
 human-readable identifier directly, so each uncached identifier is one aliased field in a single batched
@@ -823,10 +824,14 @@ select all) at launch. It is a dispatch table, not a UI decision — nothing in 
 **Row** (`PRRow`), left to right, matching 2a exactly:
 
 - 5 pt unread gutter — indigo dot when unread, empty otherwise; **always reserved** so rows never shift.
-- 16 pt status chip, 5 pt corner radius, tinted background with a 6 pt dot inside; when the row is tinted
-  the chip carries a 3 pt halo in the row's own tint (this is what lets the spine pass behind it cleanly).
-- Spine: 1.5 pt hairline at the chip's centre line, drawn from `top: -8` and/or `bottom: -8` depending on
-  the member's position in the run. Top member draws downward only, base member upward only.
+- 16 pt status chip, 5 pt corner radius, tinted background with a 6 pt dot inside; on a row outside a stack
+  and tinted, the chip carries a 3 pt halo in the row's own tint so it keeps a clean edge. A stack member
+  has no halo — the sleeve is what surrounds its chip, and a halo would punch a hole through it.
+- Stack sleeve: a rounded rectangle 4 pt out from the chip on every side (24 pt wide, 8 pt radius) in a
+  translucent neutral, drawn behind the chips of one run. Each member paints its own band across the full
+  row height, so consecutive members tile into one sleeve; the ends of the run cap 4 pt past their chip and
+  round, the middles run square edge to edge. Translucent rather than a flat grey so the row tint and the
+  hover lift both survive underneath it.
 - Title, 12.5 pt, single line, ellipsis; weight 500 → 560 as the row gains urgency.
 - Meta line, 11 pt: `#number` first, repo name **only when the list spans more than one repo**, **one** status
   phrase, age, snooze if any, and the Linear identifier (indigo, clickable) **last** — after the age — with a
@@ -918,7 +923,8 @@ dark is derived and reviewed against the same file's palette intent.
 | In-flight / attention-amber | `#9A6700` |
 | Merged, awaiting release | `#8250DF` on `#E6D4FA` chip |
 | Accent / unread / Linear links | `#5E6AD2`, row tint `#ECECF8` |
-| Neutral chip / spine / empty segment | `#E0E1E5` / `#DDDEE3` / `#E4E4E7` |
+| Neutral chip / empty segment | `#E0E1E5` / `#E4E4E7` |
+| Stack sleeve | `rgba(0,0,0,.055)` light / `rgba(255,255,255,.075)` dark |
 | Row geometry | padding `6 10 6 8`, margin `0 6`, radius 7, gap 9 |
 
 Typography rules from PRD §11, enforced in review: **no monospaced type anywhere**; every numeral run uses
@@ -991,7 +997,7 @@ Each is independently demoable. Estimates assume one engineer working in focused
 | **M0** | Skeleton & local build | SwiftPM package + Xcode app target, `LSUIElement`, self-signed local identity, `make run`, empty popover | A signed-to-run-locally menu bar app opens an empty popover; keychain access doesn't re-prompt across rebuilds |
 | **M1** | Core model | Entities, `RowStatus` precedence (terminal states first), stack derivation, deterministic run/section ordering, snooze suppression, fixtures + golden tests | `derive()` turns a fixture snapshot into the exact 2a panel model; every stack fixture in §2 has a golden |
 | **M2** | GitHub ingestion | GraphQL client with search pagination, repo scope modes, DTO→domain mapping (including nullable `body`), token in Keychain, ETag and point-budget rate limiting | Real PRs appear in a debug dump under both All and Selected scope, including past the first page of 50 |
-| **M3** | Panel UI | Tokens, `PRRow`, spine, sections, header/footer, needs-attention + all-clear states | Panel is pixel-comparable to 2a against real data |
+| **M3** | Panel UI | Tokens, `PRRow`, stack sleeve, sections, header/footer, needs-attention + all-clear states | Panel is pixel-comparable to 2a against real data |
 | **M4** | Icon + unread + events | Status item drawing (4 states, disconnected outranking), effective-state event diffing against `previous`, `EventSink` bus, digest-based unread, open/mark-all-read | Icon tracks the priority table, and an expired GitHub token shows dashed rather than a cached badge; a relaunch emits no events but preserves unread |
 | **M5** | Linear grouping | Multi-identifier extraction, primary-issue selection, per-identifier `issue(id:)` resolution, cache, `Other` fallback | Rows group under real project headings; a multi-ticket PR shows `+N` and groups under its primary; a Linear outage keeps cached headings and marks the source stale |
 | **M6** | Release tracking & persistence | The `state.json` store (atomic, schema-versioned), merge-commit capture, unbound-merge persistence, paginated tag polling by per-repo pattern, containment via `compare` with durable negatives and a per-poll budget, binding cache, third segment + Done section | A merged PR flips to shipped when a matching tag appears — including a tag cut weeks later, and one found past the first page; the binding, and everything else in `LocalState`, survives a relaunch |

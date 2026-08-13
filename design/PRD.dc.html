@@ -107,7 +107,7 @@
     <tbody>
       <tr><td style="font-weight:600;color:#1D1D1F">Unread dot</td><td>Leading indigo dot when the PR changed since the panel was last opened. Absent otherwise; the gutter is reserved so rows never shift.</td></tr>
       <tr><td style="font-weight:600;color:#1D1D1F">Status icon</td><td>A single tinted chip carrying the PR's overall state: in review, approved, blocked by a parent, changes requested, checks failing, conflicted, merged, closed. A row that needs attention always has a matching icon — a green icon never appears in a tinted row.</td></tr>
-      <tr><td style="font-weight:600;color:#1D1D1F">Stack spine</td><td>A hairline connecting the status icons of consecutive members of a stack. No box, no indentation: stacked and unstacked PRs share one left edge, so the list keeps a single rhythm.</td></tr>
+      <tr><td style="font-weight:600;color:#1D1D1F">Stack sleeve</td><td>A narrow rounded rectangle wrapping the status icons of consecutive members of a stack, capped at both ends of the run. It groups the icons without indenting the rows: stacked and unstacked PRs share one left edge, so the list keeps a single rhythm.</td></tr>
       <tr><td style="font-weight:600;color:#1D1D1F">Title</td><td>PR title, single line, truncated with an ellipsis. Weight increases slightly when the row needs attention.</td></tr>
       <tr><td style="font-weight:600;color:#1D1D1F">Meta line</td><td>Linear issue identifier, PR number, the one most important status phrase, and age or time since last activity. The status phrase is the only coloured token.</td></tr>
       <tr><td style="font-weight:600;color:#1D1D1F">Reviewers</td><td>Up to three avatars, overlapping by 2 points, each ringed in the colour of that reviewer's state: approved, changes requested, or pending. A count replaces the overflow.</td></tr>
@@ -120,7 +120,7 @@
   <p style="font-size:14.5px;line-height:1.65;margin:0 0 26px">Merged PRs that reached production, and PRs closed without merging, collect in a trailing <strong style="font-weight:600">Done</strong> section. Each row can be dismissed individually, and the section header offers <em>Clear all</em>. Dismissal is local and permanent for that PR — it never re-appears, even if a later event touches it. A merged PR whose deploy is still in flight stays in its project section until it lands, because it is still information the user is waiting on.</p>
 
   <h2 style="font-size:18px;font-weight:640;letter-spacing:-0.015em;margin:0 0 10px">6. Stacks</h2>
-  <p style="font-size:14.5px;line-height:1.65;margin:0 0 10px">A stack is rendered as a run of adjacent rows joined by the spine. Members are ordered top-most first; the bottom row is the PR based on the trunk. A PR whose parent is not yet merged shows <em>waiting on #NNNN</em> in its meta line and a neutral status icon: it is not the user's problem until the layer beneath it clears.</p>
+  <p style="font-size:14.5px;line-height:1.65;margin:0 0 10px">A stack is rendered as a run of adjacent rows whose status icons sit in one sleeve. Members are ordered top-most first; the bottom row is the PR based on the trunk. A PR whose parent is not yet merged shows <em>waiting on #NNNN</em> in its meta line and a neutral status icon: it is not the user's problem until the layer beneath it clears.</p>
   <p style="font-size:14.5px;line-height:1.65;margin:0 0 26px">When the number of open PRs makes full expansion impractical, a stack may collapse to a single summary row: name, member count, one segment per member coloured by that member's state, and the position of the first blockage. This is a scaling affordance, not the default presentation.</p>
 
   <h2 style="font-size:18px;font-weight:640;letter-spacing:-0.015em;margin:0 0 10px">7. Deployment tracking</h2>
@@ -149,7 +149,7 @@
   <ul style="font-size:14.5px;line-height:1.65;margin:0 0 26px;padding-left:20px">
     <li style="margin-bottom:5px">A PR is linked to no Linear issue, or to an issue with no project — it lands in <strong style="font-weight:600">Other</strong>.</li>
     <li style="margin-bottom:5px">A PR moves out of draft — it appears; a PR converted back to draft disappears without a notification.</li>
-    <li style="margin-bottom:5px">A stack member is merged out of order — the spine reflows and the remaining members re-target; no error state.</li>
+    <li style="margin-bottom:5px">A stack member is merged out of order — the sleeve reflows and the remaining members re-target; no error state.</li>
     <li style="margin-bottom:5px">A release is never cut for a merged PR — it sits at staging indefinitely and is not surfaced as a problem.</li>
     <li style="margin-bottom:5px">A production deploy is rolled back after being reported live — the row returns from Done with an action-needed state.</li>
     <li style="margin-bottom:5px">Nothing to show at all — the panel states plainly that everything is clear rather than rendering an empty list.</li>
