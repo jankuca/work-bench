@@ -7,7 +7,7 @@ for the whole design; this README covers only how to work in this package.
 | --- | --- | --- |
 | `PRStackCore` | M1, M3, M4, M6, M7, M8 | Domain model and all derivation logic, plus the presentation layer the panel view reads, the event diff, the menu bar icon's state machine, the `state.json` store, the row actions behind the pointer and the keys, and the poll interval table with its per-source backoff. Foundation only, no I/O beyond that one store, no clock reads |
 | `NetKit` | M5 | The seam under both service kits: HTTP transport, GraphQL envelope, credential providers. One macOS-only file, fenced. No policy |
-| `GitHubKit` | M2, M6 | GraphQL + REST clients, DTOs, rate limiting, and the tag-containment release tracker |
+| `GitHubKit` | M2, M6 | GraphQL + REST clients, DTOs, rate limiting, the priority refresh that fetches the rows already on screen ahead of the searches, and the tag-containment release tracker |
 | `LinearKit` | M5 | Identifier scan, batched `issue(id:)` resolution, the project cache |
 | `prstack-dump` | M1–M6 | Debug tool: derive a fixture, or a live GitHub + Linear poll, and print the panel |
 

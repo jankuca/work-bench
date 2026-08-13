@@ -22,6 +22,53 @@ public struct RawSnapshot: Equatable, Sendable {
     }
 }
 
+extension RawSnapshot {
+    /// This snapshot with `refreshed` in place of the rows it names, and everything else
+    /// left exactly as it was.
+    ///
+    /// What a priority refresh lands with. It answers for the rows it was asked about and
+    /// for nothing else, so it cannot *replace* a snapshot — doing that would empty the
+    /// panel of every row the refresh did not cover, which on a large account is most of
+    /// them. Rows it names are updated in place, keeping their position; rows it does not
+    /// are untouched; rows the snapshot has never seen — every row, on the first poll after
+    /// a launch — are appended in the order given.
+    ///
+    /// `viewerLogin` is the login the refresh answered as, and is used only when this
+    /// snapshot does not have one yet. That is the launch case again: the panel starts with
+    /// no viewer, and derivation needs one before it can tell the user's own pull requests
+    /// from anybody else's.
+    public func replacing(
+        _ refreshed: [PullRequest],
+        viewerLogin: String? = nil
+    ) -> RawSnapshot {
+        var login = self.viewerLogin
+        if login.isEmpty, let viewerLogin { login = viewerLogin }
+        guard !refreshed.isEmpty else {
+            return RawSnapshot(viewerLogin: login, pullRequests: pullRequests)
+        }
+
+        var byID = Dictionary(refreshed.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        var merged: [PullRequest] = []
+        merged.reserveCapacity(pullRequests.count + refreshed.count)
+
+        for existing in pullRequests {
+            merged.append(byID.removeValue(forKey: existing.id) ?? existing)
+        }
+        // Whatever is left over was not in the snapshot at all. Appended in the order it
+        // was given rather than in the order a dictionary iterates, so two runs of the same
+        // poll produce the same snapshot — and appended as the *map* holds it, which is the
+        // last copy of a repeated id. The loop above hands back that same copy, and two
+        // paths disagreeing about which version of a duplicated row wins is a difference
+        // that would only ever show up as one stale row, once, unreproducibly.
+        for pullRequest in refreshed {
+            guard let latest = byID.removeValue(forKey: pullRequest.id) else { continue }
+            merged.append(latest)
+        }
+
+        return RawSnapshot(viewerLogin: login, pullRequests: merged)
+    }
+}
+
 extension RawSnapshot: Codable {
     private enum CodingKeys: String, CodingKey {
         case viewerLogin
@@ -147,22 +194,72 @@ public struct LocalState: Equatable, Sendable {
     public var releaseBindings: [PRID: String]
     /// Merged pull requests still waiting for a tag, keyed the same way as everything else.
     public var unboundMerges: [PRID: UnboundMerge]
+    /// The rows the panel last drew, in the order the next poll should refresh them.
+    ///
+    /// The one entry here that is not the user's own doing, and the only one that is a
+    /// *cache* rather than a decision: nothing derivation reads depends on it, and losing
+    /// the whole list costs one slow poll and nothing else.
+    ///
+    /// It is persisted for the launch case. A poll that knows which rows were on screen can
+    /// ask for those directly, in one request, before it starts paging through everything
+    /// in scope — and the launch after a quit is precisely when the panel is empty and the
+    /// sweep is longest. Held only in memory it would help every poll except the first,
+    /// which is the one that needs it most.
+    public var displayed: [PRID]
 
     public init(
         dismissed: Set<PRID> = [],
         snoozedUntil: [PRID: Date] = [:],
         readDigests: [PRID: ReadDigest] = [:],
         releaseBindings: [PRID: String] = [:],
-        unboundMerges: [PRID: UnboundMerge] = [:]
+        unboundMerges: [PRID: UnboundMerge] = [:],
+        displayed: [PRID] = []
     ) {
         self.dismissed = dismissed
         self.snoozedUntil = snoozedUntil
         self.readDigests = readDigests
         self.releaseBindings = releaseBindings
         self.unboundMerges = unboundMerges
+        self.displayed = displayed
     }
 
     public static let empty = LocalState()
+
+    /// How many ids ``recordDisplayed(from:limit:)`` keeps.
+    ///
+    /// The refresh that reads them asks for all of them in a single request, so the cap is
+    /// what fits in one: fifty, which is also the search's page size. `GitHubKit` owns that
+    /// number for its own query and this module cannot name it — `PRStackCore` sits
+    /// underneath it and stays there — so the two are written down twice and agree by
+    /// intent. A panel with more than fifty rows is one nobody is reading past anyway.
+    public static let displayedLimit = 50
+
+    /// Records the rows the panel is showing, in refresh priority order.
+    ///
+    /// The order is the answer to "if only some of these can be refreshed, which ones":
+    /// open pull requests before terminal ones, because a merged row's status cannot change
+    /// again while a review can arrive on an open one any second; then most recently
+    /// updated first, because that is where activity is; then the panel's own ordering as a
+    /// tie-break, so the list is a function of the snapshot rather than of the order GitHub
+    /// happened to answer in — a list that reshuffled itself between polls would rewrite the
+    /// state file on every one of them.
+    ///
+    /// Dismissed pull requests are left out. They never render again, so refreshing one
+    /// would spend part of a single request's budget on a row nobody will see.
+    public mutating func recordDisplayed<PullRequests: Sequence>(
+        from pullRequests: PullRequests,
+        limit: Int = LocalState.displayedLimit
+    ) where PullRequests.Element == PullRequest {
+        displayed = pullRequests
+            .filter { !dismissed.contains($0.id) }
+            .sorted { left, right in
+                if (left.state == .open) != (right.state == .open) { return left.state == .open }
+                if left.updatedAt != right.updatedAt { return left.updatedAt > right.updatedAt }
+                return PRID.panelOrder(left.id, right.id)
+            }
+            .prefix(max(0, limit))
+            .map(\.id)
+    }
 
     /// Records read digests for `ids` as those pull requests stand in `snapshot`.
     ///
@@ -261,7 +358,10 @@ public struct LocalState: Equatable, Sendable {
     /// spending comparisons on a row nobody will see — and ``recordMerges(from:)`` would
     /// not put it back, because it skips dismissed pull requests.
     public mutating func dismiss<Ids: Sequence>(_ ids: Ids) where Ids.Element == PRID {
-        for id in ids {
+        // Collected before anything is written, because `Ids` is a `Sequence` and a
+        // sequence may only be walked once — the list is needed twice below.
+        let removed = Set(ids)
+        for id in removed {
             dismissed.insert(id)
             unboundMerges[id] = nil
             // A dismissed row never renders again, so its wake time has nothing left to
@@ -269,6 +369,11 @@ public struct LocalState: Equatable, Sendable {
             // looks the id up again.
             snoozedUntil[id] = nil
         }
+        // The next poll rewrites this list from its own snapshot and leaves dismissals out
+        // anyway, so this only closes the window between the two — but a refresh that spent
+        // part of its one request on a row the user has just dismissed would be spending it
+        // on nothing.
+        displayed.removeAll { removed.contains($0) }
     }
 
     public mutating func dismiss(_ id: PRID) {
@@ -303,6 +408,7 @@ extension LocalState: Codable {
         case readDigests
         case releaseBindings
         case unboundMerges
+        case displayed
     }
 
     public init(from decoder: any Decoder) throws {
@@ -318,12 +424,18 @@ extension LocalState: Codable {
         let digests = try container.decodeIfPresent([String: String].self, forKey: .readDigests) ?? [:]
         let bindings = try container.decodeIfPresent([String: String].self, forKey: .releaseBindings) ?? [:]
         let merges = try container.decodeIfPresent([String: UnboundMerge].self, forKey: .unboundMerges) ?? [:]
+        // Absent from every file written before the priority refresh existed, and from a
+        // file written by a launch that never completed a poll. Both mean the same thing:
+        // the first poll of this launch has nothing to refresh ahead of its search and is
+        // the plain sweep it always was.
+        let displayed = try container.decodeIfPresent([String].self, forKey: .displayed) ?? []
         self.init(
             dismissed: Set(dismissed.compactMap(PRID.init(rawValue:))),
             snoozedUntil: LocalState.rekey(snoozed) { $0 },
             readDigests: LocalState.rekey(digests) { ReadDigest(value: $0) },
             releaseBindings: LocalState.rekey(bindings) { $0 },
-            unboundMerges: LocalState.rekey(merges) { $0 }
+            unboundMerges: LocalState.rekey(merges) { $0 },
+            displayed: displayed.compactMap(PRID.init(rawValue:))
         )
     }
 
@@ -341,6 +453,9 @@ extension LocalState: Codable {
         try container.encode(LocalState.stringKeyed(readDigests) { $0.value }, forKey: .readDigests)
         try container.encode(LocalState.stringKeyed(releaseBindings) { $0 }, forKey: .releaseBindings)
         try container.encode(LocalState.stringKeyed(unboundMerges) { $0 }, forKey: .unboundMerges)
+        // Not sorted, unlike `dismissed`: this list *is* an order — the order the next poll
+        // refreshes in — and sorting it would throw away the only thing it says.
+        try container.encode(displayed.map(\.rawValue), forKey: .displayed)
     }
 
     private static func rekey<Input, Output>(
