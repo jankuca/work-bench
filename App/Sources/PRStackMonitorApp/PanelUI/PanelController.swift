@@ -42,6 +42,17 @@ final class PanelController: ObservableObject {
     /// Bumped per poll, so a late result can tell whether it is still the current one.
     private var pollGeneration = 0
 
+    /// What the last completed sweep cost: the most pages either of its searches needed,
+    /// and whether both reached the end of theirs.
+    ///
+    /// This is what decides whether the *next* poll refreshes the visible rows first. On an
+    /// account whose whole list fits in one page there is nothing to gain — the sweep is
+    /// already one request — and a refresh would be a second request for rows the first one
+    /// is about to return anyway. Starting at "one page, complete" is what keeps a small
+    /// account on exactly the poll it had before any of this existed.
+    private var sweepPages = 1
+    private var sweepIsComplete = true
+
     /// The model from the last derivation, held in memory and **never persisted**, so a
     /// relaunch replays no history (IMPLEMENTATION_PLAN §1).
     private var previous: PanelModel?
@@ -179,13 +190,62 @@ final class PanelController: ObservableObject {
             local: local,
             now: clock(),
             // A backing-off Linear still resolves from cache; what it skips is the request.
-            resolvesLinear: engine.resolvesLinear
+            resolvesLinear: engine.resolvesLinear,
+            known: priorityRows
         )
         pollTask = Task { [weak self] in
             guard let self else { return }
-            let outcome = await self.source.load(plan)
+
+            // Phase one, when there is one: the rows already on screen, in a single
+            // request, drawn as soon as they land. The sweep behind it is unchanged and
+            // still authoritative — this only decides how long the panel shows yesterday's
+            // check status while the searches page through everything in scope.
+            var sweep = plan
+            if !plan.known.isEmpty, let refreshed = await self.source.refresh(plan) {
+                self.applyPriority(refreshed, from: generation)
+                // Handed to the sweep so a search that stops at the page cap cannot drop a
+                // row this just refreshed.
+                sweep.refreshed = refreshed.pullRequests
+            }
+
+            let outcome = await self.source.load(sweep)
             self.apply(outcome, from: generation)
         }
+    }
+
+    /// The rows the next poll refreshes ahead of its searches, in priority order.
+    ///
+    /// Empty unless the refresh can pay for itself: a sweep that took more than one page,
+    /// one that did not finish, or a panel that has no rows at all — which is every launch,
+    /// and the slowest poll there is. The list itself is the last poll's, persisted, so a
+    /// relaunch draws the rows it drew before within one request rather than one sweep.
+    private var priorityRows: [PRID] {
+        guard snapshot.pullRequests.isEmpty || sweepPages > 1 || !sweepIsComplete else { return [] }
+        return local.displayed
+    }
+
+    /// Folds a priority refresh into the rows on screen.
+    ///
+    /// Deliberately much less than ``apply(_:from:)`` does. This is half a poll: it answers
+    /// for the rows it was asked about and knows nothing about the rest, so it updates those
+    /// rows and leaves every conclusion drawn from a *whole* poll — the last-synced time,
+    /// the source's health, the repository list, the interval table's inputs — to the sweep
+    /// landing seconds behind it. Nothing here can make the footer claim a poll that has not
+    /// finished.
+    private func applyPriority(_ product: PriorityProduct, from generation: Int) {
+        // The same guard, for the same reason, as the sweep's: a refresh from a poll the
+        // panel closing cancelled must not redraw the one that replaced it.
+        guard generation == pollGeneration, !product.pullRequests.isEmpty else { return }
+
+        snapshot = snapshot.replacing(product.pullRequests, viewerLogin: product.viewerLogin)
+        // A row the user is looking at while it refreshes has been seen, exactly as it has
+        // when a whole poll lands under an open panel. `digestsWhileOpen` stays frozen at
+        // the open, so the dots that made them open it are still on screen.
+        if digestsWhileOpen != nil {
+            local.markAllRead(in: snapshot)
+            persist()
+        }
+        rebuild()
     }
 
     private func apply(_ outcome: PollOutcome, from generation: Int) {
@@ -217,6 +277,15 @@ final class PanelController: ObservableObject {
             // concerned; dropping them here is what stops the file accumulating an entry
             // per pull request the user has ever silenced.
             local.pruneSnoozes(before: clock())
+            // Which rows the next poll — and the next launch — refreshes before it starts
+            // paging. Recorded from the snapshot rather than from the derived model because
+            // it is about what this poll *fetched*: a row suppressed by a snooze is still a
+            // row whose checks have to be current when the snooze ends.
+            local.recordDisplayed(from: snapshot.pullRequests)
+            // What that decision is measured against, so a sweep that fits in one page never
+            // pays for a refresh it does not need.
+            sweepPages = product.pagesFetched
+            sweepIsComplete = product.isComplete
             // Who this poll answered for, before anything is recorded against it: a token
             // swapped in Settings points the app at a different account, and the repository
             // preferences move with it rather than the new account inheriting the old one's
@@ -473,6 +542,20 @@ enum PollOutcome: Sendable {
     case cancelled
 }
 
+/// What a priority refresh produced: the rows it was asked about, as they stand now.
+///
+/// A fraction of a ``PollProduct`` on purpose. There is no health in it, no release work
+/// and no rate limit — a refresh is one request for a known list, and everything a poll
+/// concludes about the *state of the world* needs the sweep that follows it.
+struct PriorityProduct: Sendable {
+    /// Who GitHub answered for. Read only when the panel does not have a viewer yet, which
+    /// is the launch this exists to speed up.
+    var viewerLogin: String
+    /// Already resolved against the Linear cache, so a row keeps its project heading and
+    /// does not jump to `Other` and back between the refresh and the sweep.
+    var pullRequests: [PullRequest]
+}
+
 /// A successful poll: the rows, what it learned about Linear, and what it learned about
 /// releases.
 struct PollProduct: Sendable {
@@ -485,6 +568,10 @@ struct PollProduct: Sendable {
     /// Bindings and durable negatives, for the main actor to merge into `LocalState`.
     var release: ReleaseTrackerResult = .empty
     var warnings: [FetchWarning] = []
+    /// The most pages either search needed, and whether both got to the end of theirs. Not
+    /// for the footer — it is what the next poll decides its priority refresh from.
+    var pagesFetched: Int = 1
+    var isComplete: Bool = true
 }
 
 /// One poll's instructions.
@@ -499,12 +586,32 @@ struct PollPlan: Sendable {
     /// their cached project headings; what is deferred is the request, not the resolution
     /// (IMPLEMENTATION_PLAN §4).
     var resolvesLinear: Bool = true
+    /// The rows to refresh ahead of the searches, in priority order. Empty when the sweep
+    /// is cheap enough that a second request would cost more than it saved.
+    var known: [PRID] = []
+    /// What the refresh found, on the way back in: the sweep merges these so a search that
+    /// stopped at the page cap cannot drop a row the panel is showing.
+    var refreshed: [PullRequest] = []
 }
 
 /// Where a panel's rows come from. One implementation talks to GitHub; a preview passes
 /// a fixture.
 protocol PanelSource: Sendable {
     func load(_ plan: PollPlan) async -> PollOutcome
+
+    /// The priority refresh, when the source has one: ``PollPlan/known``'s rows, fetched in
+    /// a single request, ahead of ``load(_:)``.
+    ///
+    /// `nil` for "nothing to draw yet" — no refresher, nothing known, or a request that did
+    /// not answer. It is never an error: whatever this could not do, the sweep behind it
+    /// does, so a source with no answer here simply polls the way it always did.
+    func refresh(_ plan: PollPlan) async -> PriorityProduct?
+}
+
+extension PanelSource {
+    /// A source that has nothing faster to offer — a fixture, a preview — polls in one
+    /// phase, which is what this default says.
+    func refresh(_ plan: PollPlan) async -> PriorityProduct? { nil }
 }
 
 /// One GraphQL poll, mapped to an outcome the panel can render.
@@ -512,6 +619,10 @@ protocol PanelSource: Sendable {
 /// Two requests, in that order: GitHub for the pull requests, then Linear for the issues
 /// the identifiers in them name. Sequential rather than parallel because on a cold start
 /// there are no identifiers to resolve until GitHub has answered (IMPLEMENTATION_PLAN §1).
+///
+/// ``refresh(_:)`` is the same pair, once more and smaller, ahead of both: the rows already
+/// on screen, refreshed by id and resolved from the Linear cache alone, so the panel is
+/// current for what it is drawing before the searches have finished paging.
 struct GitHubPanelSource: PanelSource {
     /// Read per poll rather than held, like the tag patterns below: Settings writes
     /// `UserDefaults` and the next poll picks the change up, so there is no second copy to
@@ -535,13 +646,19 @@ struct GitHubPanelSource: PanelSource {
     /// uncached request per pair, which the persisted negatives keep to a handful.
     let etags: any ETagStore = InMemoryETagStore()
 
-    func load(_ plan: PollPlan) async -> PollOutcome {
+    /// The whole pipeline, built per call.
+    ///
+    /// Per call rather than held, for the same reason the scope and the tag patterns are
+    /// read per call: every part of it is a value over the shared transport, so building one
+    /// costs nothing and there is no second copy of a setting to invalidate when Settings
+    /// writes `UserDefaults`.
+    private func pipeline() -> GitHubPoll {
         let credentials = CredentialChain.standard(
             environment: .github(),
             keychain: .github,
             service: "GitHub"
         )
-        let poll = GitHubPoll(
+        return GitHubPoll(
             client: GitHubClient(transport: transport, tokenProvider: credentials),
             tracker: TagContainmentTracker(
                 transport: transport,
@@ -558,14 +675,57 @@ struct GitHubPanelSource: PanelSource {
             ),
             // Costs nothing unless a merged pull request arrives without a merge commit,
             // which is rare and otherwise permanent.
-            recovery: MergeCommitRecovery(transport: transport, tokenProvider: credentials)
+            recovery: MergeCommitRecovery(transport: transport, tokenProvider: credentials),
+            // One request for the rows already on screen, ahead of the searches.
+            priority: PriorityRefresh(transport: transport, tokenProvider: credentials)
         )
+    }
+
+    /// Phase one: the known rows, refreshed and resolved from cache.
+    ///
+    /// Linear is asked nothing here — `cacheOnly`, whatever the plan says about backoff.
+    /// These identifiers have been resolved before, by definition of the rows being ones the
+    /// panel has already drawn, so the cache answers them; and a refresh that waited on a
+    /// second network round trip would be spending the latency it exists to save.
+    ///
+    /// Every failure answers `nil`. A refresh is an optimisation over a sweep that is about
+    /// to run anyway, and the sweep reports for both of them — reporting a failure twice
+    /// would put the banner up for a request nobody asked for.
+    func refresh(_ plan: PollPlan) async -> PriorityProduct? {
+        guard !plan.known.isEmpty else { return nil }
+        guard let fetched = try? await pipeline().refreshKnown(
+            plan.known,
+            scope: scope,
+            includesDrafts: includesDrafts,
+            local: plan.local,
+            now: plan.now
+        ), !fetched.isEmpty else { return nil }
+
+        for warning in fetched.warnings {
+            NSLog("PRStackMonitor: %@", warning.description)
+        }
+
+        let resolution = await LinearPanelSource.resolve(
+            fetched.pullRequests,
+            over: transport,
+            now: plan.now,
+            mode: .cacheOnly
+        )
+        return PriorityProduct(
+            viewerLogin: fetched.viewerLogin,
+            pullRequests: resolution.pullRequests
+        )
+    }
+
+    func load(_ plan: PollPlan) async -> PollOutcome {
+        let poll = pipeline()
 
         do {
             let fetched = try await poll.run(
                 scope: scope,
                 includesDrafts: includesDrafts,
                 local: plan.local,
+                refreshed: KnownPullRequestFetch(pullRequests: plan.refreshed),
                 now: plan.now
             )
             // Linear never fails the poll. It cannot: every row is already complete without
@@ -585,7 +745,12 @@ struct GitHubPanelSource: PanelSource {
                     ),
                     linear: resolution.health,
                     release: fetched.release,
-                    warnings: fetched.warnings
+                    warnings: fetched.warnings,
+                    // The longer of the two searches, not their sum: every poll runs both,
+                    // so a sum is two before it has said anything about how big the account
+                    // is. What matters is whether either of them had to page at all.
+                    pagesFetched: max(fetched.open.pagesFetched, fetched.closed.pagesFetched),
+                    isComplete: fetched.isComplete
                 )
             )
         } catch is CancellationError {

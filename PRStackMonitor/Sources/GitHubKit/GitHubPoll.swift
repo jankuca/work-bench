@@ -9,6 +9,15 @@ import PRStackCore
 /// merged five seconds ago is testable against a tag cut four seconds ago on the same poll
 /// it first appears.
 ///
+/// Ahead of all of it, optionally, is the priority refresh: one request for the rows the
+/// panel is already showing (``refreshKnown(_:scope:includesDrafts:local:now:)``). It is a
+/// separate call rather than a step inside ``run(scope:includesDrafts:local:refreshed:now:)``
+/// because something has to happen to its answer *between* the two — the rows are resolved
+/// against Linear and drawn — and that is the app's business, not this type's. What stays
+/// here is the part that has to be right whoever calls it: the refresh's rows are handed
+/// back to `run`, which merges them into the sweep's result, so a search that stopped at
+/// the page cap cannot drop a row the panel has on screen.
+///
 /// This exists as a type rather than as a few lines in the app because it is the only place
 /// that ordering is expressed, and the app layer is the one place CI cannot compile
 /// (IMPLEMENTATION_PLAN §1).
@@ -16,27 +25,63 @@ public struct GitHubPoll {
     private let client: GitHubClient
     private let tracker: (any ReleaseTracker)?
     private let recovery: MergeCommitRecovery?
+    private let priority: PriorityRefresh?
 
     /// `tracker` is optional so a poll can run without release tracking — that is what the
     /// debug dump does by default, and what a build with no `Contents: read` scope would
     /// have to do. `recovery` is the §3 fallback for a merged pull request GitHub reports no
-    /// merge commit for; it costs nothing when there is none.
+    /// merge commit for; it costs nothing when there is none. `priority` is the refresh
+    /// above; without one a poll is exactly what it was before it existed.
     public init(
         client: GitHubClient,
         tracker: (any ReleaseTracker)? = nil,
-        recovery: MergeCommitRecovery? = nil
+        recovery: MergeCommitRecovery? = nil,
+        priority: PriorityRefresh? = nil
     ) {
         self.client = client
         self.tracker = tracker
         self.recovery = recovery
+        self.priority = priority
+    }
+
+    /// Phase one: the rows named by `ids`, refreshed in one request.
+    ///
+    /// Answers `.empty` — not an error — when there is no refresher, nothing known, or
+    /// nothing in scope. A caller that always calls this and passes whatever it gets to
+    /// ``run(scope:includesDrafts:local:refreshed:now:)`` behaves correctly in every one of
+    /// those cases.
+    ///
+    /// `local` is read for one thing: the closed search's lower bound, which is what decides
+    /// whether a pull request that has already closed still belongs in the panel. Passing
+    /// the same `local` and `now` to both halves is what keeps the refresh and the sweep
+    /// agreeing about where that line is.
+    public func refreshKnown(
+        _ ids: [PRID],
+        scope: RepoScope,
+        includesDrafts: Bool = false,
+        local: LocalState,
+        now: Date
+    ) async throws -> KnownPullRequestFetch {
+        guard let priority, !ids.isEmpty else { return .empty }
+        return try await priority.refresh(
+            ids,
+            scope: scope,
+            includesDrafts: includesDrafts,
+            closedSince: MergedPullRequestSearch.lowerBound(unbound: local.unboundMerges, now: now)
+        )
     }
 
     /// `includesDrafts` is the Settings preference, read once per poll and applied to both
     /// searches so the two halves cannot disagree about what a poll covers.
+    ///
+    /// `refreshed` is phase one's answer, as ``refreshKnown(_:scope:includesDrafts:local:now:)``
+    /// returned it — already filtered to rows the panel may show. Passing `.empty` runs the
+    /// poll exactly as it ran before the refresh existed.
     public func run(
         scope: RepoScope,
         includesDrafts: Bool = false,
         local: LocalState,
+        refreshed: KnownPullRequestFetch = .empty,
         now: Date
     ) async throws -> GitHubPollResult {
         let open = try await client.fetchOpenPullRequests(scope: scope, includesDrafts: includesDrafts)
@@ -53,6 +98,20 @@ public struct GitHubPoll {
             // The two searches are disjoint by construction (`is:open` against
             // `is:closed`), but a pull request merged between the two requests would
             // otherwise appear in both, and derivation would draw it twice.
+            guard seen.insert(pullRequest.id).inserted else { continue }
+            pullRequests.append(pullRequest)
+        }
+
+        // Then whatever the priority refresh found that the searches did not return.
+        //
+        // Ordinarily that is nothing — the refresh only ever asks for rows the searches
+        // cover, and a search that ran to completion returns every one of them, so the
+        // dedup above discards the older copy of each. It is not nothing when a search
+        // stopped early: at the page cap, at the point budget, or at the rate limit floor,
+        // the sweep comes back missing rows that are on screen right now, and replacing the
+        // panel with it would make them vanish for no reason the user can see. They are
+        // kept, one poll old at worst, until a sweep that reaches them says otherwise.
+        for pullRequest in refreshed.pullRequests {
             guard seen.insert(pullRequest.id).inserted else { continue }
             pullRequests.append(pullRequest)
         }
@@ -104,13 +163,17 @@ public struct GitHubPoll {
             }
         }
 
+        var viewerLogin = open.viewerLogin.isEmpty ? closed.viewerLogin : open.viewerLogin
+        if viewerLogin.isEmpty { viewerLogin = refreshed.viewerLogin }
+
         return GitHubPollResult(
-            viewerLogin: open.viewerLogin.isEmpty ? closed.viewerLogin : open.viewerLogin,
+            viewerLogin: viewerLogin,
             pullRequests: pullRequests,
             open: open,
             closed: closed,
             release: release,
-            recovery: recovered
+            recovery: recovered,
+            priority: refreshed
         )
     }
 }
@@ -128,6 +191,9 @@ public struct GitHubPollResult: Equatable, Sendable {
     /// Merge commits recovered from trunk. Already applied to ``pullRequests`` — this is
     /// here so the dump and the footer can say that it happened.
     public var recovery: MergeCommitRecoveryResult
+    /// The priority refresh this poll ran ahead of the searches, already merged into
+    /// ``pullRequests``. Here for its points, its warnings and the diagnostics.
+    public var priority: KnownPullRequestFetch
 
     public init(
         viewerLogin: String,
@@ -135,7 +201,8 @@ public struct GitHubPollResult: Equatable, Sendable {
         open: PullRequestFetch,
         closed: PullRequestFetch,
         release: ReleaseTrackerResult = .empty,
-        recovery: MergeCommitRecoveryResult = .empty
+        recovery: MergeCommitRecoveryResult = .empty,
+        priority: KnownPullRequestFetch = .empty
     ) {
         self.viewerLogin = viewerLogin
         self.pullRequests = pullRequests
@@ -143,24 +210,27 @@ public struct GitHubPollResult: Equatable, Sendable {
         self.closed = closed
         self.release = release
         self.recovery = recovery
+        self.priority = priority
     }
 
     public var snapshot: RawSnapshot {
         RawSnapshot(viewerLogin: viewerLogin, pullRequests: pullRequests)
     }
 
+    /// In the order the requests went out, so a footer or a dump reads chronologically.
     public var warnings: [FetchWarning] {
-        open.warnings + closed.warnings + recovery.warnings + release.warnings
+        priority.warnings + open.warnings + closed.warnings + recovery.warnings + release.warnings
     }
 
-    /// GraphQL points across both searches and the tag queries.
+    /// GraphQL points across the refresh, both searches and the tag queries.
     public var pointsSpent: Int {
-        open.pointsSpent + closed.pointsSpent + recovery.pointsSpent + release.pointsSpent
+        priority.pointsSpent + open.pointsSpent + closed.pointsSpent
+            + recovery.pointsSpent + release.pointsSpent
     }
 
-    /// The most recent accounting either search reported.
+    /// The most recent accounting any of them reported.
     public var rateLimit: RateLimit? {
-        release.rateLimit ?? closed.rateLimit ?? open.rateLimit
+        release.rateLimit ?? closed.rateLimit ?? open.rateLimit ?? priority.rateLimit
     }
 
     /// True when both searches ran to completion. When false the footer says so rather than

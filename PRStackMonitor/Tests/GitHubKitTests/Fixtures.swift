@@ -25,6 +25,74 @@ enum Fixtures {
     }
 }
 
+/// Builds the priority refresh's responses: one aliased `prN` per id asked for, in the
+/// order they were asked.
+///
+/// A `nil` entry is the alias answering `null`, which is what a repository the token cannot
+/// see and a pull request that has been deleted both look like — the case the refresh has
+/// to survive rather than fail on.
+enum KnownPage {
+    static func json(
+        repo: String = "acme/billing",
+        numbers: [Int?],
+        cost: Int = 8,
+        remaining: Int = 4_900,
+        limit: Int = 5_000,
+        viewer: String = "avery",
+        state: String = "OPEN",
+        isDraft: Bool = false,
+        updatedAt: String = "2026-01-09T08:00:00Z",
+        mergedAt: String? = nil
+    ) -> String {
+        var fields = [
+            """
+            "rateLimit": {
+              "limit": \(limit), "cost": \(cost), "remaining": \(remaining),
+              "resetAt": "2026-01-10T13:00:00Z"
+            }
+            """,
+            "\"viewer\": { \"login\": \"\(viewer)\" }"
+        ]
+
+        for (index, number) in numbers.enumerated() {
+            guard let number else {
+                fields.append("\"pr\(index)\": null")
+                continue
+            }
+            let merged = mergedAt.map { "\n      \"mergedAt\": \"\($0)\"," } ?? ""
+            fields.append(
+                """
+                "pr\(index)": {
+                  "pullRequest": {
+                    "number": \(number),
+                    "title": "Pull request \(number)",
+                    "url": "https://github.com/\(repo)/pull/\(number)",
+                    "headRefName": "avery/branch-\(number)",
+                    "baseRefName": "main",
+                    "isDraft": \(isDraft),
+                    "state": "\(state)",\(merged)
+                    "createdAt": "2026-01-05T08:00:00Z",
+                    "updatedAt": "\(updatedAt)",
+                    "repository": {
+                      "nameWithOwner": "\(repo)",
+                      "defaultBranchRef": { "name": "main" }
+                    }
+                  }
+                }
+                """
+            )
+        }
+
+        return """
+        {
+          "data": {
+            \(fields.joined(separator: ",\n"))
+          }
+        }
+        """
+    }
+}
+
 /// Builds search responses for the pagination tests.
 ///
 /// Hand-writing four pages of JSON would bury the thing under test — which is the loop's

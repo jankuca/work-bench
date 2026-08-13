@@ -138,6 +138,16 @@ when only the screen goes dark), reads the power source through IOKit, and asks
 lives in `PRStackCore`, so CI pins the ordering that actually matters — asleep and low
 battery outrank an open panel, and below them the fastest applicable interval wins.
 
+A poll on a large account runs in two phases. Before the searches start paging, the rows
+the panel is already showing are refreshed by id in a single request and drawn as soon as
+they land — `PanelSource.refresh`, then `load` behind it — so the panel is current for what
+it is drawing seconds into a poll whose sweep is still running. Which rows is the last
+poll's list, kept in `state.json` so the launch after a quit gets it too; whether to bother
+is decided from the previous sweep, and an account whose whole list fits in one page never
+pays for the second request. The refresh half draws rows and nothing else: the footer's
+last-synced time, the source health and the interval table's inputs all still come from the
+sweep, so nothing on screen can claim a poll that has not finished (IMPLEMENTATION_PLAN §3).
+
 Failure is per source. A GitHub timeout backs GitHub off with jittered exponential delay
 and leaves the rows on screen under a footer that has gone stale; an expired Linear key
 never touches the icon, the banner or the badge, and a backing-off Linear still resolves

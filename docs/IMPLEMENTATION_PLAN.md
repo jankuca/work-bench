@@ -531,6 +531,39 @@ window would drop the PR out of the query, lose the merge commit, and leave it s
 `merged · awaiting release` forever — exactly the case PRD §10 says should resolve quietly whenever the tag
 finally appears.
 
+#### Refreshing the known rows first
+
+Both searches page. On a small account that is one request each; on a large one the open search alone is up
+to ten, and until the last page lands **nothing on screen has moved** — the row whose checks went red four
+minutes ago is still green, because the poll that would have said so is on page seven of a list nobody is
+looking at. Pagination is not the problem to solve there (dropping pages is how rows go missing); the
+*ordering* is. GitHub's search returns what it returns, in its own order, and the panel's rows are scattered
+through it.
+
+So a poll may run a third query **ahead of** the two searches: the rows the panel is already showing, asked
+for by id, as one aliased `repository(owner:name) { pullRequest(number:) { …PullRequestFields } }` per row in
+a single request. Same fields as the search — it selects the same fragment, so a row cannot redraw
+differently depending on which query produced it — no pagination, and the panel is current for what it is
+currently drawing seconds into a poll whose sweep is still running underneath it.
+
+- **It only ever refreshes.** Nothing found by id is new, so the searches still run to completion behind it
+  and are still the only thing that can add a row, drop one, or notice a pull request opened elsewhere.
+- **Which rows** is the last poll's list, persisted in `state.json` as `displayed`: open before terminal,
+  most recently updated first, dismissals left out, capped at 50 — one request's worth. Persisted because
+  the launch after a quit is the slowest poll there is and the one with nothing on screen to keep the user
+  company. It is a cache: nothing derivation reads depends on it, and losing it costs one slow poll.
+- **When** is decided from the previous sweep: more than one page in either search, a search that stopped
+  early, or an empty panel. An account whose whole list fits in one page never pays for a second request to
+  fetch what the first one is about to return anyway.
+- **The answer is put back through the searches' own bounds** — scope, `-is:draft`, and the closed search's
+  lower bound — because asking by id bypasses every qualifier they carry, and a refresh that drew a row the
+  sweep is about to drop would be a panel disagreeing with itself for a second.
+- **A truncated sweep keeps them.** The refreshed rows are handed to the sweep and merged into its result, so
+  a search that stopped at the page cap can no longer drop a row the user is looking at. Where both have a
+  row the search wins: it ran second.
+- **Failure is a warning, not a poll.** Everything except a rejected credential and an exhausted allowance
+  falls through to the sweep, which covers the same rows and reports for both.
+
 ### Release tracking — tags only
 
 **Shipped means "the merge commit is contained in a tag matching the pattern."** No Deployments API, no
@@ -666,8 +699,9 @@ Linear source is marked stale.
 ### Storage
 
 - `~/Library/Application Support/PRStackMonitor/state.json` — dismissed set, snooze deadlines, read
-  digests, PR→tag bindings, **unbound merged PRs with their merge commit and `mergedAt`**, per-source last
-  successful sync. Atomic writes, schema-versioned.
+  digests, PR→tag bindings, **unbound merged PRs with their merge commit and `mergedAt`**, the rows the panel
+  last drew (`displayed`, in refresh priority order — §3), per-source last successful sync. Atomic writes,
+  schema-versioned.
   The store that writes this file lands in **M6**, not M7 — see §7.
   **One writer.** `LocalState` is a single value owned by the main actor and written whole, so the release
   tracker hands its bindings back to be merged there rather than writing the file from its own task — two
@@ -678,7 +712,9 @@ Linear source is marked stale.
   over the file in place would destroy state nothing else can supply. Only part of it re-derives. Bindings and
   unbound merges come back from the next poll — except a merge older than the query's 14-day cold-start floor,
   which stays stranded (§3). `readDigests` and `snoozedUntil` are local-only: a lost digest set costs one burst
-  of false unread and self-corrects at the next open, and a lost snooze just wakes its row early. Dismissal
+  of false unread and self-corrects at the next open, and a lost snooze just wakes its row early. `displayed`
+  is local-only too, and the cheapest loss of the lot: the first poll after it is a plain sweep, and the poll
+  after that has the list back. Dismissal
   tombstones are the one loss nothing re-derives: every dismissed pull request the queries still return —
   anything still open, and merges inside the window — stops being suppressed, and the set cannot be rebuilt.
 - `~/Library/Application Support/PRStackMonitor/linear-cache.json` — the identifier → project cache, in its

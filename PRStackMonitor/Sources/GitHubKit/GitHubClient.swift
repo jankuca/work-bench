@@ -41,6 +41,9 @@ public enum FetchWarning: Equatable, Sendable, CustomStringConvertible {
     /// Release tracking was not attempted, or was cut short. A merge that has waited weeks
     /// can wait for the allowance to reset; the open list cannot.
     case releaseTrackingDeferred(reason: String)
+    /// The priority refresh of the rows already on screen did not answer. Nothing is lost
+    /// but latency: the searches behind it cover the same rows.
+    case priorityRefreshFailed(reason: String)
 
     public var description: String {
         switch self {
@@ -57,6 +60,8 @@ public enum FetchWarning: Equatable, Sendable, CustomStringConvertible {
             return "could not check \(repository)'s releases: \(reason)"
         case .releaseTrackingDeferred(let reason):
             return "deferred release tracking: \(reason)"
+        case .priorityRefreshFailed(let reason):
+            return "could not refresh the rows already on screen ahead of the search: \(reason)"
         case .rateLimitFloorReached(let remaining, let limit, let resetAt):
             let when = resetAt.map { ISO8601DateFormatter().string(from: $0) } ?? "unknown"
             return "GitHub allowance low (\(remaining) of \(limit) left, resets \(when)); backing off"
