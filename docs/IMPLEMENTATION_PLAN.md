@@ -814,7 +814,8 @@ than polish:
   unless the view under the pointer says otherwise, and `NSHostingView` says no — so a row would need
   clicking twice. The popover's content is therefore an `NSHostingView` subclass returning `true` from
   `acceptsFirstMouse`, which costs `NSHostingController`'s free sizing: `preferredContentSize` is driven from
-  the hosting view's fitting size in `viewDidLayout` instead.
+  the hosting view's intrinsic content size in `viewDidLayout` instead, with its fitting size as the fallback
+  for the moment before the first measurement, when there is no intrinsic size to read.
 - **Unread has to keep meaning something.** "A poll that lands while the panel is open has been seen" is only
   true of a panel being *looked at*. With the panel open behind another app the shell tracks activation and
   the poll is left unread, so the menu bar still lights up; returning to the foreground clears it the way
