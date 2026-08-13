@@ -25,6 +25,13 @@ public enum SourceHealth: Equatable, Sendable {
 
     public var isConnected: Bool { self == .connected }
 
+    /// Whether the last attempt found nothing to authenticate with.
+    ///
+    /// Only ever a statement about that attempt. "Is there a credential at all?" — the
+    /// question the connect prompt asks — is ``PanelStatus/hasGitHubCredential``, because
+    /// before the first poll there has been no attempt to read this from.
+    public var isUnconfigured: Bool { self == .unconfigured }
+
     /// Whether this source's failure is the user's to fix.
     public var needsReconnect: Bool {
         if case .unauthorized = self { return true }
@@ -65,19 +72,58 @@ public struct PanelStatus: Equatable, Sendable {
     /// minutes, and a laptop that woke from an overnight sleep is stale the moment it does,
     /// without waiting for a threshold to expire (IMPLEMENTATION_PLAN §4).
     public var pollInterval: TimeInterval?
+    /// Whether a GitHub credential exists at all, whatever the last poll made of it.
+    ///
+    /// Health cannot answer this, and the connect prompt is the one place that has to ask.
+    /// ``SourceHealth`` records how the last *attempt* went, and there are two states where
+    /// no attempt has said anything about the credential: before the first poll, where the
+    /// app starts every source at ``SourceHealth/unconfigured`` because nothing has been
+    /// tried yet, and after a poll that failed for another reason. So this is supplied by
+    /// whoever holds the credentials — for the app, the same chain a poll reads — and
+    /// defaults to what health implies for callers that have nothing better.
+    public var hasGitHubCredential: Bool
+    /// Whether a Linear credential exists at all. See ``hasGitHubCredential``.
+    ///
+    /// Linear needs this more than GitHub does: a poll that fails at GitHub never gets far
+    /// enough to ask Linear, so Linear's health stays ``SourceHealth/unconfigured`` for as
+    /// long as GitHub is down, however long the key has been in the Keychain.
+    public var hasLinearCredential: Bool
 
     public init(
         github: SourceHealth,
         linear: SourceHealth = .unconfigured,
         lastSyncedAt: Date? = nil,
         isRefreshing: Bool = false,
-        pollInterval: TimeInterval? = nil
+        pollInterval: TimeInterval? = nil,
+        hasGitHubCredential: Bool? = nil,
+        hasLinearCredential: Bool? = nil
     ) {
         self.github = github
         self.linear = linear
         self.lastSyncedAt = lastSyncedAt
         self.isRefreshing = isRefreshing
         self.pollInterval = pollInterval
+        // Nil means "whatever health implies", which is right for everything that reports a
+        // credential by reporting an attempt to use one: a rejected token is a token, and
+        // `.unconfigured` came back from a poll that looked for one and found none.
+        self.hasGitHubCredential = hasGitHubCredential ?? !github.isUnconfigured
+        self.hasLinearCredential = hasLinearCredential ?? !linear.isUnconfigured
+    }
+
+    /// Records what a poll made of GitHub, keeping the credential flag in step.
+    ///
+    /// A poll that ran is the one thing that *does* answer both questions at once: it went
+    /// looking for a credential, so whether it found one is settled — and settled by the
+    /// same call, rather than by two assignments that can be made to disagree.
+    public mutating func record(github health: SourceHealth) {
+        github = health
+        hasGitHubCredential = !health.isUnconfigured
+    }
+
+    /// Records what a poll made of Linear. See ``record(github:)``.
+    public mutating func record(linear health: SourceHealth) {
+        linear = health
+        hasLinearCredential = !health.isUnconfigured
     }
 
     public static let unconfigured = PanelStatus(github: .unconfigured, linear: .unconfigured)
@@ -230,10 +276,24 @@ public struct FooterPresentation: Equatable, Sendable {
 public struct ConnectPrompt: Equatable, Sendable {
     public var title: String
     public var detail: String
-    public var githubActionTitle: String
-    public var linearActionTitle: String
+    /// The GitHub button, and **nil when a GitHub credential is already stored**.
+    ///
+    /// The panel reaches this prompt whenever nothing has ever synced, which is not the
+    /// same thing as nothing being connected: a token GitHub rejected, one it could not be
+    /// asked about, and a Linear key no failing poll got as far as using all arrive here
+    /// with a credential already in place. Offering to connect an account that is connected
+    /// sends the user to fix something that is not broken — and where it *is* broken, the
+    /// reconnect banner is already pointing at the fix.
+    public var githubActionTitle: String?
+    /// The Linear button, nil on the same terms as ``githubActionTitle``.
+    public var linearActionTitle: String?
 
-    public init(title: String, detail: String, githubActionTitle: String, linearActionTitle: String) {
+    public init(
+        title: String,
+        detail: String,
+        githubActionTitle: String? = nil,
+        linearActionTitle: String? = nil
+    ) {
         self.title = title
         self.detail = detail
         self.githubActionTitle = githubActionTitle
@@ -334,20 +394,56 @@ public struct PanelPresentation: Equatable, Sendable {
         // would replace a legitimate all-clear with "Connect your accounts", offering to
         // fix an account that is already connected.
         guard status.github.isConnected || status.lastSyncedAt != nil else {
-            return .connect(
-                ConnectPrompt(
-                    title: "Connect your accounts",
-                    detail: "GitHub for pull requests and release tags, Linear to group them by project.",
-                    githubActionTitle: "Connect GitHub",
-                    linearActionTitle: "Connect Linear"
-                )
-            )
+            return .connect(connectPrompt(for: status))
         }
         return .allClear(
             AllClearMessage(
                 title: "Everything's clear",
                 detail: "No open pull requests need you."
             )
+        )
+    }
+
+    /// The empty panel that has never synced, offering only the accounts actually missing.
+    ///
+    /// Two different situations arrive here and they need different words. With no GitHub
+    /// credential this is the first run design 1e draws, and the prompt is the whole point
+    /// of the panel. With one already stored it is a sync that has not happened — the
+    /// panel has nothing to show *yet*, and there is nothing for the user to connect. Both
+    /// keep the same shape rather than becoming a fourth body state, because what changes
+    /// between them is what there is to say and to offer, which is what this decides.
+    private static func connectPrompt(for status: PanelStatus) -> ConnectPrompt {
+        let needsGitHub = !status.hasGitHubCredential
+        let needsLinear = !status.hasLinearCredential
+
+        let title: String
+        let detail: String
+        switch (needsGitHub, needsLinear) {
+        case (true, true):
+            title = "Connect your accounts"
+            detail = "GitHub for pull requests and release tags, Linear to group them by project."
+        case (true, false):
+            title = "Connect GitHub"
+            detail = "GitHub for pull requests and release tags."
+        case (false, _):
+            // GitHub is connected and the panel still has nothing, so the missing piece is
+            // the sync rather than the account. Its reason comes from the health: the
+            // banner above says an expired token in its own words, and the footer carries
+            // the transport failure verbatim, so this is the one-line version of whichever
+            // of them is up.
+            title = "Nothing synced yet"
+            switch status.github {
+            case .unauthorized: detail = "GitHub rejected the token it has, so nothing has arrived yet."
+            case .unreachable: detail = "GitHub could not be reached, so nothing has arrived yet."
+            case .unconfigured, .connected: detail = "The first sync has not landed yet."
+            }
+        }
+
+        return ConnectPrompt(
+            title: title,
+            detail: detail,
+            githubActionTitle: needsGitHub ? "Connect GitHub" : nil,
+            linearActionTitle: needsLinear ? "Connect Linear" : nil
         )
     }
 

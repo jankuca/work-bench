@@ -112,8 +112,8 @@ public struct KeychainTokenStore: TokenProvider {
         }
     }
 
-    public var hasToken: Bool {
-        (try? token()) != nil
-    }
+    /// Whether the item is there. The spelling Settings reads; ``hasCredential`` is the
+    /// same question asked of any provider.
+    public var hasToken: Bool { hasCredential }
 }
 #endif

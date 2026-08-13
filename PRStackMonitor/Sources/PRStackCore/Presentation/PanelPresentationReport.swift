@@ -33,7 +33,15 @@ public enum PanelPresentationReport {
         case .allClear(let message):
             lines.append("allClear title=\(quoted(message.title)) detail=\(quoted(message.detail))")
         case .connect(let prompt):
-            lines.append("connect title=\(quoted(prompt.title)) detail=\(quoted(prompt.detail))")
+            // The two actions are rendered even when absent, as `-`: which accounts the
+            // prompt offers to connect is exactly the decision this state exists to make,
+            // and a golden that only pinned the wording would not notice it changing.
+            lines.append(
+                "connect title=\(quoted(prompt.title))"
+                    + " detail=\(quoted(prompt.detail))"
+                    + " github=\(prompt.githubActionTitle.map(quoted) ?? "-")"
+                    + " linear=\(prompt.linearActionTitle.map(quoted) ?? "-")"
+            )
         }
 
         // `linear=`, `syncing=` and `error=` are emitted only when there is something to

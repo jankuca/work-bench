@@ -301,19 +301,28 @@ struct ConnectPromptView: View {
                     .multilineTextAlignment(.center)
             }
 
-            HStack(spacing: 8) {
-                connectButton(
-                    prompt.githubActionTitle,
-                    fill: Tokens.solidNeutral.color,
-                    label: Tokens.solidNeutralLabel.color,
-                    action: onConnectGitHub
-                )
-                connectButton(
-                    prompt.linearActionTitle,
-                    fill: Tokens.solidAccent.color,
-                    label: .white,
-                    action: onConnectLinear
-                )
+            // Only the accounts that are actually missing, and no row at all when both are
+            // set — an empty `HStack` still takes the enclosing spacing, which would leave
+            // the message floating above a gap where the buttons used to be.
+            if prompt.githubActionTitle != nil || prompt.linearActionTitle != nil {
+                HStack(spacing: 8) {
+                    if let title = prompt.githubActionTitle {
+                        connectButton(
+                            title,
+                            fill: Tokens.solidNeutral.color,
+                            label: Tokens.solidNeutralLabel.color,
+                            action: onConnectGitHub
+                        )
+                    }
+                    if let title = prompt.linearActionTitle {
+                        connectButton(
+                            title,
+                            fill: Tokens.solidAccent.color,
+                            label: .white,
+                            action: onConnectLinear
+                        )
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity)
