@@ -80,7 +80,9 @@ public enum SegmentState: String, Hashable, Sendable {
     }
 }
 
-/// Which way the spine hairline is drawn from the chip's centre line.
+/// Which way the sleeve around the chips continues out of this row. Neither direction
+/// means the row is not in a run at all and nothing is drawn; one direction is an end of
+/// the run, which is where the sleeve caps.
 public struct SpineDraw: Hashable, Sendable {
     public var drawsUp: Bool
     public var drawsDown: Bool

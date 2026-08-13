@@ -91,7 +91,7 @@ why there is no entitlements file yet.
 
 ## What is here, and what is not
 
-The panel is real as of M3: design 2a's tokens, rows, spine, sections, header and footer,
+The panel is real as of M3: design 2a's tokens, rows, stack sleeve, sections, header and footer,
 plus the all-clear and first-run/disconnected states. It renders live pull requests, on
 the schedule `SyncEngine` keeps (see below).
 

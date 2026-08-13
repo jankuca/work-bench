@@ -117,8 +117,15 @@ enum Tokens {
     static let neutralRing = textTertiary.faded(into: field, light: 0.62, dark: 0.62)
 
     static let neutralChip = Adaptive(light: hex(0xE0E1E5), dark: hex(0x35353A))
-    static let spineLine = Adaptive(light: hex(0xDDDEE3), dark: hex(0x3C3C42))
     static let emptySegment = Adaptive(light: hex(0xE4E4E7), dark: hex(0x38383D))
+
+    /// The sleeve that wraps the chips of one stack run.
+    ///
+    /// A translucent neutral rather than a flat hex, which is what lets one token sit on
+    /// three different backgrounds. An attention row is tinted, a hovered row is lifted,
+    /// and an opaque grey would cut a dead stripe across both — the run has to read as
+    /// grouped without costing the tint the row earned by needing attention.
+    static let stackSleeve = Adaptive(light: black(0.055), dark: white(0.075))
 
     // MARK: - Tone resolution
 
@@ -211,11 +218,15 @@ enum Tokens {
         static let segmentRadius: CGFloat = 2
     }
 
-    enum Spine {
-        static let width: CGFloat = 1.5
-        /// The hairline runs 8 pt past the chip in each direction it draws, which is what
-        /// carries it across the gap between two rows.
-        static let overhang: CGFloat = 8
+    enum Stack {
+        /// How far the sleeve reaches past the chip on every side: 4 pt around a 16 pt
+        /// chip is a 24 pt sleeve, narrow enough to stay inside the 9 pt gaps it overhangs
+        /// into and wide enough that the chip never touches the rounded cap.
+        static let inset: CGFloat = 4
+        /// Rounded, not a capsule. At half the 24 pt width the ends would read as two
+        /// circles with a bar between them; at 8 the sleeve keeps flat sides, which is
+        /// what makes a run of five look like one object rather than five.
+        static let capRadius: CGFloat = 8
     }
 
     enum Section {
