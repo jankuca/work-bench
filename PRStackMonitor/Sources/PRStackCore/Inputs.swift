@@ -56,10 +56,13 @@ extension RawSnapshot {
         }
         // Whatever is left over was not in the snapshot at all. Appended in the order it
         // was given rather than in the order a dictionary iterates, so two runs of the same
-        // poll produce the same snapshot.
-        for pullRequest in refreshed where byID[pullRequest.id] != nil {
-            byID.removeValue(forKey: pullRequest.id)
-            merged.append(pullRequest)
+        // poll produce the same snapshot — and appended as the *map* holds it, which is the
+        // last copy of a repeated id. The loop above hands back that same copy, and two
+        // paths disagreeing about which version of a duplicated row wins is a difference
+        // that would only ever show up as one stale row, once, unreproducibly.
+        for pullRequest in refreshed {
+            guard let latest = byID.removeValue(forKey: pullRequest.id) else { continue }
+            merged.append(latest)
         }
 
         return RawSnapshot(viewerLogin: login, pullRequests: merged)

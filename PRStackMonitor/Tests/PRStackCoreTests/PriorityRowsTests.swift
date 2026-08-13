@@ -181,6 +181,22 @@ final class PriorityRowsTests: XCTestCase {
         XCTAssertEqual(merged.pullRequests.map(\.authorLogin), ["avery", "avery"])
     }
 
+    /// A row named twice resolves to the same copy whether or not the snapshot already had
+    /// it. The refresh de-duplicates its own list, so this is a rule rather than a case —
+    /// but a rule that disagreed with itself would show up as one stale row, once, with
+    /// nothing to reproduce it from.
+    func testARepeatedRowResolvesToTheSameCopyOnBothPaths() {
+        let first = pullRequest(11, updatedMinutesAgo: 30)
+        let last = pullRequest(11, updatedMinutesAgo: 1)
+
+        let known = RawSnapshot(viewerLogin: "avery", pullRequests: [pullRequest(11, updatedMinutesAgo: 90)])
+            .replacing([first, last])
+        let unknown = RawSnapshot(viewerLogin: "avery", pullRequests: []).replacing([first, last])
+
+        XCTAssertEqual(known.pullRequests.map(\.updatedAt), [last.updatedAt])
+        XCTAssertEqual(unknown.pullRequests.map(\.updatedAt), [last.updatedAt])
+    }
+
     /// The viewer a refresh answered as is only adopted when the panel does not have one.
     /// Which account the app is on is a whole poll's conclusion, not half a one's.
     func testAKnownViewerIsNotReplacedByTheRefreshes() {

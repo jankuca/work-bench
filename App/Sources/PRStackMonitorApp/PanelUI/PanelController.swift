@@ -699,11 +699,16 @@ struct GitHubPanelSource: PanelSource {
             includesDrafts: includesDrafts,
             local: plan.local,
             now: plan.now
-        ), !fetched.isEmpty else { return nil }
+        ) else { return nil }
 
+        // Above the emptiness check, not below it. A refresh that failed non-fatally answers
+        // with no rows and the reason in its warnings, and the sweep does not carry them
+        // forward — so logging after the guard would log everything except the cases worth
+        // reading.
         for warning in fetched.warnings {
             NSLog("PRStackMonitor: %@", warning.description)
         }
+        guard !fetched.isEmpty else { return nil }
 
         let resolution = await LinearPanelSource.resolve(
             fetched.pullRequests,
