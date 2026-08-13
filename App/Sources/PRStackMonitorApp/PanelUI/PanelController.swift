@@ -104,7 +104,15 @@ final class PanelController: ObservableObject {
         self.engine = engine ?? SyncEngine()
         self.clock = clock
         snapshot = RawSnapshot(viewerLogin: "", pullRequests: [])
-        status = .unconfigured
+        // Health starts at `.unconfigured` because nothing has been tried yet — the
+        // credentials are read separately, and now, so that the panel opened before the
+        // first poll lands does not offer to connect an account that is already set up.
+        status = PanelStatus(
+            github: .unconfigured,
+            linear: .unconfigured,
+            hasGitHubCredential: PanelController.hasGitHubCredential(),
+            hasLinearCredential: PanelController.hasLinearCredential()
+        )
 
         // Dismissals, snoozes, read digests, release bindings and the merges still waiting
         // for a tag, as the last launch left them. A file that could not be read has already
@@ -116,7 +124,7 @@ final class PanelController: ObservableObject {
             NSLog("PRStackMonitor: starting from empty local state — %@.%@", failure, moved)
         }
 
-        panel = PanelPresentation.make(model: .empty, status: .unconfigured, now: clock())
+        panel = PanelPresentation.make(model: .empty, status: status, now: clock())
 
         // The engine says when; this says what. Every poll in the app's life comes through
         // here, including the first one and the manual ones, so there is one path to reason
@@ -316,11 +324,11 @@ final class PanelController: ObservableObject {
             break
         case .fetched(let product):
             snapshot = product.snapshot
-            status.github = .connected
+            status.record(github: .connected)
             status.lastSyncedAt = clock()
             // Nil means the Linear half learned nothing this poll, so the footer keeps
             // whatever it was already saying rather than being reset to healthy.
-            if let linear = product.linear { status.linear = linear }
+            if let linear = product.linear { status.record(linear: linear) }
             // The merge commits this poll saw, then the releases they were found in. Both
             // are written here and nowhere else — the tracker hands its bindings back
             // rather than writing the file from its own task.
@@ -378,8 +386,10 @@ final class PanelController: ObservableObject {
             engine.noteActivity(at: snapshot.pullRequests.map(\.updatedAt).max())
         case .failed(let health):
             // The rows stay. Losing the connection does not make what was fetched untrue,
-            // only unverifiable — the banner and the footer say which (§5).
-            status.github = health
+            // only unverifiable — the banner and the footer say which (§5). A poll is also
+            // the authority on whether there is a credential at all, so `.unconfigured`
+            // coming back from one is what takes the token away again.
+            status.record(github: health)
             engine.record(health, for: .github)
         }
         rebuild()
@@ -534,7 +544,38 @@ final class PanelController: ObservableObject {
     func settingsDidChange() {
         pollTask?.cancel()
         pollTask = nil
+        // A token pasted or removed in Settings changes what an empty panel offers, and it
+        // changes it now: the poll started below is what proves the credential works, and
+        // until it lands the panel would go on inviting the user to connect the account
+        // they have just connected.
+        status.hasGitHubCredential = Self.hasGitHubCredential()
+        status.hasLinearCredential = Self.hasLinearCredential()
+        rebuild()
         engine.reconnect()
+    }
+
+    /// Whether a GitHub credential exists at all, asked of the same chain a poll asks — so
+    /// an exported `$PRSTACK_GITHUB_TOKEN` counts here exactly as it counts at poll time,
+    /// and the Keychain is consulted only when it does not.
+    ///
+    /// The panel needs this before its first poll and after any poll that failed for some
+    /// other reason, neither of which ``SourceHealth`` can speak for
+    /// (``PanelStatus/hasGitHubCredential``).
+    private static func hasGitHubCredential() -> Bool {
+        CredentialChain.standard(
+            environment: .github(),
+            keychain: .github,
+            service: "GitHub"
+        ).hasCredential
+    }
+
+    /// Whether a Linear key exists at all. See ``hasGitHubCredential()``.
+    private static func hasLinearCredential() -> Bool {
+        CredentialChain.standard(
+            environment: .linear(),
+            keychain: .linear,
+            service: "Linear"
+        ).hasCredential
     }
 
     // MARK: - Derivation

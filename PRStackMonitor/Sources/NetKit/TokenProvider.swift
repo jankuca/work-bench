@@ -36,6 +36,19 @@ public protocol TokenProvider {
     func token() throws -> String
 }
 
+extension TokenProvider {
+    /// Whether this provider has anything to offer, without the caller having to care what
+    /// went wrong if it does not.
+    ///
+    /// The question the connect prompt asks: a source with no credential is offered a
+    /// `Connect` button, and one that has a credential the server rejected is not — that is
+    /// the reconnect banner's job. A provider that throws for any other reason counts as
+    /// having nothing, which is the same answer the poll would come to.
+    public var hasCredential: Bool {
+        (try? token()) != nil
+    }
+}
+
 /// A token held in memory. The dump tool uses this for `--token`; tests use it for
 /// everything.
 public struct StaticTokenProvider: TokenProvider {

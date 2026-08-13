@@ -374,7 +374,9 @@ final class PanelPresentationTests: XCTestCase {
         github: SourceHealth = .connected,
         linear: SourceHealth = .connected,
         syncedAgo: TimeInterval? = 34,
-        isRefreshing: Bool = false
+        isRefreshing: Bool = false,
+        hasGitHubCredential: Bool? = nil,
+        hasLinearCredential: Bool? = nil
     ) throws -> PanelPresentation {
         let fixture = try Fixtures.load(name)
         return PanelPresentation.make(
@@ -383,11 +385,36 @@ final class PanelPresentationTests: XCTestCase {
                 github: github,
                 linear: linear,
                 lastSyncedAt: syncedAgo.map { fixture.now.addingTimeInterval(-$0) },
-                isRefreshing: isRefreshing
+                isRefreshing: isRefreshing,
+                hasGitHubCredential: hasGitHubCredential,
+                hasLinearCredential: hasLinearCredential
             ),
             now: fixture.now
         )
     }
+
+    private func connectPrompt(
+        github: SourceHealth = .unconfigured,
+        linear: SourceHealth = .unconfigured,
+        hasGitHubCredential: Bool? = nil,
+        hasLinearCredential: Bool? = nil
+    ) throws -> ConnectPrompt {
+        let presented = try panel(
+            "empty-state",
+            github: github,
+            linear: linear,
+            syncedAgo: nil,
+            hasGitHubCredential: hasGitHubCredential,
+            hasLinearCredential: hasLinearCredential
+        )
+        guard case .connect(let prompt) = presented.body else {
+            XCTFail("expected the connect prompt, got \(presented.body)")
+            throw NotTheConnectPrompt()
+        }
+        return prompt
+    }
+
+    private struct NotTheConnectPrompt: Error {}
 
     func testHeaderCountsOpenAndShipping() throws {
         let presented = try panel("panel-2a")
@@ -433,6 +460,91 @@ final class PanelPresentationTests: XCTestCase {
         guard case .connect = presented.body else {
             return XCTFail("expected the connect prompt")
         }
+    }
+
+    /// The first run, with neither credential: design 1e, both buttons.
+    func testFirstRunOffersBothAccounts() throws {
+        let prompt = try connectPrompt()
+        XCTAssertEqual(prompt.title, "Connect your accounts")
+        XCTAssertEqual(prompt.githubActionTitle, "Connect GitHub")
+        XCTAssertEqual(prompt.linearActionTitle, "Connect Linear")
+    }
+
+    /// A Linear key that is already set is not something to offer to connect — and it is
+    /// set long before any poll reports on it, because a poll that fails at GitHub never
+    /// gets as far as asking Linear.
+    func testAStoredLinearKeyDropsItsButton() throws {
+        let prompt = try connectPrompt(hasLinearCredential: true)
+        XCTAssertEqual(prompt.title, "Connect GitHub")
+        XCTAssertEqual(prompt.githubActionTitle, "Connect GitHub")
+        XCTAssertNil(prompt.linearActionTitle)
+    }
+
+    /// A token GitHub rejected is a token. The banner asks for a reconnect; the body must
+    /// not also ask for a connection, which is a different thing to have to do.
+    func testAnExpiredTokenWithNoSyncDoesNotOfferToConnectGitHub() throws {
+        let prompt = try connectPrompt(github: .unauthorized("bad credentials"), linear: .connected)
+        XCTAssertEqual(prompt.title, "Nothing synced yet")
+        XCTAssertEqual(prompt.detail, "GitHub rejected the token it has, so nothing has arrived yet.")
+        XCTAssertNil(prompt.githubActionTitle)
+        XCTAssertNil(prompt.linearActionTitle)
+
+        // And the fix is still offered, in the one place it belongs.
+        let presented = try panel(
+            "empty-state",
+            github: .unauthorized("bad credentials"),
+            syncedAgo: nil
+        )
+        XCTAssertEqual(presented.banner?.actionTitle, "Reconnect")
+    }
+
+    /// A source that could not be reached has a credential too — the failure is the
+    /// network's, and `Connect GitHub` would send the user to fix the wrong thing.
+    func testAnUnreachableSourceWithNoSyncDoesNotOfferToConnectGitHub() throws {
+        let prompt = try connectPrompt(github: .unreachable("timed out"), linear: .unconfigured)
+        XCTAssertEqual(prompt.title, "Nothing synced yet")
+        XCTAssertEqual(prompt.detail, "GitHub could not be reached, so nothing has arrived yet.")
+        XCTAssertNil(prompt.githubActionTitle)
+        // Linear genuinely has nothing, so that half of the prompt stands.
+        XCTAssertEqual(prompt.linearActionTitle, "Connect Linear")
+    }
+
+    /// The launch case: credentials in the Keychain and no poll has run yet, so health
+    /// says `unconfigured` about both of them and only the credential flags know better.
+    func testAStoredTokenBeforeTheFirstPollOffersNothingToConnect() throws {
+        let prompt = try connectPrompt(hasGitHubCredential: true, hasLinearCredential: true)
+        XCTAssertEqual(prompt.title, "Nothing synced yet")
+        XCTAssertEqual(prompt.detail, "The first sync has not landed yet.")
+        XCTAssertNil(prompt.githubActionTitle)
+        XCTAssertNil(prompt.linearActionTitle)
+    }
+
+    /// Health is what a poll made of a credential, so it answers for one when it has been
+    /// asked — a caller that says nothing about credentials gets the sane reading.
+    func testCredentialsDefaultToWhatHealthImplies() {
+        let firstRun = PanelStatus(github: .unconfigured, linear: .unconfigured)
+        XCTAssertFalse(firstRun.hasGitHubCredential)
+        XCTAssertFalse(firstRun.hasLinearCredential)
+
+        let rejected = PanelStatus(github: .unauthorized("bad credentials"), linear: .unreachable("timed out"))
+        XCTAssertTrue(rejected.hasGitHubCredential)
+        XCTAssertTrue(rejected.hasLinearCredential)
+    }
+
+    /// A poll is the authority on both questions at once: it went looking for a credential,
+    /// so what it found settles whether there is one to connect.
+    func testRecordingAPollsHealthMovesTheCredentialWithIt() {
+        var status = PanelStatus(github: .unconfigured, linear: .unconfigured)
+
+        status.record(github: .connected)
+        XCTAssertTrue(status.hasGitHubCredential)
+
+        // The token was removed under the app: the button comes back.
+        status.record(github: .unconfigured)
+        XCTAssertFalse(status.hasGitHubCredential)
+
+        status.record(linear: .unauthorized("expired key"))
+        XCTAssertTrue(status.hasLinearCredential)
     }
 
     /// What licenses "Everything's clear" is a completed sync, not the health of the

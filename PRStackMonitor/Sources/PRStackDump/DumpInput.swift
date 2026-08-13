@@ -88,7 +88,7 @@ struct DumpInput: Codable {
     func present(now overridden: Date?, linear: SourceHealth = .connected) -> PanelPresentation {
         let clock = self.clock(overriddenBy: overridden)
         var status = PanelStatus.fixture(now: clock)
-        status.linear = linear
+        status.record(linear: linear)
         return PanelPresentation.make(model: derive(now: clock), status: status, now: clock)
     }
 }
