@@ -302,8 +302,18 @@ struct ConnectPromptView: View {
             }
 
             HStack(spacing: 8) {
-                connectButton(prompt.githubActionTitle, fill: Tokens.textPrimary.color, action: onConnectGitHub)
-                connectButton(prompt.linearActionTitle, fill: Tokens.accent.color, action: onConnectLinear)
+                connectButton(
+                    prompt.githubActionTitle,
+                    fill: Tokens.solidNeutral.color,
+                    label: Tokens.solidNeutralLabel.color,
+                    action: onConnectGitHub
+                )
+                connectButton(
+                    prompt.linearActionTitle,
+                    fill: Tokens.solidAccent.color,
+                    label: .white,
+                    action: onConnectLinear
+                )
             }
         }
         .frame(maxWidth: .infinity)
@@ -322,11 +332,16 @@ struct ConnectPromptView: View {
             }
     }
 
-    private func connectButton(_ title: String, fill: Color, action: @escaping () -> Void) -> some View {
+    private func connectButton(
+        _ title: String,
+        fill: Color,
+        label: Color,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Text(title)
                 .font(Tokens.text(11.5, .medium))
-                .foregroundStyle(Color.white)
+                .foregroundStyle(label)
                 .padding(.horizontal, 13)
                 .padding(.vertical, 6)
                 .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(fill))

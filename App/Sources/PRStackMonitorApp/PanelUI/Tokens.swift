@@ -94,6 +94,23 @@ enum Tokens {
     static let accent = Adaptive(light: hex(0x5E6AD2), dark: hex(0x8B95E8))
     static let accentChip = Adaptive(light: hex(0xECECF8), dark: hex(0x262A45))
 
+    // Solid buttons
+    //
+    // A fill and a text colour move opposite ways when the field goes dark: text lifts to
+    // stay legible *on* the field, a fill has to stay a surface a label can sit *on*. The
+    // two agree in light appearance, which is why the connect buttons could borrow the
+    // text tokens at first and only came apart in dark — `textPrimary` lifted to near-white
+    // under a white label, and `accent` lifted past what a white label can hold (2.8:1).
+
+    /// The neutral solid — `Connect GitHub`. #1D1D1F is the design's button; its dark
+    /// counterpart is the inverse of the field, not the same hex.
+    static let solidNeutral = Adaptive(light: hex(0x1D1D1F), dark: hex(0xE9E9EC))
+    /// The label on ``solidNeutral``, which is the field the button inverts.
+    static let solidNeutralLabel = Adaptive(light: hex(0xFFFFFF), dark: hex(0x1C1C1E))
+    /// The indigo solid — `Connect Linear`. Deeper than ``accent`` in dark appearance so
+    /// the white label keeps the contrast it has in light (4.4:1 → 6.2:1).
+    static let solidAccent = Adaptive(light: hex(0x5E6AD2), dark: hex(0x4C57B8))
+
     /// The ring a reviewer avatar wears, one step lighter than the status colour itself.
     ///
     /// Lighter than ``foreground`` on purpose: the ring is a solid 2 pt band around an
