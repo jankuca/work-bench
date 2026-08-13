@@ -263,12 +263,33 @@ attention. See the note there — this is the one place the model is narrower th
 
 ### Stack derivation
 
-Build a `(repo, headRef) → PR` index over the user's own open PRs; a PR's parent is the PR whose
-`(repo, headRef)` equals this PR's `(repo, baseRef)`. **The repository must be part of the key.** Branch names
-like `main`, `develop` or `release` recur across repos, so a `headRef`-only index would join unrelated PRs
-into a phantom stack and mark one `blocked` on a PR in a different repository — the exact failure
-`stack-parent-foreign-repo` exists to catch. Authorship is filtered the same way: only the user's own PRs
-enter the index, so a parent branch owned by someone else never matches.
+Build a `(repo, headRef) → PR` index over the user's own PRs that are still **in flight** — open, or merged
+and not yet contained in a release; a PR's parent is the PR whose `(repo, headRef)` equals this PR's
+`(repo, baseRef)`. **The repository must be part of the key.** Branch names like `main`, `develop` or
+`release` recur across repos, so a `headRef`-only index would join unrelated PRs into a phantom stack and mark
+one `blocked` on a PR in a different repository — the exact failure `stack-parent-foreign-repo` exists to
+catch. Authorship is filtered the same way: only the user's own PRs enter the index, so a parent branch owned
+by someone else never matches.
+
+**A merge stays in the index**, which is the one place this departs from the PRD's "chain of the user's own
+*open* PRs" (§glossary) and from an earlier revision of this plan. GitHub goes on showing the layers above a
+merged base as stacked on its branch — the child's base branch *is* the merged PR's head branch until that
+branch is deleted and the child re-targeted — and the merged row is still on the panel at
+`merged · awaiting release`, because §3 keeps it there until a tag contains it. Dropping it from the index
+therefore did not remove it from the panel: it drew the merge as a loose row at the bottom of the section
+while its own children were still sleeved together above it, disagreeing with GitHub and with itself. The
+merge leaves the run when it leaves the panel — a released row is Done, and a run cannot straddle the Done
+heading.
+
+Two consequences fall out of that and both are load-bearing:
+
+- **A merged parent no longer blocks.** `blocked` is "the layer beneath has not landed yet", and a merge has
+  landed. `StackLayout` therefore publishes two maps: `parentOf`, the shape the sleeve is drawn from, and
+  `blockingParentOf`, the same thing restricted to parents that are still open, which is the only one the
+  status resolver reads.
+- **A branch can now carry two PRs.** Merged, then reused or reopened under the same name — ordinary once
+  merges stay in the index, where two *open* PRs on one head branch never were. The open one wins the key;
+  between two of the same kind the lower number still wins, so the layout stays a function of the snapshot.
 
 Chains of length ≥ 2 become a `Stack`, rendered top-most first (walk to the leaf, emit downward). Cases to
 handle explicitly, each with a fixture test:
@@ -276,8 +297,12 @@ handle explicitly, each with a fixture test:
 Each case below is a **named fixture with golden assertions** in `PRStackCoreTests`, not just a documented
 intention — fixture names in parentheses:
 
-- **Merged out of order** (`stack-merged-out-of-order`) — merged parent drops out; children re-target trunk;
-  the sleeve reflows silently.
+- **Merged out of order** (`stack-merged-out-of-order`) — the merged member keeps its place in the run and
+  stops blocking the layer above it, which goes back to `inReview`. Golden asserts the sleeve still spans all
+  three rows.
+- **The merged member ships** (`stack-released-base-reflows`) — the same stack one release later. The row is
+  `shipped` and moves to Done, and *this* is where the sleeve reflows: the layer above becomes the base of the
+  run. Golden asserts the group is wholly inside one section, which is the invariant that decides the timing.
 - **Fork, two PRs share a base** (`stack-fork-sibling-runs`) — the design assumes a linear chain. Decision:
   the longest chain keeps the primary run; sibling branches render as their own runs, each in its own
   sleeve, directly beneath. No error

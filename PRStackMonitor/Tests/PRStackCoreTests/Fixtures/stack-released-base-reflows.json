@@ -1,6 +1,11 @@
 {
-  "comment": "The base of a three-deep stack merges first. It is still on screen at 'merged · awaiting release' and GitHub still shows the two above it stacked on its branch, so it keeps its place at the bottom of the run — but it no longer blocks the layer above, which goes back to plain 'in review'. The sleeve reflows when the merge ships, not when it merges: see stack-released-base-reflows.",
+  "comment": "The same stack as stack-merged-out-of-order, one release later. A tag now contains #100's merge commit, so the row is shipped and moves to Done — and a run cannot straddle the Done heading. This is where the sleeve finally reflows: #101 becomes the base of the run and #102 keeps waiting on it.",
   "now": "2026-01-10T12:00:00Z",
+  "local": {
+    "releaseBindings": {
+      "acme/billing#100": "v2.3.0"
+    }
+  },
   "snapshot": {
     "viewerLogin": "jankuca",
     "pullRequests": [
@@ -12,8 +17,8 @@
         "baseRef": "main",
         "state": "merged",
         "mergeCommit": "aaa111",
-        "mergedAt": "2026-01-09T10:00:00Z",
-        "updatedAt": "2026-01-09T10:00:00Z",
+        "mergedAt": "2026-01-07T12:00:00Z",
+        "updatedAt": "2026-01-07T12:00:00Z",
         "linearIssues": [
           { "identifier": "BIL-1", "projectId": "proj-billing", "projectName": "Billing" }
         ]

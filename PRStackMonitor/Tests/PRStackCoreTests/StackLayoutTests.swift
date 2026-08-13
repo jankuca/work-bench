@@ -163,10 +163,61 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertNil(layout.parentOf[id(2)])
     }
 
-    func testMergedParentDropsOutOfTheIndex() {
+    /// A merge is still on screen at `merged · awaiting release`, and GitHub still shows
+    /// its children stacked on it, so it stays in the run — at the bottom, where it was.
+    func testAMergeAwaitingItsReleaseStaysInTheRun() {
         let layout = StackLayout.build(
             pullRequests: [
                 pullRequest(1, head: "a", base: "main", state: .merged),
+                pullRequest(2, head: "b", base: "a"),
+                pullRequest(3, head: "c", base: "b")
+            ],
+            viewerLogin: "jankuca"
+        )
+
+        XCTAssertEqual(layout.groups.first?.root, id(1))
+        XCTAssertEqual(layout.groups.first?.runs.map(\.members), [[id(3), id(2), id(1)]])
+        XCTAssertEqual(layout.placement(for: id(1)).spine, .base)
+        XCTAssertEqual(layout.placement(for: id(2)).spine, .middle)
+    }
+
+    /// The layer sitting on a merge is not waiting on anything: that branch is in trunk
+    /// already. It keeps its place in the run and loses the `blocked` status with it.
+    func testAMergedParentDoesNotBlockItsChild() {
+        let layout = StackLayout.build(
+            pullRequests: [
+                pullRequest(1, head: "a", base: "main", state: .merged),
+                pullRequest(2, head: "b", base: "a"),
+                pullRequest(3, head: "c", base: "b")
+            ],
+            viewerLogin: "jankuca"
+        )
+
+        XCTAssertEqual(layout.parentOf[id(2)], id(1), "The run still draws through the merge")
+        XCTAssertNil(layout.blockingParentOf[id(2)], "A merged parent blocks nothing")
+        XCTAssertEqual(layout.blockingParentOf[id(3)], id(2), "The open parent above it still does")
+    }
+
+    /// Once a release contains the merge the row moves to Done, and a run cannot straddle
+    /// the Done heading — so this is where the sleeve finally reflows.
+    func testAReleasedMergeLeavesTheRun() {
+        let layout = StackLayout.build(
+            pullRequests: [
+                pullRequest(1, head: "a", base: "main", state: .merged),
+                pullRequest(2, head: "b", base: "a")
+            ],
+            viewerLogin: "jankuca",
+            releaseStages: [id(1): .released(tag: "v1.2.0")]
+        )
+
+        XCTAssertTrue(layout.groups.isEmpty)
+        XCTAssertNil(layout.parentOf[id(2)])
+    }
+
+    func testAPullRequestClosedWithoutMergingIsNotAParent() {
+        let layout = StackLayout.build(
+            pullRequests: [
+                pullRequest(1, head: "a", base: "main", state: .closed),
                 pullRequest(2, head: "b", base: "a")
             ],
             viewerLogin: "jankuca"
@@ -174,6 +225,22 @@ final class StackLayoutTests: XCTestCase {
 
         XCTAssertTrue(layout.groups.isEmpty)
         XCTAssertNil(layout.parentOf[id(2)])
+    }
+
+    /// A branch merged and then reused under the same name puts two pull requests on one
+    /// branch key. The open one is the live parent, whichever number it has.
+    func testAnOpenPullRequestWinsTheBranchOverAMergedOne() {
+        let layout = StackLayout.build(
+            pullRequests: [
+                pullRequest(1, head: "a", base: "main", state: .merged),
+                pullRequest(2, head: "a", base: "main"),
+                pullRequest(3, head: "b", base: "a")
+            ],
+            viewerLogin: "jankuca"
+        )
+
+        XCTAssertEqual(layout.parentOf[id(3)], id(2))
+        XCTAssertEqual(layout.blockingParentOf[id(3)], id(2))
     }
 
     func testAPullRequestIsNeverItsOwnParent() {
