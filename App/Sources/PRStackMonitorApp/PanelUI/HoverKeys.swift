@@ -49,9 +49,14 @@ final class HoverKeyMonitor: NSObject {
             // that already holds rather than dispatching. It cannot be a `Task`: the
             // handler has to answer *now* whether it swallowed the event.
             //
-            // `?? event` collapses the optional the chaining adds — a monitor that outlives
+            // What crosses the boundary is the `Bool`, not the event: `assumeIsolated`
+            // requires a `Sendable` result and `NSEvent`'s conformance is unavailable, so
+            // the event is re-attached out here where it never left the main thread.
+            //
+            // `?? false` collapses the optional the chaining adds — a monitor that outlives
             // its owner passes everything through rather than eating it.
-            MainActor.assumeIsolated { self?.handle(event) ?? event }
+            let swallowed = MainActor.assumeIsolated { self?.handle(event) ?? false }
+            return swallowed ? nil : event
         }
     }
 
@@ -73,14 +78,14 @@ final class HoverKeyMonitor: NSObject {
 
     // MARK: - Dispatch
 
-    /// `nil` swallows the event; returning it passes it on.
-    private func handle(_ event: NSEvent) -> NSEvent? {
-        guard event.window === window else { return event }
+    /// `true` swallows the event; `false` passes it on.
+    private func handle(_ event: NSEvent) -> Bool {
+        guard event.window === window else { return false }
         // A modified press belongs to the system or to a menu equivalent, never to the row
         // under the pointer. Shift is not in the list: it is how `X` is typed on some
         // layouts, and `RowAction` matches case-insensitively.
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard modifiers.isDisjoint(with: [.command, .control, .option, .function]) else { return event }
+        guard modifiers.isDisjoint(with: [.command, .control, .option, .function]) else { return false }
 
         // Before the row actions, and without needing a row: `esc` is about the panel rather
         // than about whatever the pointer happens to be over. A transient popover closes on
@@ -88,7 +93,7 @@ final class HoverKeyMonitor: NSObject {
         // open has nothing else that would.
         if event.keyCode == Self.escapeKeyCode {
             onCancel()
-            return nil
+            return true
         }
 
         guard let controller,
@@ -96,10 +101,10 @@ final class HoverKeyMonitor: NSObject {
               let action = RowAction.forKey(character),
               let row = controller.hoveredRow,
               row.supports(action)
-        else { return event }
+        else { return false }
 
         perform(action, on: row, controller: controller)
-        return nil
+        return true
     }
 
     private func perform(_ action: RowAction, on row: RowPresentation, controller: PanelController) {
