@@ -56,6 +56,14 @@ final class PanelController: ObservableObject {
     /// Reading unread off the rewritten digests instead would blank every dot in the frame
     /// the panel appears in, which is the one frame they exist for.
     private var digestsWhileOpen: [PRID: ReadDigest]?
+    /// Whether the open panel is the thing the user is looking at.
+    ///
+    /// True for the whole of an autoclosing panel's life — losing the foreground is what
+    /// closes it. It comes apart from "open" only when the user has asked the panel to stay
+    /// open (``AppDefaults/PanelDismissal/manual``): the panel then sits on screen behind
+    /// another app, and what turns on this flag is whether a poll landing under it counts as
+    /// having been seen.
+    private var isPanelFocused = true
 
     private let source: any PanelSource
     private let clock: () -> Date
@@ -125,6 +133,9 @@ final class PanelController: ObservableObject {
     /// poll lands under it — the alternative is a blank panel for as long as GitHub takes,
     /// which is the one thing a menu bar app cannot afford.
     func panelDidOpen() {
+        // Opening activates the app, so the panel starts in the foreground however it is set
+        // to dismiss.
+        isPanelFocused = true
         // Unread is "changed since the panel was last open", so opening is what rewrites
         // the digests — including the rows the poll below is about to refresh, which get
         // rewritten again when it lands. The icon drops out of `unread` from here; it
@@ -137,6 +148,48 @@ final class PanelController: ObservableObject {
         engine.setPanelOpen(true)
         rebuild()
         refresh()
+    }
+
+    /// The app moving in or out of the foreground with the panel still on screen — which only
+    /// happens when the user has asked the panel to stay open; an autoclosing one is already
+    /// gone by the time this could fire.
+    ///
+    /// Coming back is a second opening as far as unread is concerned: whatever landed while
+    /// the panel sat behind another app is being looked at now, so the menu bar drops it.
+    /// The frozen digests are deliberately **not** rewritten with it — the dots those rows
+    /// carry are exactly what the user has come back to read, and blanking them on the click
+    /// that returns focus is the failure ``panelDidOpen()`` freezes them to avoid.
+    ///
+    /// Going away is what re-freezes them, and it is the other half of the same idea: the
+    /// visit is over, everything it showed has been seen, and the next one starts from here.
+    /// A panel that stays open for a working day would otherwise still be comparing against
+    /// the digests of the morning, so rows the user read hours ago would keep their dots
+    /// forever — the dot has to mean "since you last looked", and with the panel never
+    /// closing this is the only moment that can be.
+    ///
+    /// Losing the foreground also stops the next poll being counted as seen, which is what
+    /// puts the dot back — in the menu bar and on the row — for work that arrives while the
+    /// user is elsewhere.
+    func panelDidChangeFocus(_ isFocused: Bool) {
+        // `digestsWhileOpen` is the panel-is-open flag: nil from ``panelDidClose()`` onwards,
+        // and activation happens all day with the panel closed.
+        guard digestsWhileOpen != nil, isPanelFocused != isFocused else { return }
+        isPanelFocused = isFocused
+        guard isFocused else {
+            // Nothing is written: `local` was already brought up to date by the open, by the
+            // focus that preceded this, and by every poll that landed between them. This
+            // only stops the panel deriving against a copy the user has since read past.
+            digestsWhileOpen = local.readDigests
+            // The pointer has gone somewhere else, and no move event will say so while the
+            // app is in the background: left set, the highlight would sit on a row nothing
+            // is over for as long as the panel stays there.
+            hovered = nil
+            rebuild()
+            return
+        }
+        local.markAllRead(in: snapshot)
+        persist()
+        rebuild()
     }
 
     func panelDidClose() {
@@ -226,11 +279,17 @@ final class PanelController: ObservableObject {
             // rather than asked for separately — these are exactly the repositories the
             // user authors pull requests in (IMPLEMENTATION_PLAN §3).
             AppDefaults.noteRepositories(snapshot.pullRequests.map(\.repo))
-            // A poll that lands while the panel is open has been seen, so it is read.
-            // `digestsWhileOpen` stays frozen at the open, so the dots for it still appear
-            // on screen — what this clears is the menu bar, which would otherwise light up
-            // for activity the user is looking straight at.
-            if digestsWhileOpen != nil {
+            // A poll that lands under a panel the user is looking at has been seen, so it is
+            // read. `digestsWhileOpen` stays frozen at the open, so the dots for it still
+            // appear on screen — what this clears is the menu bar, which would otherwise
+            // light up for activity the user is looking straight at.
+            //
+            // A panel left open behind another app is *not* being looked at, and a poll
+            // landing there is exactly the activity the menu bar exists to announce. Without
+            // the focus half of this condition, choosing to keep the panel open would cost
+            // the user the icon for as long as they left it that way
+            // (``panelDidChangeFocus(_:)``).
+            if digestsWhileOpen != nil, isPanelFocused {
                 local.markAllRead(in: snapshot)
             }
             persist()

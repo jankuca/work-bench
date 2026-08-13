@@ -790,6 +790,31 @@ while the app is active, and an app whose entire UI is a popover spends most of 
 so the way out has to be inside the popover. (⌘Q exists at all because the app installs an `NSMenu` it never
 displays; see below.)
 
+**Dismissal is a preference** (Settings → Panel), because the panel is used two ways and neither is a
+mistake: consulted and dismissed, or left on screen beside the work it describes. `Close the panel` is the
+default and is AppKit's `.transient` — unchanged, the standard menu bar arrangement. `Leave the panel open`
+is `.applicationDefined`, which is the same popover with nobody closing it, so the shell then holds every
+dismissal there is: the menu bar icon, `esc` (through the key monitor below — a transient popover closes on
+it for free, and the key has to mean the same thing under both), and Settings opening. The behaviour is read
+per open rather than held; opening Settings closes the panel, so a change is always in force by the next time
+the panel appears.
+
+Two things follow from a panel that outlives the app being frontmost, and both are part of the feature rather
+than polish:
+
+- **The first click has to land.** AppKit spends the click that activates an inactive app on the activation
+  unless the view under the pointer says otherwise, and `NSHostingView` says no — so a row would need
+  clicking twice. The popover's content is therefore an `NSHostingView` subclass returning `true` from
+  `acceptsFirstMouse`, which costs `NSHostingController`'s free sizing: `preferredContentSize` is driven from
+  the hosting view's fitting size in `viewDidLayout` instead.
+- **Unread has to keep meaning something.** "A poll that lands while the panel is open has been seen" is only
+  true of a panel being *looked at*. With the panel open behind another app the shell tracks activation and
+  the poll is left unread, so the menu bar still lights up; returning to the foreground clears it the way
+  opening would — the frozen digests are deliberately not rewritten then, so the dots the user came back to
+  read are still on screen. They are re-frozen on the way *out* instead, which is what makes each visit an
+  open: a panel that never closes would otherwise go on comparing against the digests of the morning, and
+  every row read since would keep its dot for the rest of the day.
+
 The footer is where the app answers **"is it actually running, and did it fail?"** — the two questions a menu
 bar app is asked most and answers worst:
 
@@ -873,8 +898,10 @@ No global hotkey for opening the panel. Once it's open, the row under the pointe
 Implementation notes, because this is fiddlier than it looks:
 
 - A status-item `NSPopover` doesn't receive key events unless the app is active. Call
-  `NSApp.activate()` when opening and let the popover's `transient` behaviour close it on resign — this is
-  the standard arrangement and doesn't change dismissal feel.
+  `NSApp.activate()` when opening — this is the standard arrangement and doesn't change dismissal feel. With
+  the default `transient` behaviour the resign that follows a click elsewhere is also what closes the panel;
+  under `Leave the panel open` (above) the monitor stops receiving keys while the app is in the background,
+  which is correct — the keystrokes belong to whatever is in front.
 - Track hover with `.onContinuousHover` on the row, holding the hovered `PRID` in the panel's view model.
   Intercept keys with a local `NSEvent` monitor scoped to the popover's window, not a global monitor.
 - **`L` cycling state is `(PRID, index)`, stored as one optional pair, not a bare index.** Each press opens

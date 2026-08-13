@@ -22,13 +22,20 @@ final class HoverKeyMonitor: NSObject {
     /// Which row the open snooze menu is for. Held because `NSMenuItem`'s action carries
     /// only the duration.
     private var snoozeTarget: PRID?
+    /// What `esc` calls. A closure rather than a reference to the popover, so this class goes
+    /// on knowing nothing about windows beyond the one it scopes events to.
+    private var onCancel: () -> Void = {}
+
+    /// `esc`. By key code rather than by character, because that is the one spelling of it
+    /// that does not depend on the layout.
+    private static let escapeKeyCode: UInt16 = 53
 
     /// Starts monitoring, replacing any monitor already running.
     ///
     /// Idempotent by construction: it tears down first, so a re-open can never stack a
     /// second monitor. Getting that wrong leaks one per open and keeps every previous
     /// handler live, so the third open of the panel would dismiss three rows on one `X`.
-    func start(on window: NSWindow?, controller: PanelController) {
+    func start(on window: NSWindow?, controller: PanelController, onCancel: @escaping () -> Void = {}) {
         stop()
         // No window, no monitor. `handle` scopes events with `event.window === window`, and
         // a nil property would make that succeed for every event that also carries no
@@ -36,6 +43,7 @@ final class HoverKeyMonitor: NSObject {
         guard let window else { return }
         self.window = window
         self.controller = controller
+        self.onCancel = onCancel
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             // Key events are delivered on the main thread, so this asserts an isolation
             // that already holds rather than dispatching. It cannot be a `Task`: the
@@ -53,6 +61,7 @@ final class HoverKeyMonitor: NSObject {
         issues.reset()
         snoozeTarget = nil
         window = nil
+        onCancel = {}
         guard let token = keyMonitor else { return } // already stopped
         keyMonitor = nil                             // clear BEFORE removing
         NSEvent.removeMonitor(token)
@@ -66,14 +75,24 @@ final class HoverKeyMonitor: NSObject {
 
     /// `nil` swallows the event; returning it passes it on.
     private func handle(_ event: NSEvent) -> NSEvent? {
-        guard let controller, event.window === window else { return event }
+        guard event.window === window else { return event }
         // A modified press belongs to the system or to a menu equivalent, never to the row
         // under the pointer. Shift is not in the list: it is how `X` is typed on some
         // layouts, and `RowAction` matches case-insensitively.
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard modifiers.isDisjoint(with: [.command, .control, .option, .function]) else { return event }
 
-        guard let character = event.charactersIgnoringModifiers?.first,
+        // Before the row actions, and without needing a row: `esc` is about the panel rather
+        // than about whatever the pointer happens to be over. A transient popover closes on
+        // it by itself and this is the same dismissal a fraction earlier; one set to stay
+        // open has nothing else that would.
+        if event.keyCode == Self.escapeKeyCode {
+            onCancel()
+            return nil
+        }
+
+        guard let controller,
+              let character = event.charactersIgnoringModifiers?.first,
               let action = RowAction.forKey(character),
               let row = controller.hoveredRow,
               row.supports(action)

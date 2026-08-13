@@ -21,6 +21,12 @@ final class StatusItemController: NSObject {
     /// the popover opens and stopped when it closes — never re-created, so there is one
     /// monitor to own rather than one per open.
     private let keys = HoverKeyMonitor()
+    /// The activation observers, held only because `addObserver(forName:)` hands them back.
+    ///
+    /// Never removed: this object is built in `applicationDidFinishLaunching` and held for
+    /// the life of the process, exactly like the status item it owns, so there is no moment
+    /// at which unregistering them would be anything but ceremony.
+    private var activationTokens: [any NSObjectProtocol] = []
     /// Built the first time Settings is asked for, and kept from then on.
     ///
     /// Lazily, because building it reads the Keychain to say where each credential is
@@ -52,13 +58,14 @@ final class StatusItemController: NSObject {
     }
 
     private func configure() {
-        // The panel sizes itself: 440 pt wide, height to content up to 800 (§5). Letting
-        // the hosting controller drive `contentSize` is what makes the all-clear state a
-        // short panel rather than an 800 pt one with a message at the top.
-        let hosting = NSHostingController(rootView: PanelView(controller: controller))
-        hosting.sizingOptions = [.preferredContentSize]
-        popover.contentViewController = hosting
-        popover.behavior = .transient
+        // The panel sizes itself: 440 pt wide, height to content up to 800 (§5), and takes
+        // the click that activates the app rather than swallowing it — both are
+        // ``PanelHostingController``'s doing, and the second is what makes a panel left open
+        // in the background clickable the first time.
+        popover.contentViewController = PanelHostingController(rootView: PanelView(controller: controller))
+        // Re-read on every open; see ``togglePopover(_:)``. Set here as well so the popover
+        // is never briefly configured for a behaviour the user did not choose.
+        popover.behavior = AppDefaults.panelDismissal().behavior
         popover.animates = false
         popover.delegate = self
 
@@ -70,6 +77,10 @@ final class StatusItemController: NSObject {
         // not connected, nothing verified, dashed.
         show(.disconnected)
 
+        // The panel is open for as long as the user leaves it open, so "open" and "being
+        // looked at" are two questions rather than one.
+        observeActivation()
+
         // Starts the scheduler, which polls once immediately and then on the interval table
         // — sleep, battery, panel state and all. Nothing else in this class has a timer.
         controller.start()
@@ -79,30 +90,87 @@ final class StatusItemController: NSObject {
         guard let button = statusItem.button else { return }
 
         if popover.isShown {
-            popover.performClose(sender)
+            closePanel()
             return
         }
 
+        // Read per open rather than held, for the same reason the poll reads its scope per
+        // poll: there is then no second copy to keep in step. The open is also the moment
+        // AppKit acts on it — a popover arms its dismissal when it is shown — and the only
+        // place the preference is edited closes the panel to get at itself, so the next open
+        // is always the first moment a change could matter.
+        popover.behavior = AppDefaults.panelDismissal().behavior
+
         // A status-item popover does not receive key events unless the app is active.
-        // Activating on open and letting `.transient` close it on resign is the standard
-        // arrangement, and it is what makes the hovered-row keyboard actions work without
-        // changing how dismissal feels.
+        // Activating on open is the standard arrangement, and it is what makes the
+        // hovered-row keyboard actions work.
         NSApp.activate()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         controller.panelDidOpen()
         // After `show`, because the popover has no window before it. Scoping the monitor to
         // that window is what keeps a keystroke aimed at Settings from dismissing a row
         // behind it.
-        keys.start(on: popover.contentViewController?.view.window, controller: controller)
+        //
+        // `esc` comes through the same monitor. `.transient` would close on it by itself;
+        // a panel set to stay open has nobody to do that, and the key has to mean the same
+        // thing under both.
+        keys.start(
+            on: popover.contentViewController?.view.window,
+            controller: controller,
+            onCancel: { [weak self] in self?.closePanel() }
+        )
+    }
+
+    /// Every dismissal that is not AppKit's own: the menu bar icon, `esc`, and Settings
+    /// taking over. `performClose` rather than `close` so the delegate hears it — that is
+    /// what stops the key monitor and tells the panel controller.
+    private func closePanel() {
+        guard popover.isShown else { return }
+        popover.performClose(nil)
+    }
+
+    /// Watches the app moving in and out of the foreground, so an open panel can say whether
+    /// it is being *looked at*.
+    ///
+    /// With the panel closing on blur the two are the same thing and nothing here ever
+    /// changes the answer. With it set to stay open they come apart: the panel sits on screen
+    /// while the user works in another app, and a poll landing behind it has not been seen —
+    /// which is the difference between the menu bar lighting up for new activity and never
+    /// lighting up again.
+    private func observeActivation() {
+        for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
+            let token = NotificationCenter.default.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                // `queue: .main` is what makes this assertion true rather than hopeful: the
+                // block is delivered on the main queue, which is the main actor's executor.
+                MainActor.assumeIsolated {
+                    self?.applicationActivationChanged(
+                        isActive: name == NSApplication.didBecomeActiveNotification
+                    )
+                }
+            }
+            activationTokens.append(token)
+        }
+    }
+
+    private func applicationActivationChanged(isActive: Bool) {
+        // Activation happens all day with the panel closed — Settings, a resign the panel is
+        // already gone for — and none of it is about the panel.
+        guard popover.isShown else { return }
+        controller.panelDidChangeFocus(isActive)
     }
 
     /// Settings is a window, so it needs the app in front — with `.accessory` there is no
     /// Dock icon to bring it there.
     private func showSettings() {
-        // The popover is transient and would close on its own the moment the window takes
-        // over; closing it explicitly means the monitor comes down through the same path as
-        // every other dismissal rather than on a resign nobody routed.
-        if popover.isShown { popover.performClose(nil) }
+        // Closed explicitly rather than left to AppKit: a transient popover would go on its
+        // own the moment the window took over, but one set to stay open would sit in front
+        // of the window that was asked for — and this way the monitor comes down through the
+        // same path as every other dismissal rather than on a resign nobody routed.
+        closePanel()
         NSApp.activate()
         settings.show()
     }
@@ -127,5 +195,22 @@ extension StatusItemController: NSPopoverDelegate {
         // fire for one user action, and `stop()` is written to survive being called twice.
         keys.stop()
         controller.panelDidClose()
+    }
+}
+
+private extension AppDefaults.PanelDismissal {
+    /// `.transient` is AppKit closing the popover on anything outside it — the standard menu
+    /// bar arrangement, and what the app has always done. `.applicationDefined` is the same
+    /// popover with nobody closing it, which leaves ``StatusItemController`` holding every
+    /// dismissal there is: the menu bar icon, `esc`, and Settings.
+    ///
+    /// Not `.semitransient`: it closes on interaction elsewhere *in this app*, and this app
+    /// is a popover plus a settings window that already closes the popover itself. It would
+    /// be `.applicationDefined` with a footnote.
+    var behavior: NSPopover.Behavior {
+        switch self {
+        case .onBlur: return .transient
+        case .manual: return .applicationDefined
+        }
     }
 }
