@@ -208,6 +208,20 @@ public struct GitHubClient {
                 : 0
             self.endpoint = endpoint
         }
+
+        /// What to wait before the `attempt`-th retry of a page: the delay, growing with the
+        /// attempt, and never past ``longestRetryDelay``.
+        ///
+        /// The cap applies to the *product*, not just to ``retryDelay``. Clamping only the
+        /// base would let a configuration at the cap wait ten times it — 150 seconds before
+        /// the last of ten attempts, and 825 across them, which is a poll blocked for a
+        /// quarter of an hour by a page the next poll would resume for free.
+        ///
+        /// A function rather than three lines in the loop because it is the only arithmetic
+        /// here a test can check without waiting for it.
+        func delay(forAttempt attempt: Int) -> TimeInterval {
+            min(Configuration.longestRetryDelay, retryDelay * Double(max(1, attempt)))
+        }
     }
 
     private let graphQL: GraphQLClient
@@ -351,8 +365,9 @@ public struct GitHubClient {
                     // Growing, so the second attempt gives a service that has now failed twice
                     // longer than the first did. Throws on cancellation, which is the right
                     // answer: a poll the panel closing cancelled must not sit here waiting.
-                    let attempt = Double(configuration.pageRetries - retriesLeft)
-                    let delay = configuration.retryDelay * attempt
+                    let delay = configuration.delay(
+                        forAttempt: configuration.pageRetries - retriesLeft
+                    )
                     try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 }
                 continue pagination

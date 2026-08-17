@@ -393,6 +393,27 @@ final class PullRequestFetchTests: XCTestCase {
         )
     }
 
+    /// The wait grows with the attempt, and the cap applies to the product rather than to the
+    /// base: clamping only the base would let a configuration sitting at the cap wait ten
+    /// times it before its last attempt — a poll blocked for a quarter of an hour by a page
+    /// the next poll resumes for free.
+    func testTheRetryWaitGrowsButNeverPastTheCap() {
+        let standard = GitHubClient.Configuration()
+        XCTAssertEqual(standard.delay(forAttempt: 1), 0.75, accuracy: 0.0001)
+        XCTAssertEqual(standard.delay(forAttempt: 2), 1.5, accuracy: 0.0001)
+        XCTAssertEqual(standard.delay(forAttempt: 3), 2.25, accuracy: 0.0001)
+
+        let slowest = GitHubClient.Configuration(retryDelay: GitHubClient.Configuration.longestRetryDelay)
+        XCTAssertEqual(
+            slowest.delay(forAttempt: 10),
+            GitHubClient.Configuration.longestRetryDelay,
+            accuracy: 0.0001
+        )
+
+        // A zero delay stays zero at every attempt — that is what turns the sleep off.
+        XCTAssertEqual(GitHubClient.Configuration(retryDelay: 0).delay(forAttempt: 3), 0)
+    }
+
     /// A partly-spent budget handed in is what makes a poll's searches share one allowance
     /// instead of each starting again at the full one.
     func testASharedBudgetCarriesWhatEarlierSearchesSpent() async throws {
