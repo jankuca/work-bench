@@ -773,9 +773,11 @@ protocol PanelSource: Sendable {
     /// The priority refresh, when the source has one: ``PollPlan/known``'s rows, fetched in
     /// a single request, ahead of ``load(_:)``.
     ///
-    /// `nil` for "nothing to draw yet" — no refresher, nothing known, or a request that did
+    /// `nil` for "no refresh happened" — no refresher, nothing known, or a request that did
     /// not answer. It is never an error: whatever this could not do, the sweep behind it
-    /// does, so a source with no answer here simply polls the way it always did.
+    /// does, so a source with no answer here simply polls the way it always did. A refresh
+    /// that ran and found nothing to draw answers with an empty product instead, because it
+    /// has an answer to give even so — what it cost.
     func refresh(_ plan: PollPlan) async -> PriorityProduct?
 }
 
@@ -862,6 +864,11 @@ struct GitHubPanelSource: PanelSource {
     /// Every failure answers `nil`. A refresh is an optimisation over a sweep that is about
     /// to run anyway, and the sweep reports for both of them — reporting a failure twice
     /// would put the banner up for a request nobody asked for.
+    ///
+    /// A refresh that *ran* and found nothing to draw is not a failure, and answers with a
+    /// product carrying no rows rather than with `nil`: it spent points, and the sweep behind
+    /// it shares the poll's budget with it. Only a refresh that never happened, or one whose
+    /// request threw, has nothing to hand over — a throw takes the accounting with it.
     func refresh(_ plan: PollPlan) async -> PriorityProduct? {
         guard !plan.known.isEmpty else { return nil }
         guard let fetched = try? await pipeline().refreshKnown(
@@ -879,7 +886,18 @@ struct GitHubPanelSource: PanelSource {
         for warning in fetched.warnings {
             NSLog("PRStackMonitor: %@", warning.description)
         }
-        guard !fetched.isEmpty else { return nil }
+        // No rows to draw, but the request still went out and still cost points. Handing
+        // back an empty product rather than `nil` is what keeps the sweep's share of the
+        // budget honest — ``applyPriority(_:from:)`` ignores an empty one, so nothing on
+        // screen moves for it. Resolving against Linear is skipped: there is nothing to
+        // resolve.
+        guard !fetched.isEmpty else {
+            return PriorityProduct(
+                viewerLogin: fetched.viewerLogin,
+                pullRequests: [],
+                pointsSpent: fetched.pointsSpent
+            )
+        }
 
         let resolution = await LinearPanelSource.resolve(
             fetched.pullRequests,

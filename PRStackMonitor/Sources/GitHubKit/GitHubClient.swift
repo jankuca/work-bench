@@ -367,6 +367,13 @@ public struct GitHubClient {
 
             // Bounds are checked after the page is banked, so each one stops the *next*
             // request rather than discarding work already paid for.
+            //
+            // That holds for a shared budget too, and deliberately: a search whose budget was
+            // already spent by the ones before it still sends its first page. A poll made of
+            // two searches would otherwise be able to return *nothing at all* for one half of
+            // the panel — no open list, or no Done section — which is a worse answer than one
+            // page of overspend against an allowance the 10% floor above is what really
+            // guards. The budget bounds how far a poll pages, not whether it looks.
             if let rateLimit, rateLimit.isBelowFloor {
                 stopReason = .rateLimitFloor
                 warnings.append(
