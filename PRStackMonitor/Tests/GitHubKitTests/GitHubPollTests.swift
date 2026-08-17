@@ -324,6 +324,34 @@ final class GitHubPollTests: XCTestCase {
         XCTAssertFalse(result.isResumed)
     }
 
+    /// The middle of the chain: a sweep that resumed and stopped short again advances the
+    /// count. Without this the cap above is unreachable in the suite, and a chain that never
+    /// ended — or ended one poll early — would leave it green.
+    func testAResumedSweepThatStopsShortAgainAdvancesTheChain() async throws {
+        let transport = StubTransport(responses: [
+            .json(SearchPage.json(numbers: [8], hasNextPage: true, endCursor: "open-3")),
+            .json(SearchPage.json(numbers: [], hasNextPage: false, endCursor: nil))
+        ])
+        let carried = SweepCursors(
+            fingerprint: GitHubPoll.fingerprint(
+                scope: .all,
+                includesDrafts: false,
+                local: .empty,
+                now: now
+            ),
+            open: "open-2",
+            resumes: 1
+        )
+
+        let result = try await GitHubPoll(client: clientWithPageCap(transport, pageCap: 1))
+            .run(scope: .all, local: .empty, resuming: carried, now: now)
+
+        XCTAssertEqual(try transport.requestVariables(0)["cursor"] as? String, "open-2")
+        XCTAssertTrue(result.isResumed)
+        XCTAssertEqual(result.cursors.open, "open-3")
+        XCTAssertEqual(result.cursors.resumes, 2)
+    }
+
     /// A resumed sweep reads the end of the list, so nothing in it can see a pull request that
     /// has since sorted onto page one. The chain has to end for that reason alone.
     func testTheResumeChainStopsAtItsCap() async throws {

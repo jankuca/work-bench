@@ -565,10 +565,12 @@ hundreds of open pull requests it is the one that times out: 50 nodes, each with
 requests and 20 check contexts, comes back as a `502` or a `504` often enough on a poor connection to matter.
 Two rules cover it, and neither involves asking the same question again the same way.
 
-- **A failed page is asked for again at half the size**, same cursor, down to a floor of five — three attempts,
-  with a short growing pause between them. The reduction sticks for the rest of that pagination: an account
-  whose page of 50 GitHub could not compute will not compute page eight of 50 either. A rejected credential
-  and a spent allowance are explicitly *not* retried; neither is a page that was too big.
+- **A failed page is asked for again at half the size**, same cursor, down to a floor of five, with a short
+  growing pause between attempts. Both the reduction and the three attempts are spent across the pagination
+  rather than restored per page: an account whose page of 50 GitHub could not compute will not compute page
+  eight of 50 either, and a per-page allowance would let ten pages cost thirty extra requests on the connection
+  least able to afford them. A rejected credential and a spent allowance are explicitly *not* retried; neither
+  is a page that was too big.
 - **What has already landed is kept.** When the attempts run out mid-pagination the fetch returns the pages it
   banked, the cursor of the page that failed, and a warning — a sweep of eight pages that fails on the seventh
   no longer throws the first six away. A first page that never landed is still an error: reporting it as an

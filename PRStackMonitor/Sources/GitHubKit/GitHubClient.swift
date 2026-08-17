@@ -153,9 +153,15 @@ public struct GitHubClient {
         public var pageCap: Int
         /// GraphQL points one poll may spend.
         public var pointBudget: Int
-        /// How many extra attempts one page window gets when GitHub answers `502`/`504` or
-        /// the connection stalls, each one asking for half as many pull requests as the last
-        /// (down to ``minimumPageSize``).
+        /// How many extra attempts a whole pagination gets when GitHub answers `502`/`504`
+        /// or the connection stalls, each one asking for half as many pull requests as the
+        /// last (down to ``minimumPageSize``).
+        ///
+        /// Spent across the pagination rather than restored per page, exactly like the page
+        /// size the attempts reduce: a sweep that spends two of them on page one has one
+        /// left for page nine. Per-page would be the wrong shape — ten pages could then cost
+        /// thirty extra requests on the connection least able to afford them, which is the
+        /// connection this exists for.
         ///
         /// Three, because the reduction is what does the work: 50 → 25 → 12 → 6 covers the
         /// whole useful range, and a fourth attempt at a size GitHub has already failed

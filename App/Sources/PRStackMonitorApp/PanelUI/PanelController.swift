@@ -339,19 +339,39 @@ final class PanelController: ObservableObject {
         case .cancelled:
             break
         case .fetched(let product):
+            // Whether this poll answered for the same account the rows on screen came from.
+            //
+            // The cursors' own fingerprint cannot tell: `author:@me` is resolved from the
+            // token on GitHub's side, so two accounts with the same repository scope produce
+            // the *same* query text, and a cursor from one would resume mid-list in the
+            // other. The login the poll answered for is the only thing that separates them.
+            // An empty login on either side is a question nothing answered — the first poll
+            // of a launch, or an empty scope, which sends no request at all — and that is
+            // not a change of account.
+            let isSameAccount = snapshot.viewerLogin.isEmpty
+                || product.snapshot.viewerLogin.isEmpty
+                || snapshot.viewerLogin == product.snapshot.viewerLogin
             // A sweep that started at page one is the whole list and replaces what came
             // before it. A *resumed* one deliberately never looked at the pages before the
             // cursor it picked up from, so it is a patch over the rows already on screen
             // rather than the picture entire — replacing would drop every row from the pages
             // it skipped, which is the opposite of what resuming is for.
-            snapshot = product.isResumed
+            //
+            // A poll for a *different* account is never a patch. Merging one would leave the
+            // previous account's rows in the panel and — because `replacing` only adopts a
+            // login when it has none — keep its `viewerLogin` too, which would hide the
+            // switch from `noteViewer` below and leave the app resuming into the wrong
+            // account until the resume chain hit its cap.
+            snapshot = product.isResumed && isSameAccount
                 ? snapshot.replacing(
                     product.snapshot.pullRequests,
                     viewerLogin: product.snapshot.viewerLogin
                 )
                 : product.snapshot
-            // Where the next poll picks up, or `.none` when both searches reached the end.
-            sweepCursors = product.cursors
+            // Where the next poll picks up, or `.none` when both searches reached the end —
+            // and `.none` when the account changed, so the new one's first sweep starts at
+            // page one instead of at a position in the old one's list.
+            sweepCursors = isSameAccount ? product.cursors : .none
             status.record(github: .connected)
             status.lastSyncedAt = clock()
             // Nil means the Linear half learned nothing this poll, so the footer keeps
