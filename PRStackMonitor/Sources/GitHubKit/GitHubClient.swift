@@ -18,6 +18,11 @@ public enum FetchStopReason: String, Equatable, Sendable {
     case pointBudget
     /// GitHub's remaining allowance fell below 10%.
     case rateLimitFloor
+    /// GitHub did not answer a page, and asking again at a smaller size did not help
+    /// either. The pages that *did* land are kept, and ``PullRequestFetch/nextCursor``
+    /// resumes at the one that failed — losing a whole sweep to one 502 is the failure this
+    /// case exists to avoid.
+    case serverError
 
     public var isComplete: Bool { self == .complete || self == .emptyScope }
 }
@@ -26,6 +31,11 @@ public enum FetchStopReason: String, Equatable, Sendable {
 public enum FetchWarning: Equatable, Sendable, CustomStringConvertible {
     case pageCapReached(pages: Int, fetched: Int)
     case pointBudgetExhausted(spent: Int, limit: Int)
+    /// GitHub did not answer a page, so it was asked for again: same cursor, `pageSize`
+    /// nodes — half of what the attempt before it asked for, until the floor.
+    case pageRetried(pageSize: Int, reason: String)
+    /// Pagination gave up on a page GitHub would not answer, keeping everything before it.
+    case searchInterrupted(pages: Int, fetched: Int, reason: String)
     case rateLimitFloorReached(remaining: Int, limit: Int, resetAt: Date?)
     case repositoryDropped(String)
     case nodeSkipped(String)
@@ -51,6 +61,11 @@ public enum FetchWarning: Equatable, Sendable, CustomStringConvertible {
             return "stopped at the \(pages)-page cap with \(fetched) pull requests; more remain"
         case .pointBudgetExhausted(let spent, let limit):
             return "spent \(spent) of \(limit) GraphQL points this poll; the rest resumes next poll"
+        case .pageRetried(let pageSize, let reason):
+            return "GitHub did not answer a page (\(reason)); asking again for \(pageSize) at a time"
+        case .searchInterrupted(let pages, let fetched, let reason):
+            return "stopped after \(pages) page(s) with \(fetched) pull requests: \(reason);"
+                + " the rest resumes next poll"
         case .tagPageCapReached(let repository, let pages):
             return "stopped reading \(repository)'s tags at the \(pages)-page cap; "
                 + "a release cut before those may not be found yet"
@@ -124,29 +139,57 @@ public struct PullRequestFetch: Equatable, Sendable {
 /// The GitHub half of one poll: a paginated search, mapped to domain values.
 public struct GitHubClient {
     public struct Configuration: Equatable, Sendable {
+        /// The smallest page the reduction in ``pageRetries`` walks down to.
+        ///
+        /// Below this the request stops being a page of a search and starts being a round
+        /// trip per pull request: five nodes still carries every field a row is drawn from,
+        /// and an account that cannot be read five at a time is not one a smaller page will
+        /// rescue.
+        public static let minimumPageSize = 5
+
         /// GitHub's own maximum for a search connection.
         public var pageSize: Int
         /// The safety cap from IMPLEMENTATION_PLAN §3 — 10 pages, 500 pull requests.
         public var pageCap: Int
         /// GraphQL points one poll may spend.
         public var pointBudget: Int
+        /// How many extra attempts one page window gets when GitHub answers `502`/`504` or
+        /// the connection stalls, each one asking for half as many pull requests as the last
+        /// (down to ``minimumPageSize``).
+        ///
+        /// Three, because the reduction is what does the work: 50 → 25 → 12 → 6 covers the
+        /// whole useful range, and a fourth attempt at a size GitHub has already failed
+        /// three times is spending a poor connection's time on a page the next poll resumes
+        /// for free.
+        public var pageRetries: Int
+        /// What to wait between those attempts. Zero skips the sleep altogether, which is
+        /// what the tests set — there is no scheduler in a test to be late for.
+        public var retryDelay: TimeInterval
         public var endpoint: URL
 
         public init(
             pageSize: Int = 50,
             pageCap: Int = 10,
             pointBudget: Int = PointBudget.defaultPoints,
+            pageRetries: Int = 3,
+            retryDelay: TimeInterval = 0.75,
             endpoint: URL = GitHubAPI.graphQLEndpoint
         ) {
             self.pageSize = min(100, max(1, pageSize))
             self.pageCap = max(1, pageCap)
             self.pointBudget = pointBudget
+            self.pageRetries = max(0, pageRetries)
+            self.retryDelay = max(0, retryDelay)
             self.endpoint = endpoint
         }
     }
 
     private let graphQL: GraphQLClient
     private let configuration: Configuration
+
+    /// What one poll may spend across every search it runs, for the caller that runs more
+    /// than one of them (``GitHubPoll``) and has to share a single budget between them.
+    public var pointBudget: Int { configuration.pointBudget }
 
     public init(
         transport: any HTTPTransport,
@@ -175,11 +218,18 @@ public struct GitHubClient {
     /// `includesDrafts` widens the search to work in progress. Off by default, and the
     /// caller passing it is the app reading one preference per poll — see
     /// ``SearchQuery/build(scope:includesDrafts:extraQualifiers:)``.
+    ///
+    /// `budget` is for a caller running more than one search in a poll: pass the budget the
+    /// earlier ones have already been spending and this search shares what is left of it
+    /// instead of starting again at the full allowance. Omitting it gives this search a
+    /// budget of its own, which is right for a single search and wrong for a poll made of
+    /// three.
     public func fetchPullRequests(
         scope: RepoScope,
         includesDrafts: Bool = false,
         extraQualifiers: [String] = [],
-        startingAfter cursor: String? = nil
+        startingAfter cursor: String? = nil,
+        budget shared: PointBudget? = nil
     ) async throws -> PullRequestFetch {
         guard let query = SearchQuery.build(
             scope: scope,
@@ -201,7 +251,11 @@ public struct GitHubClient {
         }
 
         var warnings = query.droppedRepositories.map(FetchWarning.repositoryDropped)
-        var budget = PointBudget(points: configuration.pointBudget)
+        var budget = shared ?? PointBudget(points: configuration.pointBudget)
+        // What *this* search spent, as opposed to what the shared budget has spent across the
+        // poll. The caller sums these, so reporting the budget's total here would count the
+        // searches before this one a second time.
+        var spent = 0
         var collected: [PullRequest] = []
         var seen: Set<PRID> = []
         var viewerLogin = ""
@@ -209,16 +263,64 @@ public struct GitHubClient {
         var pages = 0
         var nextCursor = cursor
         var stopReason: FetchStopReason = .complete
+        // Reduced, never restored, for the rest of this pagination: an account whose page of
+        // 50 GitHub could not compute will not compute page eight of 50 either. Smaller pages
+        // mean the page cap covers fewer pull requests, which is what `nextCursor` and the
+        // next poll are for.
+        var pageSize = configuration.pageSize
+        var retriesLeft = configuration.pageRetries
 
         pagination: while true {
-            let result: GraphQLResult<SearchPayload> = try await graphQL.perform(
-                query: PullRequestQuery.text,
-                variables: PullRequestQuery.variables(
-                    query: query.text,
-                    pageSize: configuration.pageSize,
-                    cursor: nextCursor
+            let result: GraphQLResult<SearchPayload>
+            do {
+                result = try await graphQL.perform(
+                    query: PullRequestQuery.text,
+                    variables: PullRequestQuery.variables(
+                        query: query.text,
+                        pageSize: pageSize,
+                        cursor: nextCursor
+                    )
                 )
-            )
+            } catch let error as GitHubError where error.isServerSideFailure {
+                // GitHub either could not compute this page in time or the connection did
+                // not survive asking for it. Both answer to a smaller page, so the same
+                // window is asked for again — same cursor, half the nodes — rather than the
+                // whole poll being thrown away for one page.
+                guard retriesLeft > 0 else {
+                    // Out of attempts. Everything already banked is still true and
+                    // `nextCursor` points at the page that failed, so the sweep resumes
+                    // there instead of walking these pages again — but only if something
+                    // *was* banked. A first page that never landed is an outage, and
+                    // reporting it as a successful empty poll would put the panel at
+                    // "connected, nothing waiting on you" for a GitHub that is down.
+                    guard pages > 0 else { throw error }
+                    stopReason = .serverError
+                    warnings.append(
+                        .searchInterrupted(
+                            pages: pages,
+                            fetched: collected.count,
+                            reason: error.description
+                        )
+                    )
+                    break pagination
+                }
+                retriesLeft -= 1
+                // Halved, down to the floor — and never *up* to it, which is what the outer
+                // `min` is for: a caller that asked for pages of one (the dump does, to watch
+                // pagination run) must not have its page size grown by a failure.
+                let halved = max(Configuration.minimumPageSize, pageSize / 2)
+                pageSize = min(pageSize, halved)
+                warnings.append(.pageRetried(pageSize: pageSize, reason: error.description))
+                if configuration.retryDelay > 0 {
+                    // Growing, so the second attempt gives a service that has now failed twice
+                    // longer than the first did. Throws on cancellation, which is the right
+                    // answer: a poll the panel closing cancelled must not sit here waiting.
+                    let attempt = Double(configuration.pageRetries - retriesLeft)
+                    let delay = configuration.retryDelay * attempt
+                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
+                continue pagination
+            }
             pages += 1
             warnings.append(contentsOf: result.errors.map(FetchWarning.graphQL))
 
@@ -229,6 +331,7 @@ public struct GitHubClient {
             if let reported = payload.rateLimit?.rateLimit {
                 rateLimit = reported
                 budget.record(reported.cost)
+                spent += max(0, reported.cost)
             }
 
             for node in (payload.search?.nodes ?? []).compactMap({ $0 }) {
@@ -287,7 +390,7 @@ public struct GitHubClient {
             pagesFetched: pages,
             nextCursor: nextCursor,
             stopReason: stopReason,
-            pointsSpent: budget.spent,
+            pointsSpent: spent,
             rateLimit: rateLimit,
             warnings: warnings
         )

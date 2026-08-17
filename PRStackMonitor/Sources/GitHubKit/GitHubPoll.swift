@@ -77,19 +77,49 @@ public struct GitHubPoll {
     /// `refreshed` is phase one's answer, as ``refreshKnown(_:scope:includesDrafts:local:now:)``
     /// returned it — already filtered to rows the panel may show. Passing `.empty` runs the
     /// poll exactly as it ran before the refresh existed.
+    ///
+    /// `resuming` is where the last poll's searches stopped, if they stopped short. A poll
+    /// that resumes covers the *rest* of the list rather than the whole of it, so its result
+    /// is a patch over what the caller already has and says so
+    /// (``GitHubPollResult/isResumed``); handing it back ``SweepCursors/none`` is a poll that
+    /// starts at page one, which is every poll after a sweep that finished.
     public func run(
         scope: RepoScope,
         includesDrafts: Bool = false,
         local: LocalState,
         refreshed: KnownPullRequestFetch = .empty,
+        resuming cursors: SweepCursors = .none,
         now: Date
     ) async throws -> GitHubPollResult {
-        let open = try await client.fetchOpenPullRequests(scope: scope, includesDrafts: includesDrafts)
+        // One budget for the whole poll rather than one per search. Each search used to be
+        // given the full allowance, and the priority refresh none at all, so a poll could
+        // spend three times what IMPLEMENTATION_PLAN §3's budget says before any bound
+        // noticed. The refresh has already spent its share by the time this is called.
+        var budget = PointBudget(points: client.pointBudget)
+        budget.record(refreshed.pointsSpent)
+
+        let fingerprint = GitHubPoll.fingerprint(
+            scope: scope,
+            includesDrafts: includesDrafts,
+            local: local,
+            now: now
+        )
+        let resumed = cursors.usable(for: fingerprint)
+
+        let open = try await client.fetchOpenPullRequests(
+            scope: scope,
+            includesDrafts: includesDrafts,
+            startingAfter: resumed.open,
+            budget: budget
+        )
+        budget.record(open.pointsSpent)
         let closed = try await client.fetchClosedPullRequests(
             scope: scope,
             includesDrafts: includesDrafts,
             unbound: local.unboundMerges,
-            now: now
+            now: now,
+            startingAfter: resumed.closed,
+            budget: budget
         )
 
         var pullRequests: [PullRequest] = []
@@ -173,8 +203,45 @@ public struct GitHubPoll {
             closed: closed,
             release: release,
             recovery: recovered,
-            priority: refreshed
+            priority: refreshed,
+            resumedFrom: resumed,
+            cursors: SweepCursors.next(
+                fingerprint: fingerprint,
+                open: open.nextCursor,
+                closed: closed.nextCursor,
+                after: resumed
+            )
         )
+    }
+
+    /// What makes two polls' searches the same searches, for
+    /// ``SweepCursors/usable(for:)``.
+    ///
+    /// The query texts themselves rather than a hash of the inputs behind them: they are
+    /// what GitHub's cursors are positions in, so anything that changes a query — a
+    /// repository checked in Settings, the drafts preference, the closed search's lower bound
+    /// moving onto a new day as an old merge finally ships — changes this too, and any cursor
+    /// held from before it is discarded rather than applied to a list it no longer describes.
+    static func fingerprint(
+        scope: RepoScope,
+        includesDrafts: Bool,
+        local: LocalState,
+        now: Date
+    ) -> String {
+        let open = SearchQuery.build(
+            scope: scope,
+            includesDrafts: includesDrafts,
+            extraQualifiers: MergedPullRequestSearch.openQualifiers
+        )
+        let closed = SearchQuery.build(
+            scope: scope,
+            includesDrafts: includesDrafts,
+            extraQualifiers: MergedPullRequestSearch.qualifiers(
+                unbound: local.unboundMerges,
+                now: now
+            )
+        )
+        return [open?.text ?? "", closed?.text ?? ""].joined(separator: " | ")
     }
 }
 
@@ -194,6 +261,11 @@ public struct GitHubPollResult: Equatable, Sendable {
     /// The priority refresh this poll ran ahead of the searches, already merged into
     /// ``pullRequests``. Here for its points, its warnings and the diagnostics.
     public var priority: KnownPullRequestFetch
+    /// Where this poll's searches picked up, when they picked up rather than started.
+    public var resumedFrom: SweepCursors
+    /// Where they stopped, for the next poll to resume from — ``SweepCursors/none`` when both
+    /// reached the end and there is nothing to carry forward.
+    public var cursors: SweepCursors
 
     public init(
         viewerLogin: String,
@@ -202,7 +274,9 @@ public struct GitHubPollResult: Equatable, Sendable {
         closed: PullRequestFetch,
         release: ReleaseTrackerResult = .empty,
         recovery: MergeCommitRecoveryResult = .empty,
-        priority: KnownPullRequestFetch = .empty
+        priority: KnownPullRequestFetch = .empty,
+        resumedFrom: SweepCursors = .none,
+        cursors: SweepCursors = .none
     ) {
         self.viewerLogin = viewerLogin
         self.pullRequests = pullRequests
@@ -211,7 +285,18 @@ public struct GitHubPollResult: Equatable, Sendable {
         self.release = release
         self.recovery = recovery
         self.priority = priority
+        self.resumedFrom = resumedFrom
+        self.cursors = cursors
     }
+
+    /// Whether this poll carried on from where the last one stopped, and therefore never
+    /// looked at the pages before that point.
+    ///
+    /// The caller needs this to know what to do with ``pullRequests``: a poll that started at
+    /// page one is the whole list and replaces what came before it, and a resumed one is the
+    /// tail of the list and has to be merged over it. Replacing on a resumed poll would drop
+    /// every row from the pages it deliberately skipped.
+    public var isResumed: Bool { resumedFrom.isResumable }
 
     public var snapshot: RawSnapshot {
         RawSnapshot(viewerLogin: viewerLogin, pullRequests: pullRequests)

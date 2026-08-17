@@ -257,4 +257,137 @@ final class GitHubPollTests: XCTestCase {
             .run(scope: .all, local: .empty, now: now)
         XCTAssertEqual(result.release, .empty)
     }
+
+    // MARK: - Resuming a sweep that was cut short
+
+    /// A sweep that stopped short hands back where it stopped, and the poll after it starts
+    /// there. Every bound in the client has always returned a cursor for this; until now
+    /// nothing carried it anywhere, so an account whose sweep takes eight pages re-fetched the
+    /// first seven on every poll — and the poll most likely to be cut off was the one that had
+    /// paid the most to get where it was cut.
+    func testASweepThatStoppedShortComesBackWithItsCursors() async throws {
+        let transport = StubTransport(responses: [
+            .json(SearchPage.json(numbers: [10], hasNextPage: true, endCursor: "open-2")),
+            .json(SearchPage.json(numbers: [9], hasNextPage: false, endCursor: nil))
+        ])
+
+        let result = try await GitHubPoll(client: clientWithPageCap(transport, pageCap: 1))
+            .run(scope: .all, local: .empty, now: now)
+
+        XCTAssertFalse(result.isComplete)
+        XCTAssertFalse(result.isResumed, "this poll started at page one")
+        XCTAssertEqual(result.cursors.open, "open-2")
+        XCTAssertNil(result.cursors.closed, "the closed search reached the end of its own list")
+        XCTAssertEqual(result.cursors.resumes, 0)
+    }
+
+    func testAPollResumesTheSearchThatStoppedAndSaysThatItDid() async throws {
+        let transport = StubTransport(responses: [
+            .json(SearchPage.json(numbers: [8], hasNextPage: false, endCursor: nil)),
+            .json(SearchPage.json(numbers: [], hasNextPage: false, endCursor: nil))
+        ])
+        let carried = SweepCursors(
+            fingerprint: GitHubPoll.fingerprint(
+                scope: .all,
+                includesDrafts: false,
+                local: .empty,
+                now: now
+            ),
+            open: "open-2"
+        )
+
+        let result = try await GitHubPoll(client: client(transport))
+            .run(scope: .all, local: .empty, resuming: carried, now: now)
+
+        XCTAssertEqual(try transport.requestVariables(0)["cursor"] as? String, "open-2")
+        XCTAssertNil(try transport.requestVariables(1)["cursor"] as? String)
+        XCTAssertTrue(result.isResumed, "the caller merges a resumed sweep rather than replacing")
+        // Both searches reached the end, so there is nothing left to carry and the next poll
+        // starts at page one with every row re-read.
+        XCTAssertEqual(result.cursors, .none)
+    }
+
+    /// A cursor is a position in *one* result set. The closed search's lower bound moving onto
+    /// a new day is a different search, and resuming it from yesterday's position would skip
+    /// whatever the change brought in.
+    func testCursorsFromADifferentSearchAreDiscarded() async throws {
+        let transport = StubTransport(responses: [
+            .json(SearchPage.json(numbers: [8], hasNextPage: false, endCursor: nil)),
+            .json(SearchPage.json(numbers: [], hasNextPage: false, endCursor: nil))
+        ])
+        let stale = SweepCursors(fingerprint: "some other search", open: "open-2")
+
+        let result = try await GitHubPoll(client: client(transport))
+            .run(scope: .all, local: .empty, resuming: stale, now: now)
+
+        XCTAssertNil(try transport.requestVariables(0)["cursor"] as? String)
+        XCTAssertFalse(result.isResumed)
+    }
+
+    /// A resumed sweep reads the end of the list, so nothing in it can see a pull request that
+    /// has since sorted onto page one. The chain has to end for that reason alone.
+    func testTheResumeChainStopsAtItsCap() async throws {
+        let transport = StubTransport(responses: [
+            .json(SearchPage.json(numbers: [8], hasNextPage: false, endCursor: nil)),
+            .json(SearchPage.json(numbers: [], hasNextPage: false, endCursor: nil))
+        ])
+        let exhausted = SweepCursors(
+            fingerprint: GitHubPoll.fingerprint(
+                scope: .all,
+                includesDrafts: false,
+                local: .empty,
+                now: now
+            ),
+            open: "open-9",
+            resumes: SweepCursors.maximumResumes
+        )
+
+        let result = try await GitHubPoll(client: client(transport))
+            .run(scope: .all, local: .empty, resuming: exhausted, now: now)
+
+        XCTAssertNil(try transport.requestVariables(0)["cursor"] as? String)
+        XCTAssertFalse(result.isResumed)
+    }
+
+    // MARK: - One budget for the whole poll
+
+    /// The two searches and the refresh ahead of them share one allowance. Each of them used
+    /// to be handed the full budget — the refresh was not counted at all — so a poll could
+    /// spend three times what IMPLEMENTATION_PLAN §3's budget says before any bound noticed.
+    func testTheSearchesAndTheRefreshShareOnePointBudget() async throws {
+        let transport = StubTransport.always(
+            .json(SearchPage.json(numbers: [10], hasNextPage: true, endCursor: "c", cost: 30))
+        )
+        let refreshed = KnownPullRequestFetch(pullRequests: [], pointsSpent: 50)
+
+        let result = try await GitHubPoll(client: clientWithBudget(transport, pointBudget: 100))
+            .run(scope: .all, local: .empty, refreshed: refreshed, now: now)
+
+        // 50 spent before the sweep started, so the open search stops after two pages rather
+        // than paging to the cap, and the closed search gets one page and no more.
+        XCTAssertEqual(result.open.pagesFetched, 2)
+        XCTAssertEqual(result.open.stopReason, .pointBudget)
+        XCTAssertEqual(result.closed.pagesFetched, 1)
+        XCTAssertEqual(result.closed.stopReason, .pointBudget)
+        XCTAssertEqual(result.pointsSpent, 140, "50 from the refresh, 90 across three pages")
+    }
+
+    private func clientWithPageCap(_ transport: StubTransport, pageCap: Int) -> GitHubClient {
+        GitHubClient(
+            transport: transport,
+            tokenProvider: StaticTokenProvider("ghp_test"),
+            configuration: GitHubClient.Configuration(pageCap: pageCap, endpoint: endpoint)
+        )
+    }
+
+    private func clientWithBudget(_ transport: StubTransport, pointBudget: Int) -> GitHubClient {
+        GitHubClient(
+            transport: transport,
+            tokenProvider: StaticTokenProvider("ghp_test"),
+            configuration: GitHubClient.Configuration(
+                pointBudget: pointBudget,
+                endpoint: endpoint
+            )
+        )
+    }
 }

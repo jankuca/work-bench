@@ -5,11 +5,16 @@ import XCTest
 @testable import GitHubKit
 
 final class PullRequestFetchTests: XCTestCase {
+    /// `retryDelay` is zero throughout: the sleep between attempts exists so a poll does not
+    /// hammer a service that just failed, and there is no service and no scheduler here to be
+    /// considerate of — a test that waited three quarters of a second per 502 would only be
+    /// asserting that `Task.sleep` works.
     private func client(
         _ transport: StubTransport,
         pageSize: Int = 50,
         pageCap: Int = 10,
-        pointBudget: Int = PointBudget.defaultPoints
+        pointBudget: Int = PointBudget.defaultPoints,
+        pageRetries: Int = 3
     ) -> GitHubClient {
         GitHubClient(
             transport: transport,
@@ -17,7 +22,9 @@ final class PullRequestFetchTests: XCTestCase {
             configuration: GitHubClient.Configuration(
                 pageSize: pageSize,
                 pageCap: pageCap,
-                pointBudget: pointBudget
+                pointBudget: pointBudget,
+                pageRetries: pageRetries,
+                retryDelay: 0
             )
         )
     }
@@ -210,6 +217,116 @@ final class PullRequestFetchTests: XCTestCase {
             try transport.requestVariables(0)["query"] as? String,
             "is:pr author:@me"
         )
+    }
+
+    // MARK: - Pages GitHub will not answer
+
+    /// A `502` is GitHub's resolver running out of time, and the size of the page is what it
+    /// ran out of time on: 50 pull requests, each with its reviews, its review requests and
+    /// 20 check contexts. So the same window is asked for again at half the size rather than
+    /// the whole poll being lost to it.
+    func testAServerErrorRetriesTheSamePageAtHalfTheSize() async throws {
+        let transport = StubTransport([
+            .respond(.json(SearchPage.json(numbers: [4012, 4011], hasNextPage: true, endCursor: "c1"))),
+            .respond(.json(#"{"message":"Server Error"}"#, status: 502)),
+            .respond(.json(SearchPage.json(numbers: [4010], hasNextPage: false, endCursor: nil)))
+        ])
+
+        let fetch = try await client(transport, pageSize: 20).fetchPullRequests(scope: .all)
+
+        XCTAssertEqual(fetch.pullRequests.map(\.number), [4012, 4011, 4010])
+        XCTAssertEqual(fetch.stopReason, .complete)
+        // Two banked pages, three requests: the failure is not a page.
+        XCTAssertEqual(fetch.pagesFetched, 2)
+        XCTAssertEqual(transport.requests.count, 3)
+
+        // The retry asks the same question, smaller — same cursor, half the nodes — and the
+        // reduction sticks for the pages after it.
+        XCTAssertEqual(try transport.requestVariables(1)["cursor"] as? String, "c1")
+        XCTAssertEqual(try transport.requestVariables(2)["cursor"] as? String, "c1")
+        XCTAssertEqual(try transport.requestVariables(0)["pageSize"] as? Int, 20)
+        XCTAssertEqual(try transport.requestVariables(1)["pageSize"] as? Int, 20)
+        XCTAssertEqual(try transport.requestVariables(2)["pageSize"] as? Int, 10)
+        XCTAssertTrue(
+            fetch.warnings.contains { if case .pageRetried = $0 { return true } else { return false } },
+            "a page that had to be asked for twice is worth a line in the footer"
+        )
+    }
+
+    /// The reduction stops at a floor, and a page GitHub will not answer at any size stops
+    /// pagination — with everything before it kept. That is the whole point: a sweep of eight
+    /// pages that fails on the seventh used to throw the first six away.
+    func testAPageThatNeverAnswersKeepsWhatWasAlreadyFetched() async throws {
+        let transport = StubTransport([
+            .respond(.json(SearchPage.json(numbers: [4012], hasNextPage: true, endCursor: "c1"))),
+            .respond(.json(#"{"message":"Server Error"}"#, status: 504)),
+            .respond(.json(#"{"message":"Server Error"}"#, status: 504))
+        ])
+
+        let fetch = try await client(transport, pageSize: 1, pageRetries: 1)
+            .fetchPullRequests(scope: .all)
+
+        XCTAssertEqual(fetch.pullRequests.map(\.number), [4012])
+        XCTAssertEqual(fetch.pagesFetched, 1)
+        XCTAssertEqual(fetch.stopReason, .serverError)
+        XCTAssertFalse(fetch.stopReason.isComplete)
+        // The cursor is the page that failed, so the next poll resumes there rather than
+        // walking the pages before it again.
+        XCTAssertEqual(fetch.nextCursor, "c1")
+        XCTAssertTrue(
+            fetch.warnings.contains { if case .searchInterrupted = $0 { return true } else { return false } }
+        )
+    }
+
+    /// The one case that has to stay an error. Nothing was fetched, so answering with an empty
+    /// success would put the panel at "connected, nothing waiting on you" for a GitHub that is
+    /// not answering at all.
+    func testAFirstPageThatNeverAnswersIsAFailure() async throws {
+        let transport = StubTransport([
+            .respond(.json(#"{"message":"Server Error"}"#, status: 502)),
+            .respond(.json(#"{"message":"Server Error"}"#, status: 502))
+        ])
+
+        do {
+            _ = try await client(transport, pageRetries: 1).fetchPullRequests(scope: .all)
+            XCTFail("a sweep that fetched nothing at all must not report success")
+        } catch {
+            XCTAssertEqual(error as? GitHubError, GitHubError.http(status: 502, message: "Server Error"))
+        }
+    }
+
+    /// A rejected token is not a page that was too big, and retrying it at half the size
+    /// would spend a poor connection's time on a request that cannot start working.
+    func testAnAuthenticationFailureIsNotRetried() async throws {
+        let transport = StubTransport(responses: [.json(#"{"message":"Bad credentials"}"#, status: 401)])
+
+        do {
+            _ = try await client(transport).fetchPullRequests(scope: .all)
+            XCTFail("401 is an answer, not a failure to answer")
+        } catch {
+            XCTAssertEqual(error as? GitHubError, GitHubError.unauthorized("Bad credentials"))
+        }
+        XCTAssertEqual(transport.requests.count, 1)
+    }
+
+    /// A partly-spent budget handed in is what makes a poll's searches share one allowance
+    /// instead of each starting again at the full one.
+    func testASharedBudgetCarriesWhatEarlierSearchesSpent() async throws {
+        let transport = StubTransport.always(
+            .json(SearchPage.json(numbers: [4012], hasNextPage: true, endCursor: "c", cost: 40))
+        )
+        var spent = PointBudget(points: 100)
+        spent.record(80)
+
+        let fetch = try await client(transport, pageSize: 1, pointBudget: 100)
+            .fetchPullRequests(scope: .all, budget: spent)
+
+        // One page, not three: 80 points were already gone before this search started.
+        XCTAssertEqual(fetch.pagesFetched, 1)
+        XCTAssertEqual(fetch.stopReason, .pointBudget)
+        // And it reports what *it* spent, not what the poll has spent, or the caller summing
+        // the searches would count the earlier ones twice.
+        XCTAssertEqual(fetch.pointsSpent, 40)
     }
 
     // MARK: - Handing off to derivation

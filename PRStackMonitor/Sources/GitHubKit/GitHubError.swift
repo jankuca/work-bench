@@ -48,6 +48,30 @@ public enum GitHubError: Error, Equatable, CustomStringConvertible {
         default: return false
         }
     }
+
+    /// Whether GitHub failed to *produce* an answer, as opposed to refusing to give one.
+    ///
+    /// These are the two shapes of "ask again, smaller". GitHub's GraphQL resolver answers
+    /// `502` or `504` when a selection takes too long to compute — which is what a page of
+    /// 50 pull requests, each with its reviews, its review requests and 20 check contexts,
+    /// does on an account with hundreds of them — and a request over a poor connection
+    /// stalls out into ``transport`` instead. Both describe *this request*, not the
+    /// credential and not the allowance, so both are worth another attempt at a fraction of
+    /// the size (``GitHubClient/Configuration/pageRetries``).
+    ///
+    /// ``rateLimited`` is deliberately not here even though it is every bit as transient: it
+    /// is the one failure where asking again sooner is wrong at any size, and the scheduler
+    /// already holds the whole poll off until the allowance returns.
+    public var isServerSideFailure: Bool {
+        switch self {
+        case .http(let status, _):
+            return status == 500 || status == 502 || status == 503 || status == 504
+        case .transport:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 extension GitHubError: LocalizedError {
