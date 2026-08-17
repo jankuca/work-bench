@@ -309,6 +309,90 @@ final class PullRequestFetchTests: XCTestCase {
         XCTAssertEqual(transport.requests.count, 1)
     }
 
+    /// GitHub answers a resolver that ran out of time with `200`, a null connection and the
+    /// reason in `errors` — which on a heavy page is more common than an actual 504. Read as
+    /// an answer it says "no more results", so the sweep would stop at `complete`, drop its
+    /// cursor, and the panel would replace its rows with a list that stops wherever GitHub
+    /// gave up. The truncation is invisible precisely because nothing reported a failure.
+    func testAnExecutionTimeoutInAGraphQLAnswerIsRetriedLikeA504() async throws {
+        let timedOut = """
+        {"data":{"search":null},
+         "errors":[{"message":"Something went wrong while executing your query. \
+        This may be the result of a timeout, or it could be a GitHub bug."}]}
+        """
+        let transport = StubTransport(responses: [
+            .json(SearchPage.json(numbers: [4012], hasNextPage: true, endCursor: "c1")),
+            .json(timedOut),
+            .json(SearchPage.json(numbers: [4011], hasNextPage: false, endCursor: nil))
+        ])
+
+        let fetch = try await client(transport, pageSize: 20).fetchPullRequests(scope: .all)
+
+        XCTAssertEqual(fetch.pullRequests.map(\.number), [4012, 4011])
+        XCTAssertEqual(fetch.stopReason, .complete)
+        XCTAssertEqual(transport.requests.count, 3)
+        // Same window, half the page — the reduction a timeout is asking for.
+        XCTAssertEqual(try transport.requestVariables(2)["cursor"] as? String, "c1")
+        XCTAssertEqual(try transport.requestVariables(2)["pageSize"] as? Int, 10)
+    }
+
+    /// And when it never comes good, the pages already banked are kept with the cursor of the
+    /// one that did not — the same ending as a 504 that outlived its attempts.
+    func testAnExecutionTimeoutThatPersistsKeepsWhatWasFetched() async throws {
+        let timedOut = """
+        {"data":{"search":null},
+         "errors":[{"message":"Something went wrong while executing your query."}]}
+        """
+        let transport = StubTransport(responses: [
+            .json(SearchPage.json(numbers: [4012], hasNextPage: true, endCursor: "c1")),
+            .json(timedOut),
+            .json(timedOut)
+        ])
+
+        let fetch = try await client(transport, pageSize: 1, pageRetries: 1)
+            .fetchPullRequests(scope: .all)
+
+        XCTAssertEqual(fetch.pullRequests.map(\.number), [4012])
+        XCTAssertEqual(fetch.stopReason, .serverError)
+        XCTAssertEqual(fetch.nextCursor, "c1")
+    }
+
+    /// A *classified* error on a null connection is an answer, not a failure to answer:
+    /// `FORBIDDEN` on a repository the token cannot see says the same thing however small the
+    /// page. Retrying it would spend a poor connection's time learning nothing.
+    func testAClassifiedErrorOnANullConnectionIsNotRetried() async throws {
+        let transport = StubTransport(responses: [
+            .json(
+                """
+                {"data":{"search":null},
+                 "errors":[{"type":"FORBIDDEN","message":"Resource not accessible"}]}
+                """
+            )
+        ])
+
+        let fetch = try await client(transport).fetchPullRequests(scope: .all)
+
+        XCTAssertEqual(fetch.stopReason, .complete)
+        XCTAssertEqual(transport.requests.count, 1)
+    }
+
+    /// The wait is converted to nanoseconds as a `UInt64`, and that conversion traps on an
+    /// infinite or absurd `Double`. A configuration mistake should cost a badly timed retry,
+    /// not the app.
+    func testAnUnusableRetryDelayIsClampedRatherThanTrusted() {
+        XCTAssertEqual(GitHubClient.Configuration(retryDelay: .infinity).retryDelay, 0)
+        XCTAssertEqual(GitHubClient.Configuration(retryDelay: .nan).retryDelay, 0)
+        XCTAssertEqual(GitHubClient.Configuration(retryDelay: -5).retryDelay, 0)
+        XCTAssertEqual(
+            GitHubClient.Configuration(retryDelay: 1_000_000).retryDelay,
+            GitHubClient.Configuration.longestRetryDelay
+        )
+        XCTAssertEqual(
+            GitHubClient.Configuration(pageRetries: 10_000).pageRetries,
+            GitHubClient.Configuration.maximumPageRetries
+        )
+    }
+
     /// A partly-spent budget handed in is what makes a poll's searches share one allowance
     /// instead of each starting again at the full one.
     func testASharedBudgetCarriesWhatEarlierSearchesSpent() async throws {

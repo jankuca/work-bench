@@ -68,9 +68,39 @@ public enum GitHubError: Error, Equatable, CustomStringConvertible {
             return status == 500 || status == 502 || status == 503 || status == 504
         case .transport:
             return true
+        case .graphQL(let errors):
+            // The same failure wearing a `200`. GitHub answers a resolver that ran out of
+            // time with a success status, a null connection and the reason in `errors` —
+            // which is *more* common on a heavy page than an actual 504, and reads as an
+            // empty answer rather than as a failure unless somebody looks at the errors.
+            return errors.contains { $0.isExecutionFailure }
         default:
             return false
         }
+    }
+}
+
+extension GraphQLError {
+    /// Whether GitHub is saying it could not *run* the query, rather than refusing part of
+    /// what the query asked for.
+    ///
+    /// The distinction decides whether asking again can help. `FORBIDDEN` on a repository the
+    /// token cannot see, `NOT_FOUND` for one that has been renamed — those are answers, and
+    /// they are the same answer however many times they are asked for, at any page size. An
+    /// execution failure is GitHub giving up on the work, and half the page is a different
+    /// question.
+    ///
+    /// Classification is by absence of a `type`/`code` *and* the sentence GitHub sends,
+    /// because that is all it sends: the timeout arrives as an unclassified error reading
+    /// "Something went wrong while executing your query. This may be the result of a timeout".
+    /// Matching on a message is unlovely and the alternative is worse — treating every
+    /// unclassified error as retryable would retry the ones that never come good.
+    public var isExecutionFailure: Bool {
+        guard type == nil, code == nil else { return false }
+        let text = message.lowercased()
+        return text.contains("something went wrong while executing your query")
+            || text.contains("timeout")
+            || text.contains("timed out")
     }
 }
 

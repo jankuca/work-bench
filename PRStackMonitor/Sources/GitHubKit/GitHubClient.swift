@@ -147,6 +147,16 @@ public struct GitHubClient {
         /// rescue.
         public static let minimumPageSize = 5
 
+        /// The most attempts ``pageRetries`` will honour, and the longest ``retryDelay`` will
+        /// wait between them.
+        ///
+        /// Both bound the same thing from different sides: how long one page can hold up a
+        /// poll. Ten attempts a quarter of a minute apart is already far past the point where
+        /// waiting has stopped being the answer — the cursor comes back, and the next poll
+        /// costs nothing to try again with.
+        public static let maximumPageRetries = 10
+        public static let longestRetryDelay: TimeInterval = 15
+
         /// GitHub's own maximum for a search connection.
         public var pageSize: Int
         /// The safety cap from IMPLEMENTATION_PLAN §3 — 10 pages, 500 pull requests.
@@ -170,6 +180,11 @@ public struct GitHubClient {
         public var pageRetries: Int
         /// What to wait between those attempts. Zero skips the sleep altogether, which is
         /// what the tests set — there is no scheduler in a test to be late for.
+        ///
+        /// Clamped to ``longestRetryDelay``, and a value that is not a finite number becomes
+        /// zero. That is not defensive decoration: the wait is converted to nanoseconds as a
+        /// `UInt64`, and that conversion **traps** on an infinite or absurd `Double`. A
+        /// configuration mistake should cost a badly timed retry, not the app.
         public var retryDelay: TimeInterval
         public var endpoint: URL
 
@@ -184,8 +199,13 @@ public struct GitHubClient {
             self.pageSize = min(100, max(1, pageSize))
             self.pageCap = max(1, pageCap)
             self.pointBudget = pointBudget
-            self.pageRetries = max(0, pageRetries)
-            self.retryDelay = max(0, retryDelay)
+            self.pageRetries = min(Configuration.maximumPageRetries, max(0, pageRetries))
+            // `isFinite` first: an infinite or NaN delay would survive `min`/`max` — and
+            // `max(0, .nan)` is 0 only by accident of how comparison treats NaN — and then
+            // trap when the sleep converts it to a `UInt64` of nanoseconds.
+            self.retryDelay = retryDelay.isFinite
+                ? min(Configuration.longestRetryDelay, max(0, retryDelay))
+                : 0
             self.endpoint = endpoint
         }
     }
@@ -279,7 +299,7 @@ public struct GitHubClient {
         pagination: while true {
             let result: GraphQLResult<SearchPayload>
             do {
-                result = try await graphQL.perform(
+                let received: GraphQLResult<SearchPayload> = try await graphQL.perform(
                     query: PullRequestQuery.text,
                     variables: PullRequestQuery.variables(
                         query: query.text,
@@ -287,6 +307,16 @@ public struct GitHubClient {
                         cursor: nextCursor
                     )
                 )
+                // A `200` carrying a null connection and an execution failure is a 504 with
+                // a success status on it, and it has to be raised as one. Read as an answer
+                // it says "no more results": pagination would stop at `complete`, drop the
+                // cursor, and the panel would replace its rows with a list that stops
+                // wherever GitHub gave up — the truncation is invisible precisely because
+                // nothing reports a failure.
+                if received.data.search == nil, received.errors.contains(where: \.isExecutionFailure) {
+                    throw GitHubError.graphQL(received.errors)
+                }
+                result = received
             } catch let error as GitHubError where error.isServerSideFailure {
                 // GitHub either could not compute this page in time or the connection did
                 // not survive asking for it. Both answer to a smaller page, so the same

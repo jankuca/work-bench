@@ -563,7 +563,11 @@ finally appears.
 The page that is expensive for us to ask for is expensive for GitHub to compute, and on an account with
 hundreds of open pull requests it is the one that times out: 50 nodes, each with its reviews, its review
 requests and 20 check contexts, comes back as a `502` or a `504` often enough on a poor connection to matter.
-Two rules cover it, and neither involves asking the same question again the same way.
+It also comes back as a **`200` with a null connection** and "something went wrong while executing your query"
+in `errors`, which is the same failure wearing a success status — and the dangerous one, because read as an
+answer it says "no more results". Both are treated as a failure to answer; a *classified* error on a null
+connection (`FORBIDDEN` on a repository the token cannot see) is an answer, and is not retried at any size.
+Two rules cover the rest, and neither involves asking the same question again the same way.
 
 - **A failed page is asked for again at half the size**, same cursor, down to a floor of five, with a short
   growing pause between attempts. Both the reduction and the three attempts are spent across the pagination
