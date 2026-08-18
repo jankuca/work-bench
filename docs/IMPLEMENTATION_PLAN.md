@@ -853,7 +853,7 @@ A single template-ish `NSImage` redrawn on state change. Priority (highest wins)
 | # | State | Drawing |
 | --- | --- | --- |
 | 1 | Disconnected (GitHub) | Dashed glyph outline at reduced opacity |
-| 2 | Counts | Glyph + up to two capsules beside it: green `ready`, then red `attention` |
+| 2 | Counts | Up to two capsules in a row on top — green `ready`, then red `attention` — glyph centred beneath |
 | 3 | Unread | Glyph + indigo dot |
 | 4 | Idle | Plain glyph |
 
@@ -881,10 +881,11 @@ The design's fifth state — amber pulsing "deploy in flight" — has no data so
 (§3) and is not built. The drawing code keeps the case so a future `DeploymentAPITracker` can light it up.
 
 Monochrome-safe by construction: the marks' **shape and position** differ per state, not just colour — a dot
-on the corner, capsules in a row, a number in each — so it survives dark menu bars and reduced-colour
-settings. The two capsules are the one pair that shares a shape, and they carry different numbers in a fixed
-order (green always leads), which is what tells them apart without colour. Verify against `Increase contrast`
-and `Differentiate without colour`. Opening the panel clears unread; it never clears either count.
+on the corner, a row of capsules above the glyph, a number in each — so it survives dark menu bars and
+reduced-colour settings. The two capsules are the one pair that shares a shape, and they carry different
+numbers in a fixed order (green always leads, on the left), which is what tells them apart without colour.
+Verify against `Increase contrast` and `Differentiate without colour`. Opening the panel clears unread; it
+never clears either count.
 
 **The badgeless canvas is symmetric about the glyph**, 24 × 18 pt with the 15 pt glyph dead centre. A status
 item centres the *image*, so anything reserved on one side only moves the glyph: `1f`'s badge offsets
@@ -896,11 +897,15 @@ and that survives.
 
 **The capsules do not fit that corner, and do not use it.** `1f`'s badge sits *on* the glyph's top-right,
 overlapping most of it; a second capsule beside it would either cover the glyph or push the first one over
-it. So the counts stand in a row to the right of the glyph, 13 pt tall and vertically centred on it, with a
-2 pt gap between glyph and capsule and between the capsules — the gap showing the same menu bar background
-the 1.5 pt halo is punched out for, so the capsules need no halo of their own. The image is then as wide as
-its counts need — 24 pt with none, 36 pt with one single digit, 51 pt with two — which is what
-`NSStatusItem.variableLength` is for; the width moves only when a count does.
+it. So the counts stand in a row **on top of the glyph**, 13 pt tall, green then red, and the glyph is
+centred *beneath* the pair — under the middle of the row, which is what "the icon sits under the badges"
+means once two capsules make the row wider than the glyph. A 2 pt gap sits between the capsules and between
+the row and the glyph, showing the same menu bar background the 1.5 pt halo is punched out for, so the
+capsules need no halo of their own. The image grows in **both** dimensions with the counts — wider by the
+row (18 pt with one single digit, 31 pt with two, against 24 pt badgeless) and taller by a badge and a gap
+(33 pt against 18) — which is what `NSStatusItem.variableLength` is for; it changes only when a count does.
+Stacking is taller than a corner badge by design, and the sizes above are what keep it inside a standard menu
+bar.
 
 ### Panel
 

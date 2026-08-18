@@ -101,10 +101,10 @@ in `PRStackCore` by `IconState.resolve`, which is table-tested in CI. Disconnect
 everything: an expired GitHub token shows the dashed glyph rather than a badge counting
 failures the app can no longer verify.
 
-It carries two numbers side by side, in capsules to the right of the glyph: a green one for
-pull requests that are ready to merge — approved, checks green, mergeable, not snoozed — and
-the red one for the pull requests that need you. Either can be absent; a count of zero draws
-nothing, so the everyday icon is still a glyph with one badge or none.
+It carries two numbers in a row on top of the glyph, with the glyph centred beneath them: a
+green one for pull requests that are ready to merge — approved, checks green, mergeable, not
+snoozed — and the red one for the pull requests that need you. Either can be absent; a count
+of zero draws nothing, so the everyday icon is still a glyph with one badge or none.
 
 Four states are reachable. The drawing code carries a fifth — the design's amber
 "deploy in flight" — which `resolve` never returns, because tags-only release tracking has

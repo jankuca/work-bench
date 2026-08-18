@@ -9,9 +9,10 @@ import PRStackCore
 /// or template tinting (IMPLEMENTATION_PLAN §1).
 ///
 /// Geometry follows design `1f`: a 15 pt rounded square at 1.6 pt with a 4 pt dot inside,
-/// a 7 pt unread dot on its top-right corner and 13 pt count capsules beside it. What does
-/// *not* follow `1f` is where the counts sit — see ``badgeGap``. `1f` draws one badge, on
-/// the corner; there are two of them now, and two badges do not fit on one corner.
+/// a 7 pt unread dot on its top-right corner and 13 pt count capsules. What does *not*
+/// follow `1f` is where the counts sit — see ``badgeGap``. `1f` draws one badge on the
+/// corner; there are two of them now, they sit in a row *above* the glyph, and the glyph
+/// is centred beneath the pair.
 ///
 /// This file decides nothing. Which state to draw is ``IconState/resolve(github:readyCount:attentionCount:unreadCount:)``,
 /// which lives in core and is table-tested off-device.
@@ -51,27 +52,31 @@ enum StatusItemIcon {
     /// forever does not.
     private static let overhang: CGFloat = 3
 
-    /// The gap between the glyph and the first capsule, and between the two capsules.
+    /// The gap the count capsules keep — between the two of them, and between the row of
+    /// them and the glyph below.
     ///
     /// This is the whole of what changed when the icon grew a second number. `1f`'s single
     /// badge sits *on* the glyph's top-right corner, overlapping it by most of its width and
     /// separated from it by a halo; a second capsule has nowhere to go under that
     /// arrangement — put one beside the other and either both cover the glyph or the leading
-    /// one does. So the counts come off the corner and stand in a row to the right of the
-    /// glyph, vertically centred on it, green first: the icon reads left to right as "these
-    /// pull requests, N ready, M need you". The gap does the halo's job between them, and
-    /// does it in the same colour — whatever is behind the menu bar.
+    /// one does. So the counts come off the corner and stand in a row *above* the glyph,
+    /// green first, with the glyph centred beneath the pair: the icon reads top to bottom as
+    /// "these pull requests — N ready, M need you". The gap does the halo's job, both between
+    /// the capsules and between the row and the glyph, and does it in the same colour —
+    /// whatever is behind the menu bar.
     ///
     /// The unread dot keeps the corner. It is the one mark with no number in it, nothing to
     /// stand beside, and moving it would cost the state its distinct *position* — which is
     /// half of what makes the icon legible without colour (IMPLEMENTATION_PLAN §5).
     private static let badgeGap: CGFloat = 2
 
-    /// The glyph's inset from the canvas's top-left. Constant across every state, so the
-    /// glyph is drawn identically whatever is beside it.
+    /// The glyph's inset from the badgeless canvas's top-left. A status item centres the
+    /// *image*, so a symmetric canvas is what puts the glyph dead centre in the menu bar.
     ///
     /// Horizontally that is the dot's overhang plus its halo; vertically nothing reaches
-    /// above the glyph's top but that same halo.
+    /// above the glyph's top but that same halo. The counts state computes its own,
+    /// taller geometry — see ``stackedLayout(_:)`` — so this only sizes the states that
+    /// draw the glyph alone or with the corner dot.
     private static let padding = NSSize(width: overhang + halo, height: halo)
     private static let canvasHeight = glyphSide + padding.height * 2
 
@@ -99,9 +104,9 @@ enum StatusItemIcon {
     /// The image for one state, sized to what that state draws and ready to hand to a
     /// status item button.
     ///
-    /// The width varies with the counts, which is what a variable-length status item is
-    /// for. It moves only when a count changes — a digit at a time, and never on a poll
-    /// that found nothing new.
+    /// Both dimensions vary with the counts, which is what a variable-length status item is
+    /// for: the badge row widens the image and, sitting above the glyph, makes it taller.
+    /// It changes only when a count does — never on a poll that found nothing new.
     static func image(for state: IconState) -> NSImage {
         // A block-backed image, so the glyph's `labelColor` resolves against whatever
         // appearance the menu bar is drawing in rather than the one that happened to be
@@ -118,18 +123,18 @@ enum StatusItemIcon {
         return image
     }
 
-    /// The glyph, plus room for whatever stands beside it.
+    /// The glyph, plus room for whatever the state draws around it.
     ///
     /// With no capsules this is the symmetric 24 × 18 the dot states have always used, so
-    /// the glyph sits dead centre in the menu bar item. With capsules the canvas grows to
-    /// the right by exactly what they occupy, ending one halo past the last of them.
+    /// the glyph sits dead centre in the menu bar item. With capsules the canvas is the
+    /// stacked one: a badge row on top, the glyph beneath, taller than it is in the dot
+    /// states and as wide as the wider of the two rows.
     private static func canvas(for state: IconState) -> NSSize {
         let badges = capsules(for: state)
         guard !badges.isEmpty else {
             return NSSize(width: glyphSide + padding.width * 2, height: canvasHeight)
         }
-        let trailing = badges.reduce(halo) { $0 + badgeGap + width(of: $1) }
-        return NSSize(width: padding.width + glyphSide + trailing, height: canvasHeight)
+        return stackedLayout(badges).canvas
     }
 
     /// Everything below draws in a *flipped* space — origin top-left, y downwards — so the
@@ -139,25 +144,68 @@ enum StatusItemIcon {
         case .disconnected:
             // No inner dot: the design's disconnected glyph is an empty dashed outline,
             // and dropping the dot is what makes the state legible without colour.
-            drawGlyph(dashed: true, filled: false, alpha: disconnectedOpacity)
+            drawGlyph(in: glyphRect(), dashed: true, filled: false, alpha: disconnectedOpacity)
 
         case .idle:
-            drawGlyph(dashed: false, filled: true, alpha: 1)
+            drawGlyph(in: glyphRect(), dashed: false, filled: true, alpha: 1)
 
         case .unread:
-            drawGlyph(dashed: false, filled: true, alpha: 1)
-            drawDot(fill: accent)
+            drawGlyph(in: glyphRect(), dashed: false, filled: true, alpha: 1)
+            drawDot(fill: accent, on: glyphRect())
 
         case .inFlight:
             // Reserved. Nothing resolves to it under tags-only release tracking; the case
             // is kept so a DeploymentAPITracker has somewhere to land.
-            drawGlyph(dashed: false, filled: true, alpha: 1)
-            drawDot(fill: amber)
+            drawGlyph(in: glyphRect(), dashed: false, filled: true, alpha: 1)
+            drawDot(fill: amber, on: glyphRect())
 
         case .counts:
-            drawGlyph(dashed: false, filled: true, alpha: 1)
-            drawCapsules(capsules(for: state))
+            let layout = stackedLayout(capsules(for: state))
+            drawGlyph(in: layout.glyph, dashed: false, filled: true, alpha: 1)
+            drawCapsules(layout.badges)
         }
+    }
+
+    /// The counts state's geometry: a row of capsules on top, the glyph centred beneath.
+    ///
+    /// The badges are wider than the glyph the moment there are two of them, so it is the
+    /// *glyph* that is centred under the row rather than the other way round — which is what
+    /// "the icon sits centred beneath the badges" means once the row is the wider of the
+    /// two. The whole thing is symmetric about that shared centre line, so the status item
+    /// centring the image leaves the glyph centred in the menu bar, badges directly above.
+    ///
+    /// The image is taller than the dot states by a badge and a gap. That is inherent to
+    /// stacking rather than tucking into a corner, and it is the one cost of showing both
+    /// numbers this way; the sizes here are what keep it inside a standard menu bar.
+    private static func stackedLayout(
+        _ capsules: [Capsule]
+    ) -> (canvas: NSSize, glyph: NSRect, badges: [(capsule: Capsule, rect: NSRect)]) {
+        let widths = capsules.map(width(of:))
+        let rowWidth = widths.reduce(0, +) + badgeGap * CGFloat(max(0, capsules.count - 1))
+        let contentWidth = max(rowWidth, glyphSide)
+
+        let canvasSize = NSSize(
+            width: contentWidth + halo * 2,
+            height: halo + badgeHeight + badgeGap + glyphSide + halo
+        )
+
+        let glyph = NSRect(
+            x: (canvasSize.width - glyphSide) / 2,
+            y: halo + badgeHeight + badgeGap,
+            width: glyphSide,
+            height: glyphSide
+        )
+
+        var badges: [(capsule: Capsule, rect: NSRect)] = []
+        var x = (canvasSize.width - rowWidth) / 2
+        for (capsule, capsuleWidth) in zip(capsules, widths) {
+            badges.append(
+                (capsule, NSRect(x: x, y: halo, width: capsuleWidth, height: badgeHeight))
+            )
+            x += capsuleWidth + badgeGap
+        }
+
+        return (canvasSize, glyph, badges)
     }
 
     /// The count capsules a state draws, in drawing order: green first, then red.
@@ -180,14 +228,15 @@ enum StatusItemIcon {
         var fill: NSColor
     }
 
-    /// The glyph's box, centred in the canvas. Everything else is positioned from it.
+    /// The badgeless glyph's box: centred in the symmetric dot-state canvas. The counts
+    /// state does not use this — it positions its glyph in ``stackedLayout(_:)``.
     private static func glyphRect() -> NSRect {
         NSRect(x: padding.width, y: padding.height, width: glyphSide, height: glyphSide)
     }
 
-    private static func drawGlyph(dashed: Bool, filled: Bool, alpha: CGFloat) {
-        let frame = glyphRect().insetBy(dx: glyphStroke / 2, dy: glyphStroke / 2)
-        let path = NSBezierPath(roundedRect: frame, xRadius: glyphRadius, yRadius: glyphRadius)
+    private static func drawGlyph(in frame: NSRect, dashed: Bool, filled: Bool, alpha: CGFloat) {
+        let box = frame.insetBy(dx: glyphStroke / 2, dy: glyphStroke / 2)
+        let path = NSBezierPath(roundedRect: box, xRadius: glyphRadius, yRadius: glyphRadius)
         path.lineWidth = glyphStroke
         if dashed {
             path.setLineDash(dash, count: dash.count, phase: 0)
@@ -199,10 +248,9 @@ enum StatusItemIcon {
         path.stroke()
 
         guard filled else { return }
-        let centre = glyphRect()
         let dot = NSRect(
-            x: centre.midX - glyphDot / 2,
-            y: centre.midY - glyphDot / 2,
+            x: frame.midX - glyphDot / 2,
+            y: frame.midY - glyphDot / 2,
             width: glyphDot,
             height: glyphDot
         )
@@ -211,8 +259,7 @@ enum StatusItemIcon {
     }
 
     /// The 7 pt unread / in-flight dot, on the glyph's top-right corner.
-    private static func drawDot(fill: NSColor) {
-        let glyph = glyphRect()
+    private static func drawDot(fill: NSColor, on glyph: NSRect) {
         let rect = NSRect(
             x: glyph.maxX + overhang - dotSide,
             y: glyph.minY,
@@ -224,26 +271,14 @@ enum StatusItemIcon {
         NSBezierPath(ovalIn: rect).fill()
     }
 
-    /// The count capsules, laid out left to right from the glyph's right edge and centred
-    /// on it vertically.
+    /// The count capsules, at the positions ``stackedLayout(_:)`` placed them — a row above
+    /// the glyph, the count centred in each.
     ///
-    /// No halo is punched around them, unlike the dot: they no longer sit on the glyph, and
-    /// the ``badgeGap`` between them is already the menu bar's own background — the same
-    /// thing the halo exists to show through.
-    private static func drawCapsules(_ capsules: [Capsule]) {
-        let glyph = glyphRect()
-        var x = glyph.maxX + badgeGap
-
-        for capsule in capsules {
-            let text = label(for: capsule.count)
-            let textSize = text.size()
-            let rect = NSRect(
-                x: x,
-                y: glyph.midY - badgeHeight / 2,
-                width: width(of: capsule),
-                height: badgeHeight
-            )
-
+    /// No halo is punched around them, unlike the dot: they do not sit on the glyph, and the
+    /// ``badgeGap`` around them — between the two and between the row and the glyph — is
+    /// already the menu bar's own background, the same thing the halo exists to show through.
+    private static func drawCapsules(_ badges: [(capsule: Capsule, rect: NSRect)]) {
+        for (capsule, rect) in badges {
             capsule.fill.setFill()
             NSBezierPath(
                 roundedRect: rect,
@@ -251,14 +286,14 @@ enum StatusItemIcon {
                 yRadius: badgeHeight / 2
             ).fill()
 
+            let text = label(for: capsule.count)
+            let textSize = text.size()
             text.draw(
                 at: NSPoint(
                     x: rect.midX - textSize.width / 2,
                     y: rect.midY - textSize.height / 2
                 )
             )
-
-            x = rect.maxX + badgeGap
         }
     }
 
@@ -295,9 +330,9 @@ enum StatusItemIcon {
     }
 
     /// Three digits do not fit a menu bar badge, and the exact number stops mattering
-    /// long before then — the panel is one click away and it has the list. `99+` is 3 pt
-    /// wider than a two-digit capsule rather than clipped, now that the row grows to the
-    /// right instead of running into the canvas's edge.
+    /// long before then — the panel is one click away and it has the list. `99+` just makes
+    /// its capsule 3 pt wider rather than being clipped; the row is centred, so the extra
+    /// width pushes out symmetrically and the glyph stays under the middle of it.
     private static func badgeLabel(for count: Int) -> String {
         count > 99 ? "99+" : "\(max(0, count))"
     }
