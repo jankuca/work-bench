@@ -393,6 +393,55 @@ final class PullRequestFetchTests: XCTestCase {
         )
     }
 
+    /// `Configuration` is a struct of `var`s, so its initializer's bounds can be set aside
+    /// after it is built. The retry count has to be read through them again where it is used,
+    /// or a mutated configuration would retry a page that never comes good until the poll was
+    /// cancelled — and an infinite delay would trap the conversion to nanoseconds.
+    func testBoundsSetAsideAfterConstructionStillHold() async throws {
+        var configuration = GitHubClient.Configuration(retryDelay: 0)
+        configuration.pageRetries = .max
+
+        let transport = StubTransport.always(.json(#"{"message":"Server Error"}"#, status: 502))
+        let client = GitHubClient(
+            transport: transport,
+            tokenProvider: StaticTokenProvider("ghp_test"),
+            configuration: configuration
+        )
+
+        do {
+            _ = try await client.fetchPullRequests(scope: .all)
+            XCTFail("a first page that never answers is a failure, however many attempts it had")
+        } catch {
+            XCTAssertEqual(error as? GitHubError, GitHubError.http(status: 502, message: "Server Error"))
+        }
+        // The first attempt plus the bounded retries, not `Int.max` of them.
+        XCTAssertEqual(
+            transport.requests.count,
+            GitHubClient.Configuration.maximumPageRetries + 1
+        )
+    }
+
+    /// The same for the wait, checked on the arithmetic rather than by living through it: an
+    /// infinite or NaN delay set after construction answers with the cap, so what reaches
+    /// `UInt64(delay * 1_000_000_000)` is always in range.
+    func testADelaySetAsideAfterConstructionStillAnswersWithinTheCap() {
+        var infinite = GitHubClient.Configuration()
+        infinite.retryDelay = .infinity
+        XCTAssertEqual(
+            infinite.delay(forAttempt: 3),
+            GitHubClient.Configuration.longestRetryDelay,
+            accuracy: 0.0001
+        )
+
+        var notANumber = GitHubClient.Configuration()
+        notANumber.retryDelay = .nan
+        XCTAssertEqual(
+            notANumber.delay(forAttempt: 1),
+            GitHubClient.Configuration.longestRetryDelay,
+            accuracy: 0.0001
+        )
+    }
+
     /// The wait grows with the attempt, and the cap applies to the product rather than to the
     /// base: clamping only the base would let a configuration sitting at the cap wait ten
     /// times it before its last attempt — a poll blocked for a quarter of an hour by a page

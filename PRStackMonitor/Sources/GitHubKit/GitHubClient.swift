@@ -218,7 +218,11 @@ public struct GitHubClient {
         /// quarter of an hour by a page the next poll would resume for free.
         ///
         /// A function rather than three lines in the loop because it is the only arithmetic
-        /// here a test can check without waiting for it.
+        /// here a test can check without waiting for it — and because it is where the cap is
+        /// enforced against a ``retryDelay`` that was set after construction, past the
+        /// initializer's bounds: `min` against a finite cap answers with the cap for an
+        /// infinite or a NaN delay as much as for a merely large one, so what this returns is
+        /// always convertible to a `UInt64` of nanoseconds.
         func delay(forAttempt attempt: Int) -> TimeInterval {
             min(Configuration.longestRetryDelay, retryDelay * Double(max(1, attempt)))
         }
@@ -308,7 +312,17 @@ public struct GitHubClient {
         // mean the page cap covers fewer pull requests, which is what `nextCursor` and the
         // next poll are for.
         var pageSize = configuration.pageSize
-        var retriesLeft = configuration.pageRetries
+        // Read through the same bound the initializer applies, because a `Configuration` is a
+        // struct of `var`s: a caller can build a valid one and then set `pageRetries` to
+        // `Int.max`, and this loop would retry a page that never comes good until the poll
+        // was cancelled. Clamping where the value is *used* costs a line and cannot drift
+        // out of step the way a second copy of the field list in `init` would.
+        //
+        // The wait needs no such guard: ``Configuration/delay(forAttempt:)`` caps the product
+        // it returns, and `min` against a finite cap answers with the cap for an infinite or
+        // NaN delay too, so the conversion to nanoseconds stays in range whatever was set.
+        let allowedRetries = min(Configuration.maximumPageRetries, max(0, configuration.pageRetries))
+        var retriesLeft = allowedRetries
 
         pagination: while true {
             let result: GraphQLResult<SearchPayload>
@@ -365,9 +379,7 @@ public struct GitHubClient {
                     // Growing, so the second attempt gives a service that has now failed twice
                     // longer than the first did. Throws on cancellation, which is the right
                     // answer: a poll the panel closing cancelled must not sit here waiting.
-                    let delay = configuration.delay(
-                        forAttempt: configuration.pageRetries - retriesLeft
-                    )
+                    let delay = configuration.delay(forAttempt: allowedRetries - retriesLeft)
                     try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 }
                 continue pagination
