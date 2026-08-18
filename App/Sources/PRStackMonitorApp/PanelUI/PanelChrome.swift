@@ -223,29 +223,35 @@ private struct SyncDot: View {
     /// without the animation, which is the test for whether motion was decoration.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var isDim = false
-
     private var pulses: Bool { isSyncing && !reduceMotion }
 
     var body: some View {
-        Circle()
+        let dot = Circle()
             .fill(Tokens.foreground(tone))
             .frame(width: 5, height: 5)
-            .opacity(pulses && isDim ? 0.3 : 1)
-            // One state change plus `repeatForever` is the whole animation: the dot is
-            // handed a single new value and the repetition comes from the curve, so there
-            // is no timer here and nothing to stop when the poll lands.
-            .animation(pulse, value: isDim)
-            // Both inputs, because either can change under a running poll: the footer is
-            // rebuilt in place when one starts — the view does not re-appear, its input
-            // changes — and Reduce Motion can be switched on while it is going.
-            .onChange(of: pulses) { _, isPulsing in isDim = isPulsing }
-            .onAppear { isDim = pulses }
             .accessibilityHidden(true)
-    }
 
-    private var pulse: Animation {
-        pulses ? .easeInOut(duration: 0.55).repeatForever(autoreverses: true) : .default
+        // A `.animation(_:value:)` holding a `repeatForever` curve was the wrong tool: while
+        // that pulse is live it is the view's active animation, so the *next* change to the
+        // dot's position gets swept into it too — and the footer moves the dot constantly
+        // (the text flips to `syncing…`, the error and Linear lines come and go, the panel
+        // resizes as rows load). The result was the dot sliding up and down the popover on
+        // an endless autoreverse instead of fading in place.
+        //
+        // A `PhaseAnimator` confines its animation to the transition between the phases of
+        // its own content — here, opacity — so a relayout that shifts the dot is never part
+        // of it. Mounting it only while `pulses` also means nothing runs once the poll lands
+        // or when Reduce Motion is on: the branch is torn down and the plain dot is all that
+        // is left.
+        if pulses {
+            dot.phaseAnimator([false, true]) { content, isDim in
+                content.opacity(isDim ? 0.3 : 1)
+            } animation: { _ in
+                .easeInOut(duration: 0.55)
+            }
+        } else {
+            dot
+        }
     }
 }
 
