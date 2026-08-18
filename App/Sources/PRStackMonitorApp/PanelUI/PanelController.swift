@@ -660,6 +660,7 @@ final class PanelController: ObservableObject {
                 status: status,
                 icon: IconState.resolve(
                     github: status.github,
+                    readyCount: derived.model.readyCount,
                     attentionCount: derived.model.attentionCount,
                     unreadCount: liveUnreadCount(in: derived.model)
                 )

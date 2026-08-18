@@ -10,6 +10,7 @@ public enum PanelModelReport {
         var lines: [String] = []
         lines.append(
             "panel repoNames=\(model.showsRepoNames)"
+                + " ready=\(model.readyCount)"
                 + " attention=\(model.attentionCount)"
                 + " unread=\(model.unreadCount)"
                 + " open=\(model.summary.openCount)"

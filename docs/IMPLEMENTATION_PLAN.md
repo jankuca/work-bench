@@ -130,7 +130,8 @@ but preserves unread`).
 A PR with a snooze deadline in the future (`local.snoozedUntil[id] > now`) is **suppressed**:
 
 - `RowStatus` still resolves normally, but `isAttention` is forced false — no warm tint, no bolder title.
-- The row does not count toward the icon's red badge, and cannot raise the icon out of idle.
+- The row counts toward neither of the icon's badges — not the red one, not the green — and cannot raise
+  the icon out of idle. Snooze silences "go merge me" as well as "this needs you".
 - **Attention events** are withheld — `changesRequested`, `checksFailed` and the like. Lifecycle events are
   not: `reachedProduction` still fires, and `shipped`/`closed` still move the row to Done. Snooze silences
   "this needs you", not "this finished".
@@ -255,7 +256,9 @@ appears in a tinted row.* Encode this as a unit test over all `RowStatus` × tin
 convention.
 
 **Attention** = statuses 5–7, and only when the row is not snoozed. That set drives the warm tint, the bolder
-title weight, and the red badge count. Note 8 (`blocked`) is deliberately **not** attention — it's the layer
+title weight, and the red badge count. **Ready** = status 9's `readyToMerge` half, again only when the row is
+not snoozed, and it drives the green badge count and nothing else — the panel already says `ready to merge`
+in the row's own phrase. Note 8 (`blocked`) is deliberately **not** attention — it's the layer
 below's problem, and neither is 4 (`draft`), which is the author's own.
 
 Under tags-only release tracking (§3) there is no deploy-failure signal, so no deploy state can reach
@@ -850,9 +853,21 @@ A single template-ish `NSImage` redrawn on state change. Priority (highest wins)
 | # | State | Drawing |
 | --- | --- | --- |
 | 1 | Disconnected (GitHub) | Dashed glyph outline at reduced opacity |
-| 2 | Action needed | Glyph + red circular badge, top-right, count centred, 1.5pt background halo |
+| 2 | Counts | Glyph + up to two capsules beside it: green `ready`, then red `attention` |
 | 3 | Unread | Glyph + indigo dot |
 | 4 | Idle | Plain glyph |
+
+**Two numbers, not one.** `ready` counts rows at `readyToMerge` that are not snoozed — approved, checks
+green, mergeable — and `attention` counts the same set it always did (statuses 5–7, unsnoozed). They are
+disjoint by construction, and neither hides the other: a stack with two mergeable pull requests and a third
+with failing checks is exactly the state the menu bar exists to report without being opened. `approved` is
+deliberately *not* green here even though it is green in the panel — an approval whose checks have not
+finished is not a merge the user can perform, and a badge that counted it would promise a button that is not
+there. A zero draws no capsule, so the single-count icon is the two-count icon with one of them absent, and
+neither count on its own is `idle`.
+
+Green outranks the unread dot exactly as red always has: both are states of the pull requests themselves,
+while the dot only ever meant "something changed, look when you can".
 
 **Disconnected outranks everything**, which is a change from the PRD's ordering and deliberate. Every other
 state is derived from data that is, by definition, stale while GitHub is unreachable: a red badge counting
@@ -865,17 +880,27 @@ staleness condition (§4).
 The design's fifth state — amber pulsing "deploy in flight" — has no data source under tags-only tracking
 (§3) and is not built. The drawing code keeps the case so a future `DeploymentAPITracker` can light it up.
 
-Monochrome-safe by construction: badge **shape and position** differ per state, not just colour, so it
-survives dark menu bars and reduced-colour settings. Verify against `Increase contrast` and
-`Differentiate without colour`. Opening the panel clears unread; it never clears action-needed.
+Monochrome-safe by construction: the marks' **shape and position** differ per state, not just colour — a dot
+on the corner, capsules in a row, a number in each — so it survives dark menu bars and reduced-colour
+settings. The two capsules are the one pair that shares a shape, and they carry different numbers in a fixed
+order (green always leads), which is what tells them apart without colour. Verify against `Increase contrast`
+and `Differentiate without colour`. Opening the panel clears unread; it never clears either count.
 
-**The canvas is symmetric about the glyph**, 24 × 18 pt with the 15 pt glyph dead centre. A status item
-centres the *image*, so anything reserved on one side only moves the glyph: `1f`'s badge offsets
+**The badgeless canvas is symmetric about the glyph**, 24 × 18 pt with the 15 pt glyph dead centre. A status
+item centres the *image*, so anything reserved on one side only moves the glyph: `1f`'s badge offsets
 (`top:-3 right:-6`) taken literally put it 3.75 pt left of and 2.25 pt below the centre of its own slot,
 which reads as an icon stuck in the corner. Padding the two short sides to match instead would centre it at
-30 × 24 — wider than any neighbour, and as tall as the bar itself. So the badge and the unread dot are tucked
-in: top edge flush with the glyph's, 3 pt of overhang to the right rather than 6. What `1f` is saying is "a
-badge on the top-right corner", and that survives.
+30 × 24 — wider than any neighbour, and as tall as the bar itself. So the unread dot is tucked in: 3 pt of
+overhang to the right rather than sitting half-off. What `1f` is saying is "a dot on the top-right corner",
+and that survives.
+
+**The capsules do not fit that corner, and do not use it.** `1f`'s badge sits *on* the glyph's top-right,
+overlapping most of it; a second capsule beside it would either cover the glyph or push the first one over
+it. So the counts stand in a row to the right of the glyph, 13 pt tall and vertically centred on it, with a
+2 pt gap between glyph and capsule and between the capsules — the gap showing the same menu bar background
+the 1.5 pt halo is punched out for, so the capsules need no halo of their own. The image is then as wide as
+its counts need — 24 pt with none, 36 pt with one single digit, 51 pt with two — which is what
+`NSStatusItem.variableLength` is for; the width moves only when a count does.
 
 ### Panel
 
@@ -1114,7 +1139,7 @@ added without disturbing anything else.
 - **Invariant tests.** Attention ⇒ tinted ⇒ non-green icon. Section order stable across re-derivation with
   unchanged inputs. Unread never set by our own writes.
 - **Icon state machine** — table test over the priority order, including "opening clears unread but not
-  action-needed".
+  either count", and that the green and red counts are disjoint.
 - **Event diffing** — assert the exact `[DomainEvent]` emitted between two consecutive snapshots. This is
   what a future notification sink depends on, so it's worth pinning before the sink exists.
 - **HTTP layer** via a `URLProtocol` stub; no network in tests.
@@ -1133,7 +1158,7 @@ Each is independently demoable. Estimates assume one engineer working in focused
 | **M1** | Core model | Entities, `RowStatus` precedence (terminal states first), stack derivation, deterministic run/section ordering, snooze suppression, fixtures + golden tests | `derive()` turns a fixture snapshot into the exact 2a panel model; every stack fixture in §2 has a golden |
 | **M2** | GitHub ingestion | GraphQL client with search pagination, repo scope modes, DTO→domain mapping (including nullable `body`), token in Keychain, ETag and point-budget rate limiting | Real PRs appear in a debug dump under both All and Selected scope, including past the first page of 50 |
 | **M3** | Panel UI | Tokens, `PRRow`, stack sleeve, sections, header/footer, needs-attention + all-clear states | Panel is pixel-comparable to 2a against real data |
-| **M4** | Icon + unread + events | Status item drawing (4 states, disconnected outranking), effective-state event diffing against `previous`, `EventSink` bus, digest-based unread, open/mark-all-read | Icon tracks the priority table, and an expired GitHub token shows dashed rather than a cached badge; a relaunch emits no events but preserves unread |
+| **M4** | Icon + unread + events | Status item drawing (4 states, two counts, disconnected outranking), effective-state event diffing against `previous`, `EventSink` bus, digest-based unread, open/mark-all-read | Icon tracks the priority table, and an expired GitHub token shows dashed rather than a cached badge; a relaunch emits no events but preserves unread |
 | **M5** | Linear grouping | Multi-identifier extraction, primary-issue selection, per-identifier `issue(id:)` resolution, cache, `Other` fallback | Rows group under real project headings; a multi-ticket PR shows `+N` and groups under its primary; a Linear outage keeps cached headings and marks the source stale |
 | **M6** | Release tracking & persistence | The `state.json` store (atomic, schema-versioned), merge-commit capture, unbound-merge persistence, paginated tag polling by per-repo pattern, containment via `compare` with durable negatives and a per-poll budget, binding cache, third segment + Done section | A merged PR flips to shipped when a matching tag appears — including a tag cut weeks later, and one found past the first page; the binding, and everything else in `LocalState`, survives a relaunch |
 | **M7** | Interactions & settings | Click-through, issue link, dismiss, `Clear all`, snooze, refresh, hovered-row keyboard actions with monitor teardown, Settings (tokens, repo scope, per-repo tag pattern editor, per-event toggles) | Every row in PRD §8 works by pointer *and* by key; ten open/close cycles fire each action exactly once; a dismissal and a snooze set before a relaunch are still in force after it |
