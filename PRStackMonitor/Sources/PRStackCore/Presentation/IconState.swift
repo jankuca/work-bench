@@ -112,12 +112,14 @@ public enum IconState: Hashable, Sendable {
         switch self {
         case .disconnected: return "Pull requests, disconnected"
         case .counts(let ready, let attention):
+            // Attention first, then ready — the order the capsules are drawn in, so the
+            // label reads left to right the way the icon does.
             var parts: [String] = []
-            if ready > 0 {
-                parts.append("\(ready) ready to merge")
-            }
             if attention > 0 {
                 parts.append(attention == 1 ? "1 needs you" : "\(attention) need you")
+            }
+            if ready > 0 {
+                parts.append("\(ready) ready to merge")
             }
             return (["Pull requests"] + parts).joined(separator: ", ")
         case .unread: return "Pull requests, unread activity"

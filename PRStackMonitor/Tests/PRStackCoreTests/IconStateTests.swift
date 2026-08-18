@@ -216,10 +216,10 @@ final class IconStateTests: XCTestCase {
             IconState.counts(ready: 1, attention: 0).accessibilityLabel,
             "Pull requests, 1 ready to merge"
         )
-        // Both badges, in the order they are drawn.
+        // Both badges, in the order they are drawn: attention first, then ready.
         XCTAssertEqual(
             IconState.counts(ready: 2, attention: 4).accessibilityLabel,
-            "Pull requests, 2 ready to merge, 4 need you"
+            "Pull requests, 4 need you, 2 ready to merge"
         )
     }
 }
