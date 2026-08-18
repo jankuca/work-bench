@@ -1,4 +1,4 @@
-panel repoNames=false attention=0 unread=2 open=2 draft=0 shipping=0
+panel repoNames=false ready=0 attention=0 unread=2 open=2 draft=0 shipping=0
 section kind=project id=proj-payments name=Payments
   row id=acme/billing#1201 status=inReview attention=false suppressed=false unread=true spine=none run=- group=- issue=PAY-91 extra=1
 section kind=project id=proj-billing name=Billing

@@ -12,7 +12,7 @@ protocol IconPresenter: AnyObject {
 ///
 /// The icon is a pure function of the context, not of the transitions, so `handle` reads
 /// `context.icon` and ignores `events` entirely. That is not a placeholder — it is the
-/// point. Deciding what the icon shows is core's job (``IconState/resolve(github:attentionCount:unreadCount:)``,
+/// point. Deciding what the icon shows is core's job (``IconState/resolve(github:readyCount:attentionCount:unreadCount:)``,
 /// table-tested off-device); this sink's job is to be the one place that decision reaches
 /// AppKit, and to prove the bus is wired before there is a second consumer of it.
 ///

@@ -1,4 +1,4 @@
-panel repoNames=false attention=0 unread=2 open=3 draft=0 shipping=0
+panel repoNames=false ready=0 attention=0 unread=2 open=3 draft=0 shipping=0
 section kind=project id=proj-billing name=Billing
   row id=acme/billing#1702 status=inReview attention=false suppressed=false unread=true spine=none run=- group=- issue=BIL-1702 extra=0
   row id=acme/billing#1701 status=inReview attention=false suppressed=false unread=true spine=none run=- group=- issue=BIL-1701 extra=0

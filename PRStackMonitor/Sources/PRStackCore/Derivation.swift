@@ -88,6 +88,7 @@ public enum Derivation {
         return PanelModel(
             sections: sections,
             showsRepoNames: Set(visible.map(\.repo)).count > 1,
+            readyCount: rows.filter(\.isReady).count,
             attentionCount: rows.filter(\.isAttention).count,
             unreadCount: rows.filter(\.isUnread).count,
             summary: PanelSummary(

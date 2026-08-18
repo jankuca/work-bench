@@ -45,6 +45,24 @@ public struct PanelRow: Equatable, Sendable {
     public var primaryIssue: IssueRef? { pullRequest.primaryIssue }
     public var additionalIssueCount: Int { pullRequest.additionalIssueCount }
 
+    /// Ready to merge **and** not snoozed. This is what the icon's green badge counts.
+    ///
+    /// Computed rather than stored, unlike ``isAttention``: that one is read by the tint,
+    /// the title weight and the row's emphasis, so it is part of what derivation decided
+    /// about a row. This is only ever counted, and the count has one consumer.
+    ///
+    /// `approved` is deliberately excluded. It is green in the panel, but an approved pull
+    /// request whose checks have not finished is not something the user can act on — and a
+    /// green badge that means "some of these might be mergeable" is worth nothing in a menu
+    /// bar. ``RowStatus/readyToMerge`` is the status that already means approved, passing
+    /// and mergeable.
+    ///
+    /// Snooze suppresses it for the same reason it suppresses attention: the user asked
+    /// this row to stop asking, and "go merge me" is asking.
+    public var isReady: Bool {
+        status == .readyToMerge && !isSuppressed
+    }
+
     /// What M4 diffs against the previous model. See ``EffectiveState``.
     public var effectiveState: EffectiveState {
         EffectiveState(status: status, isSuppressed: isSuppressed)
@@ -96,19 +114,26 @@ public struct PanelModel: Equatable, Sendable {
     /// The repo name shows in the meta line only when the list spans more than one
     /// repository (PRD §12.3).
     public var showsRepoNames: Bool
+    /// Rows that are ready to merge and not snoozed — the icon's green badge.
+    public var readyCount: Int
     public var attentionCount: Int
     public var unreadCount: Int
     public var summary: PanelSummary
 
+    /// `readyCount` defaults to zero for the same reason ``PanelSummary/draftCount`` does:
+    /// it arrived after the callers did, and every one of them that predates the green
+    /// badge is a panel with nothing green to say.
     public init(
         sections: [PanelSection],
         showsRepoNames: Bool,
+        readyCount: Int = 0,
         attentionCount: Int,
         unreadCount: Int,
         summary: PanelSummary
     ) {
         self.sections = sections
         self.showsRepoNames = showsRepoNames
+        self.readyCount = readyCount
         self.attentionCount = attentionCount
         self.unreadCount = unreadCount
         self.summary = summary
