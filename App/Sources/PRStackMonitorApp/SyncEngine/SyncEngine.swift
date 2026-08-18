@@ -159,14 +159,20 @@ final class SyncEngine {
     /// describing a network that is demonstrably working again. Left in place it would hold
     /// back the poll that comes after the user pastes a new token, which is the one poll that
     /// matters at that moment.
-    func record(_ health: SourceHealth, for source: EventSource) {
+    ///
+    /// `notBefore` is when the service said it would answer again — a `Retry-After` on a
+    /// secondary rate limit, or the instant the hourly allowance resets. The interval table
+    /// does not know about either, so without this a poll blocked for the next ten minutes
+    /// would be retried in thirty seconds; ``Backoff/recordFailure(at:jitter:notBefore:)``
+    /// takes whichever is later.
+    func record(_ health: SourceHealth, for source: EventSource, notBefore: Date? = nil) {
         guard !health.isConnected, Backoff.backsOff(health) else {
             guard backoffs.removeValue(forKey: source) != nil else { return }
             reschedule()
             return
         }
         var backoff = backoffs[source] ?? Backoff()
-        backoff.recordFailure(at: clock(), jitter: jitter())
+        backoff.recordFailure(at: clock(), jitter: jitter(), notBefore: notBefore)
         backoffs[source] = backoff
         reschedule()
     }

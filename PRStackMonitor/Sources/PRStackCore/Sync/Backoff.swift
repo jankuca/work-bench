@@ -70,14 +70,35 @@ public struct Backoff: Equatable, Sendable {
         return min(configuration.ceiling, configuration.first * growth)
     }
 
+    /// The furthest into the future a service's own answer is allowed to push a retry.
+    ///
+    /// GitHub's allowance is hourly, so nothing it says legitimately reaches past this. The
+    /// clamp is against the pathological case rather than the ordinary one: a `Retry-After`
+    /// of a week, or a `resetAt` read from a header a proxy mangled, would otherwise park the
+    /// app for a week — and an app that has stopped polling looks exactly like an app that
+    /// has stopped working.
+    public static let maximumHonouredHold: TimeInterval = 60 * 60
+
     /// Records a failure and arms the next retry. `jitter` is `0...1`, and values outside
     /// it are clamped rather than trusted — a caller that hands over a raw random `Double`
     /// from some other range should wait a jittered delay, not a negative one.
-    public mutating func recordFailure(at now: Date, jitter: Double) {
+    ///
+    /// `notBefore` is the service's *own* answer to when it will talk again: `Retry-After` on
+    /// a secondary rate limit, or the hourly allowance's `resetAt`. It can only ever move the
+    /// retry **later** than the table would. That direction is the whole point — the table's
+    /// first failure waits 30 seconds, and coming back in 30 seconds to a service that just
+    /// said "in ten minutes" is how an app earns a longer block than the one it was given.
+    public mutating func recordFailure(at now: Date, jitter: Double, notBefore: Date? = nil) {
         failureCount += 1
         let delay = delay(afterFailures: failureCount)
         let spread = (min(max(jitter, 0), 1) * 2 - 1) * configuration.jitterFraction
-        retryAt = now.addingTimeInterval(max(0, delay * (1 + spread)))
+        let jittered = now.addingTimeInterval(max(0, delay * (1 + spread)))
+        guard let notBefore else {
+            retryAt = jittered
+            return
+        }
+        let honoured = min(notBefore, now.addingTimeInterval(Backoff.maximumHonouredHold))
+        retryAt = max(jittered, honoured)
     }
 
     /// Success, a manual reconnect, or a credential change: this source is no longer

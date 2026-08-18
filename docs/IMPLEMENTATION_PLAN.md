@@ -534,7 +534,9 @@ alone are a poor proxy for the 5,000/hr budget. Every query therefore selects
 estimating it.
 
 The scheduler holds a **per-poll point budget** (default 100, roughly one full page of the search plus tag
-queries). Exceeding it defers remaining pagination to the next poll. When `remaining` drops below 10% of the
+queries), and it is one budget for the whole poll: the priority refresh below spends from it first and the two
+searches share what is left, rather than each of the three starting again at the full allowance. Exceeding it
+defers remaining pagination to the next poll. When `remaining` drops below 10% of the
 hourly allowance, drop to the idle interval, set the REST comparison budget to zero (§ release tracking), and
 mark the footer stale until `resetAt`. Backing off on the *measured* remaining points, before exhaustion,
 avoids the failure mode where the app is hard-blocked mid-poll and shows a disconnected icon for the rest of
@@ -555,6 +557,37 @@ so a release cut six weeks after the merge still binds and still flips the row t
 window would drop the PR out of the query, lose the merge commit, and leave it stranded at
 `merged · awaiting release` forever — exactly the case PRD §10 says should resolve quietly whenever the tag
 finally appears.
+
+#### Pages GitHub will not answer, and resuming the ones it did
+
+The page that is expensive for us to ask for is expensive for GitHub to compute, and on an account with
+hundreds of open pull requests it is the one that times out: 50 nodes, each with its reviews, its review
+requests and 20 check contexts, comes back as a `502` or a `504` often enough on a poor connection to matter.
+It also comes back as a **`200` with a null connection** and "something went wrong while executing your query"
+in `errors`, which is the same failure wearing a success status — and the dangerous one, because read as an
+answer it says "no more results". Both are treated as a failure to answer; a *classified* error on a null
+connection (`FORBIDDEN` on a repository the token cannot see) is an answer, and is not retried at any size.
+Two rules cover the rest, and neither involves asking the same question again the same way.
+
+- **A failed page is asked for again at half the size**, same cursor, down to a floor of five, with a short
+  growing pause between attempts. Both the reduction and the three attempts are spent across the pagination
+  rather than restored per page: an account whose page of 50 GitHub could not compute will not compute page
+  eight of 50 either, and a per-page allowance would let ten pages cost thirty extra requests on the connection
+  least able to afford them. A rejected credential and a spent allowance are explicitly *not* retried; neither
+  is a page that was too big.
+- **What has already landed is kept.** When the attempts run out mid-pagination the fetch returns the pages it
+  banked, the cursor of the page that failed, and a warning — a sweep of eight pages that fails on the seventh
+  no longer throws the first six away. A first page that never landed is still an error: reporting it as an
+  empty success would put the panel at "connected, nothing waiting on you" for a GitHub that is down.
+
+Every bound here — the page cap, the point budget, the rate limit floor, a page that would not answer — hands
+back a cursor, and the **next poll resumes from it** instead of starting at page one. Three things keep that
+honest. A cursor is a position in one result set, so it is discarded the moment the searches change (a
+repository checked in Settings, the drafts preference, the closed search's lower bound rolling onto a new day).
+A resumed sweep never looks at the early pages, so its rows are *merged over* the panel's rather than replacing
+them, and the priority refresh below keeps the visible rows current while that is true. And the chain is capped
+at five consecutive polls, because nothing in a resumed sweep can see a pull request that has since sorted onto
+page one.
 
 #### Refreshing the known rows first
 
@@ -793,6 +826,11 @@ interval the footer reads `stale · last synced 41m ago` rather than showing the
 
 Connection state and last-success timestamps are held **per integration** (`github`, `linear`), never as one
 global flag. Exponential backoff with jitter on 5xx/network, tracked per source.
+
+When the service says *when* it will answer again — `Retry-After` on a secondary rate limit, the reset instant
+of a spent hourly allowance — that time wins over the table whenever it is later, clamped to an hour so a
+mangled header cannot park the app. The table's first failure waits 30 seconds, and coming back in 30 seconds
+to a service that just said "in ten minutes" is how an app earns a longer block than the one it was given.
 
 A `401` marks **only that source** disconnected and raises its reconnect banner over that source's last known
 data (design `1e`) — never over an empty panel. Concretely: an expired Linear key leaves every GitHub row

@@ -270,6 +270,33 @@ final class BackoffTests: XCTestCase {
         XCTAssertFalse(backoff.isHolding(at: now.addingTimeInterval(31)))
     }
 
+    /// GitHub answers a secondary rate limit with `Retry-After` and a spent allowance with a
+    /// reset instant. The table knows neither, so without this a poll told "not for another
+    /// ten minutes" would come back in thirty seconds — which is how an app earns a longer
+    /// block than the one it was given.
+    func testTheServicesOwnRetryInstantWinsWhenItIsLater() throws {
+        var backoff = Backoff()
+        backoff.recordFailure(at: now, jitter: 0.5, notBefore: now.addingTimeInterval(600))
+        XCTAssertEqual(try seconds(backoff), 600, accuracy: 0.001)
+    }
+
+    /// And only when it is later. A reset five seconds out does not shorten the 30 seconds the
+    /// table asks for: one failure is one failure whatever the allowance says.
+    func testTheTableWinsWhenTheServicesInstantIsSooner() throws {
+        var backoff = Backoff()
+        backoff.recordFailure(at: now, jitter: 0.5, notBefore: now.addingTimeInterval(5))
+        XCTAssertEqual(try seconds(backoff), 30, accuracy: 0.001)
+    }
+
+    /// A `Retry-After` of a week — or a reset read from a header something mangled — must not
+    /// park the app for a week. An app that has stopped polling looks exactly like an app that
+    /// has stopped working.
+    func testAnAbsurdRetryInstantIsClamped() throws {
+        var backoff = Backoff()
+        backoff.recordFailure(at: now, jitter: 0.5, notBefore: now.addingTimeInterval(7 * 24 * 3_600))
+        XCTAssertEqual(try seconds(backoff), Backoff.maximumHonouredHold, accuracy: 0.001)
+    }
+
     /// Only 5xx and network failures. No delay makes a rejected token work: the banner
     /// asks the user to fix it, and fixing it in Settings polls immediately.
     func testOnlyTransientFailuresBackOff() {

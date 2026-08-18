@@ -68,13 +68,15 @@ extension GitHubClient {
     public func fetchOpenPullRequests(
         scope: RepoScope,
         includesDrafts: Bool = false,
-        startingAfter cursor: String? = nil
+        startingAfter cursor: String? = nil,
+        budget: PointBudget? = nil
     ) async throws -> PullRequestFetch {
         try await fetchPullRequests(
             scope: scope,
             includesDrafts: includesDrafts,
             extraQualifiers: MergedPullRequestSearch.openQualifiers,
-            startingAfter: cursor
+            startingAfter: cursor,
+            budget: budget
         )
     }
 
@@ -88,13 +90,15 @@ extension GitHubClient {
         includesDrafts: Bool = false,
         unbound: [PRID: UnboundMerge],
         now: Date,
-        startingAfter cursor: String? = nil
+        startingAfter cursor: String? = nil,
+        budget: PointBudget? = nil
     ) async throws -> PullRequestFetch {
         try await fetchPullRequests(
             scope: scope,
             includesDrafts: includesDrafts,
             extraQualifiers: MergedPullRequestSearch.qualifiers(unbound: unbound, now: now),
-            startingAfter: cursor
+            startingAfter: cursor,
+            budget: budget
         )
     }
 }

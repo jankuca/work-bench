@@ -53,6 +53,14 @@ final class PanelController: ObservableObject {
     private var sweepPages = 1
     private var sweepIsComplete = true
 
+    /// Where the last sweep's searches stopped, when they stopped short of the end.
+    ///
+    /// Held here rather than in the source for the same reason `local` is: the source is a
+    /// value that answers one poll, and everything that has to survive between polls belongs
+    /// to this actor. ``SweepCursors/none`` — the state after a sweep that finished — is a
+    /// poll that starts at page one.
+    private var sweepCursors: SweepCursors = .none
+
     /// The model from the last derivation, held in memory and **never persisted**, so a
     /// relaunch replays no history (IMPLEMENTATION_PLAN §1).
     private var previous: PanelModel?
@@ -252,7 +260,13 @@ final class PanelController: ObservableObject {
             now: clock(),
             // A backing-off Linear still resolves from cache; what it skips is the request.
             resolvesLinear: engine.resolvesLinear,
-            known: priorityRows
+            known: priorityRows,
+            // Where the last sweep stopped, when it stopped short of the end. A sweep cut off
+            // by a page GitHub would not answer, by the page cap or by the point budget is
+            // resumed rather than restarted — on an account whose sweep takes eight pages,
+            // starting again at page one is how the poll most likely to be cut short is also
+            // the one that pays the most to get where it was cut.
+            cursors: sweepCursors
         )
         pollTask = Task { [weak self] in
             guard let self else { return }
@@ -267,6 +281,8 @@ final class PanelController: ObservableObject {
                 // Handed to the sweep so a search that stops at the page cap cannot drop a
                 // row this just refreshed.
                 sweep.refreshed = refreshed.pullRequests
+                // And what it cost, so the searches behind it share one budget with it.
+                sweep.refreshedPoints = refreshed.pointsSpent
             }
 
             let outcome = await self.source.load(sweep)
@@ -323,7 +339,39 @@ final class PanelController: ObservableObject {
         case .cancelled:
             break
         case .fetched(let product):
-            snapshot = product.snapshot
+            // Whether this poll answered for the same account the rows on screen came from.
+            //
+            // The cursors' own fingerprint cannot tell: `author:@me` is resolved from the
+            // token on GitHub's side, so two accounts with the same repository scope produce
+            // the *same* query text, and a cursor from one would resume mid-list in the
+            // other. The login the poll answered for is the only thing that separates them.
+            // An empty login on either side is a question nothing answered — the first poll
+            // of a launch, or an empty scope, which sends no request at all — and that is
+            // not a change of account.
+            let isSameAccount = snapshot.viewerLogin.isEmpty
+                || product.snapshot.viewerLogin.isEmpty
+                || snapshot.viewerLogin == product.snapshot.viewerLogin
+            // A sweep that started at page one is the whole list and replaces what came
+            // before it. A *resumed* one deliberately never looked at the pages before the
+            // cursor it picked up from, so it is a patch over the rows already on screen
+            // rather than the picture entire — replacing would drop every row from the pages
+            // it skipped, which is the opposite of what resuming is for.
+            //
+            // A poll for a *different* account is never a patch. Merging one would leave the
+            // previous account's rows in the panel and — because `replacing` only adopts a
+            // login when it has none — keep its `viewerLogin` too, which would hide the
+            // switch from `noteViewer` below and leave the app resuming into the wrong
+            // account until the resume chain hit its cap.
+            snapshot = product.isResumed && isSameAccount
+                ? snapshot.replacing(
+                    product.snapshot.pullRequests,
+                    viewerLogin: product.snapshot.viewerLogin
+                )
+                : product.snapshot
+            // Where the next poll picks up, or `.none` when both searches reached the end —
+            // and `.none` when the account changed, so the new one's first sweep starts at
+            // page one instead of at a position in the old one's list.
+            sweepCursors = isSameAccount ? product.cursors : .none
             status.record(github: .connected)
             status.lastSyncedAt = clock()
             // Nil means the Linear half learned nothing this poll, so the footer keeps
@@ -384,13 +432,17 @@ final class PanelController: ObservableObject {
             // relaunch, and a stack somebody else is pushing to counts as activity even on
             // the poll that first sees it.
             engine.noteActivity(at: snapshot.pullRequests.map(\.updatedAt).max())
-        case .failed(let health):
+        case .failed(let health, let notBefore):
             // The rows stay. Losing the connection does not make what was fetched untrue,
             // only unverifiable — the banner and the footer say which (§5). A poll is also
             // the authority on whether there is a credential at all, so `.unconfigured`
             // coming back from one is what takes the token away again.
+            //
+            // The cursors stay too. A poll that failed learned nothing about where the
+            // searches are, and the one that follows it should resume where the last poll
+            // that *did* answer stopped rather than starting the whole sweep again.
             status.record(github: health)
-            engine.record(health, for: .github)
+            engine.record(health, for: .github, notBefore: notBefore)
         }
         rebuild()
 
@@ -636,7 +688,12 @@ enum PollOutcome: Sendable {
     case fetched(PollProduct)
     /// GitHub failed. Linear is not reported here: this poll never got far enough to ask
     /// it, and marking it stale for GitHub's failure would blame the wrong source.
-    case failed(SourceHealth)
+    ///
+    /// `notBefore` is GitHub's own answer to when it will talk again, when it gave one — the
+    /// `Retry-After` on a secondary rate limit, or the instant the hourly allowance resets.
+    /// The backoff table only knows how many times a source has failed, so a poll that came
+    /// back "not for another ten minutes" would otherwise be retried in thirty seconds.
+    case failed(SourceHealth, notBefore: Date?)
     /// The panel closed mid-poll. Distinct from a failure: nothing is known to be wrong,
     /// so neither the banner nor the footer should claim anything.
     case cancelled
@@ -654,6 +711,10 @@ struct PriorityProduct: Sendable {
     /// Already resolved against the Linear cache, so a row keeps its project heading and
     /// does not jump to `Other` and back between the refresh and the sweep.
     var pullRequests: [PullRequest]
+    /// GraphQL points this refresh spent, for the sweep behind it to take off the poll's
+    /// budget. A refresh is one request, but it is one request the size of the search's first
+    /// page — not a rounding error against a budget of 100.
+    var pointsSpent: Int = 0
 }
 
 /// A successful poll: the rows, what it learned about Linear, and what it learned about
@@ -672,6 +733,11 @@ struct PollProduct: Sendable {
     /// for the footer — it is what the next poll decides its priority refresh from.
     var pagesFetched: Int = 1
     var isComplete: Bool = true
+    /// Where this poll's searches stopped, for the next one to resume from.
+    var cursors: SweepCursors = .none
+    /// Whether this poll resumed rather than started at page one, and so covers the tail of
+    /// the list instead of the whole of it. See ``GitHubPollResult/isResumed``.
+    var isResumed: Bool = false
 }
 
 /// One poll's instructions.
@@ -692,6 +758,11 @@ struct PollPlan: Sendable {
     /// What the refresh found, on the way back in: the sweep merges these so a search that
     /// stopped at the page cap cannot drop a row the panel is showing.
     var refreshed: [PullRequest] = []
+    /// What that refresh cost, so the sweep's searches share one poll's point budget with it
+    /// rather than each starting again at the full allowance.
+    var refreshedPoints: Int = 0
+    /// Where the last sweep stopped, when it stopped short. `.none` starts at page one.
+    var cursors: SweepCursors = .none
 }
 
 /// Where a panel's rows come from. One implementation talks to GitHub; a preview passes
@@ -702,9 +773,11 @@ protocol PanelSource: Sendable {
     /// The priority refresh, when the source has one: ``PollPlan/known``'s rows, fetched in
     /// a single request, ahead of ``load(_:)``.
     ///
-    /// `nil` for "nothing to draw yet" — no refresher, nothing known, or a request that did
+    /// `nil` for "no refresh happened" — no refresher, nothing known, or a request that did
     /// not answer. It is never an error: whatever this could not do, the sweep behind it
-    /// does, so a source with no answer here simply polls the way it always did.
+    /// does, so a source with no answer here simply polls the way it always did. A refresh
+    /// that ran and found nothing to draw answers with an empty product instead, because it
+    /// has an answer to give even so — what it cost.
     func refresh(_ plan: PollPlan) async -> PriorityProduct?
 }
 
@@ -791,6 +864,11 @@ struct GitHubPanelSource: PanelSource {
     /// Every failure answers `nil`. A refresh is an optimisation over a sweep that is about
     /// to run anyway, and the sweep reports for both of them — reporting a failure twice
     /// would put the banner up for a request nobody asked for.
+    ///
+    /// A refresh that *ran* and found nothing to draw is not a failure, and answers with a
+    /// product carrying no rows rather than with `nil`: it spent points, and the sweep behind
+    /// it shares the poll's budget with it. Only a refresh that never happened, or one whose
+    /// request threw, has nothing to hand over — a throw takes the accounting with it.
     func refresh(_ plan: PollPlan) async -> PriorityProduct? {
         guard !plan.known.isEmpty else { return nil }
         guard let fetched = try? await pipeline().refreshKnown(
@@ -808,7 +886,18 @@ struct GitHubPanelSource: PanelSource {
         for warning in fetched.warnings {
             NSLog("PRStackMonitor: %@", warning.description)
         }
-        guard !fetched.isEmpty else { return nil }
+        // No rows to draw, but the request still went out and still cost points. Handing
+        // back an empty product rather than `nil` is what keeps the sweep's share of the
+        // budget honest — ``applyPriority(_:from:)`` ignores an empty one, so nothing on
+        // screen moves for it. Resolving against Linear is skipped: there is nothing to
+        // resolve.
+        guard !fetched.isEmpty else {
+            return PriorityProduct(
+                viewerLogin: fetched.viewerLogin,
+                pullRequests: [],
+                pointsSpent: fetched.pointsSpent
+            )
+        }
 
         let resolution = await LinearPanelSource.resolve(
             fetched.pullRequests,
@@ -818,7 +907,8 @@ struct GitHubPanelSource: PanelSource {
         )
         return PriorityProduct(
             viewerLogin: fetched.viewerLogin,
-            pullRequests: resolution.pullRequests
+            pullRequests: resolution.pullRequests,
+            pointsSpent: fetched.pointsSpent
         )
     }
 
@@ -830,7 +920,13 @@ struct GitHubPanelSource: PanelSource {
                 scope: scope,
                 includesDrafts: includesDrafts,
                 local: plan.local,
-                refreshed: KnownPullRequestFetch(pullRequests: plan.refreshed),
+                refreshed: KnownPullRequestFetch(
+                    pullRequests: plan.refreshed,
+                    // What phase one already spent of this poll's budget. Without it the
+                    // searches would share a budget that thinks the refresh was free.
+                    pointsSpent: plan.refreshedPoints
+                ),
+                resuming: plan.cursors,
                 now: plan.now
             )
             // Linear never fails the poll. It cannot: every row is already complete without
@@ -855,7 +951,9 @@ struct GitHubPanelSource: PanelSource {
                     // so a sum is two before it has said anything about how big the account
                     // is. What matters is whether either of them had to page at all.
                     pagesFetched: max(fetched.open.pagesFetched, fetched.closed.pagesFetched),
-                    isComplete: fetched.isComplete
+                    isComplete: fetched.isComplete,
+                    cursors: fetched.cursors,
+                    isResumed: fetched.isResumed
                 )
             )
         } catch is CancellationError {
@@ -867,14 +965,19 @@ struct GitHubPanelSource: PanelSource {
         } catch let error as GitHubError {
             switch error {
             case .missingToken:
-                return .failed(.unconfigured)
+                return .failed(.unconfigured, notBefore: nil)
             case _ where error.isAuthenticationFailure:
-                return .failed(.unauthorized(error.description))
+                return .failed(.unauthorized(error.description), notBefore: nil)
+            case .rateLimited(let resetAt):
+                // The one failure that comes with a time on it. Carried through so the
+                // scheduler holds off until then rather than retrying into a wall it has
+                // already been told about — see ``SyncEngine/record(_:for:notBefore:)``.
+                return .failed(.unreachable(error.description), notBefore: resetAt)
             default:
-                return .failed(.unreachable(error.description))
+                return .failed(.unreachable(error.description), notBefore: nil)
             }
         } catch {
-            return .failed(.unreachable(error.localizedDescription))
+            return .failed(.unreachable(error.localizedDescription), notBefore: nil)
         }
     }
 }
