@@ -103,7 +103,7 @@ final class ReadyCountTests: XCTestCase {
         let model = derive([
             pullRequest(number: 100),
             pullRequest(number: 101, reviewDecision: .changesRequested),
-            pullRequest(number: 102, checks: .failing(2), reviewDecision: nil)
+            pullRequest(number: 102, reviewDecision: nil, checks: .failing(2))
         ])
         XCTAssertEqual(model.readyCount, 1)
         XCTAssertEqual(model.attentionCount, 2)
