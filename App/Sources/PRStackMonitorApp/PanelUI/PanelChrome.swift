@@ -138,19 +138,24 @@ struct SectionHeaderView: View {
 }
 
 /// Sync dot, `synced 34s ago`, `Mark all read`, `Settings`.
+///
+/// The dot-and-label is a control, not just a readout: clicking it opens a popover of the
+/// sync's steps — live while a poll runs, the last sync's between them. It stays a plain label
+/// until a sync has actually produced steps, so there is nothing to open onto an empty list.
 struct PanelFooterView: View {
     var footer: FooterPresentation
     var onMarkAllRead: () -> Void
     var onOpenSettings: () -> Void
+    /// Toggles the step card, which ``PanelView`` owns and overlays — the footer only asks for
+    /// it, so the card can float above the rows rather than being clipped inside the footer.
+    var onToggleProgress: () -> Void = {}
+    /// Whether that card is showing, for the chevron's direction.
+    var isProgressShown: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
-                SyncDot(tone: footer.syncTone, isSyncing: footer.isSyncing)
-                Text(footer.syncText)
-                    .font(Tokens.text(11))
-                    .foregroundStyle(Tokens.textTertiary.color)
-                    .help(footer.detail ?? footer.syncText)
+                syncControl
                 if let note = footer.linearNote {
                     // Tertiary and unaccented on purpose. Linear being down does not make
                     // the rows wrong, only their headings possibly behind, so it reads as a
@@ -203,6 +208,42 @@ struct PanelFooterView: View {
         .padding(.vertical, 7)
         .background(Tokens.chrome.color)
         .overlay(alignment: .top) { Hairline() }
+    }
+
+    /// The sync dot and its text. A button that opens the step popover once a sync has
+    /// produced steps, and a plain label until then — an empty list is nothing to open onto.
+    @ViewBuilder
+    private var syncControl: some View {
+        if footer.progressSteps.isEmpty {
+            HStack(spacing: 8) {
+                SyncDot(tone: footer.syncTone, isSyncing: footer.isSyncing)
+                Text(footer.syncText)
+                    .font(Tokens.text(11))
+                    .foregroundStyle(Tokens.textTertiary.color)
+            }
+            .help(footer.detail ?? footer.syncText)
+        } else {
+            Button(action: onToggleProgress) {
+                HStack(spacing: 6) {
+                    SyncDot(tone: footer.syncTone, isSyncing: footer.isSyncing)
+                    Text(footer.syncText)
+                        .font(Tokens.text(11))
+                        .foregroundStyle(Tokens.textTertiary.color)
+                    // The affordance that this line opens something, and the direction it
+                    // opens: the card lifts up off a footer pinned to the panel's bottom, so
+                    // the chevron points up to open and flips down to close.
+                    Image(systemName: isProgressShown ? "chevron.down" : "chevron.up")
+                        .font(.system(size: 7, weight: .semibold))
+                        .foregroundStyle(Tokens.textTertiary.color)
+                        .opacity(0.7)
+                }
+                // The gaps between dot, text and chevron are part of the hit target, so the
+                // whole label clicks rather than only its glyphs.
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(footer.detail ?? "Show sync steps")
+        }
     }
 }
 
@@ -280,34 +321,53 @@ struct AllClearView: View {
     }
 }
 
-/// The first-sync checklist: what the poll is doing while the panel has no rows to show yet.
+/// The sync checklist the footer's label opens: a floating card of what the poll is doing,
+/// or — between polls — what the last one did.
 ///
-/// A list, left-aligned, rather than the centred single message the connect and all-clear
-/// states use — it is a sequence of steps, and a sequence reads down a column. Each step
-/// carries the same three-state vocabulary the rest of the panel uses: a done step takes the
-/// success check the all-clear view leads with, an active one the pulsing dot the footer's
-/// sync indicator uses, a pending one a quiet outline.
-struct SyncProgressView: View {
-    var progress: SyncProgressPresentation
+/// A *card inside the panel*, not a second `NSPopover`: the panel is itself a transient
+/// popover, and a nested one would fight it for focus and be dismissed by the same click that
+/// opened it. Drawn as an overlay in ``PanelView`` it has none of that trouble, and it reads
+/// as a popover all the same — rounded, bordered, lifted off the panel with a shadow.
+///
+/// A list, left-aligned, because it is a sequence of steps and a sequence reads down a column.
+/// Each step carries the same three-state vocabulary the rest of the panel uses: a done step
+/// takes the success check the all-clear view leads with, an active one a dot that pulses
+/// *only while a poll is actually running*, a pending one a quiet outline. The pulse gate is
+/// what keeps an interrupted step — active when the poll stopped — from pulsing on forever in
+/// the last-sync summary.
+struct SyncProgressPopover: View {
+    var steps: [SyncStepPresentation]
+    /// Whether a poll is in flight right now (``FooterPresentation/isSyncing``). Decides both
+    /// the header wording and whether the active step pulses.
+    var isSyncing: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(progress.title)
-                .font(Tokens.text(13.5, .semibold))
+        VStack(alignment: .leading, spacing: 11) {
+            Text(isSyncing ? "Syncing…" : "Last sync")
+                .font(Tokens.text(12, .semibold))
                 .foregroundStyle(Tokens.textPrimary.color)
 
             VStack(alignment: .leading, spacing: 9) {
                 // Keyed by stage, not position: a conditional step appearing pushes nothing
-                // else's identity, so the rows that were already there animate in place rather
-                // than being reused for a different step.
-                ForEach(progress.steps, id: \.stage) { step in
-                    SyncStepRow(step: step)
+                // else's identity, so the rows that were already there stay put rather than
+                // being reused for a different step.
+                ForEach(steps, id: \.stage) { step in
+                    SyncStepRow(step: step, isSyncing: isSyncing)
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 34)
-        .padding(.vertical, 28)
+        .frame(width: 240, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Tokens.chrome.color)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Tokens.separator.color, lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.22), radius: 14, y: 5)
         .accessibilityElement(children: .combine)
     }
 }
@@ -315,10 +375,11 @@ struct SyncProgressView: View {
 /// One line of the checklist: state glyph, label, and its running count.
 private struct SyncStepRow: View {
     var step: SyncStepPresentation
+    var isSyncing: Bool
 
     var body: some View {
         HStack(spacing: 9) {
-            SyncStepGlyph(state: step.state)
+            SyncStepGlyph(state: step.state, isSyncing: isSyncing)
                 // A fixed box so every label starts at the same x whatever glyph precedes it.
                 .frame(width: 15, height: 15)
             Text(step.title)
@@ -337,9 +398,11 @@ private struct SyncStepRow: View {
     }
 }
 
-/// The state glyph: a filled check for done, a pulsing dot for active, an outline for pending.
+/// The state glyph: a filled check for done, a dot for active — pulsing only while a poll
+/// runs — and an outline for pending.
 private struct SyncStepGlyph: View {
     var state: SyncStepPresentation.State
+    var isSyncing: Bool
 
     /// The same reasoning as ``SyncDot``: the pulse is exactly the motion Reduce Motion turns
     /// off, and the label beside it already says which step is running, so dropping the
@@ -354,7 +417,7 @@ private struct SyncStepGlyph: View {
                 .foregroundStyle(Tokens.success.color)
                 .accessibilityHidden(true)
         case .active:
-            pulsingDot
+            activeDot
         case .pending:
             Circle()
                 .strokeBorder(Tokens.textTertiary.color.opacity(0.5), lineWidth: 1.5)
@@ -364,24 +427,25 @@ private struct SyncStepGlyph: View {
     }
 
     @ViewBuilder
-    private var pulsingDot: some View {
+    private var activeDot: some View {
         let dot = Circle()
             .fill(Tokens.accent.color)
             .frame(width: 9, height: 9)
             .accessibilityHidden(true)
 
-        // A `PhaseAnimator` for the same reason ``SyncDot`` uses one: it confines the
-        // animation to the dot's own opacity, so a relayout as a step lands or the panel
-        // resizes is never swept into an endless autoreverse. Mounted only when motion is
-        // allowed, so nothing runs under Reduce Motion.
-        if reduceMotion {
-            dot
-        } else {
+        // Pulses only while a poll is actually in flight and motion is allowed. A step left
+        // active because its poll was interrupted sits as a static dot in the last-sync
+        // summary — a `PhaseAnimator` for the same reason ``SyncDot`` uses one: it confines
+        // the animation to the dot's own opacity, so a relayout is never swept into an
+        // endless autoreverse.
+        if isSyncing, !reduceMotion {
             dot.phaseAnimator([false, true]) { content, isDim in
                 content.opacity(isDim ? 0.3 : 1)
             } animation: { _ in
                 .easeInOut(duration: 0.6)
             }
+        } else {
+            dot
         }
     }
 }

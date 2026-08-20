@@ -42,10 +42,12 @@ final class PanelController: ObservableObject {
     /// Bumped per poll, so a late result can tell whether it is still the current one.
     private var pollGeneration = 0
 
-    /// The first sync's step progress, or nil. Non-nil only while the *initial* sync is in
-    /// flight — set at the top of that poll, cleared when it lands or is cancelled — so the
-    /// presentation only ever draws the stepper for the launch that has no rows yet. A
-    /// steady-state poll leaves this nil and the footer's `syncing…` does the announcing.
+    /// The current-or-last sync's step progress, or nil before the first poll of a launch.
+    ///
+    /// Reset and re-driven on every poll and deliberately *not* cleared when one finishes, so
+    /// the footer's sync label always has steps to open a popover onto — live while a poll
+    /// runs, the last sync's summary between them. It never touches the body; it only feeds the
+    /// footer's ``FooterPresentation/progressSteps``.
     @Published private(set) var syncProgress: SyncProgress?
     /// The live end of the initial sync's event stream. The poll's work yields events here
     /// from off the main actor; ``consumeProgress(_:for:)`` folds them in on it.
@@ -235,15 +237,14 @@ final class PanelController: ObservableObject {
         // observes cancellation, so this actually stops the request.
         pollTask?.cancel()
         pollTask = nil
-        // And with it any first-sync stepper: the cancelled poll's `apply` clears
-        // `syncProgress`, but tear the stream down here too so no consumer outlives the close
-        // if the request is slow to unwind. `isRefreshing` going false below already stops the
-        // stepper rendering; this stops it *accumulating*.
+        // Tear the progress stream down so no consumer outlives the close, but keep
+        // `syncProgress` itself: it is the last sync's summary, and the popover stays truthful
+        // whether or not the panel is open. `isSyncing` going false with `isRefreshing` below
+        // is what stops the steps reading as *live* once the poll is no longer running.
         progressConsumer?.cancel()
         progressConsumer = nil
         progressContinuation?.finish()
         progressContinuation = nil
-        syncProgress = nil
         digestsWhileOpen = nil
         // The pointer is not over anything once there is nothing to be over. Left set, the
         // next open would begin with a keyboard target the user cannot see.
@@ -271,19 +272,9 @@ final class PanelController: ObservableObject {
         let generation = pollGeneration
         status.isRefreshing = true
 
-        // The stepper is the cold first sweep's alone: nothing on screen, nothing ever synced,
-        // a credential to sync with, and no persisted rows for a priority refresh to draw
-        // first. A relaunch that remembers its rows fills them from one request behind the
-        // scenes (``priorityRows``) and never needs the stepper; a refresh under an open panel
-        // has rows already. Both leave `syncProgress` nil and pass no reporter, so they run
-        // exactly as they did before any of this.
-        let reporter = beginProgress(
-            forInitialSync: snapshot.pullRequests.isEmpty
-                && status.lastSyncedAt == nil
-                && status.hasGitHubCredential
-                && priorityRows.isEmpty,
-            generation: generation
-        )
+        // Every poll reports its steps, so the popover the footer's label opens has something
+        // to show at any time — the current sync while one runs, the last sync between them.
+        let reporter = beginProgress(generation: generation)
         rebuild()
 
         // The state the poll reads — its unbound merges bound the closed search and give the
@@ -320,32 +311,33 @@ final class PanelController: ObservableObject {
             }
 
             let outcome = await self.source.load(sweep, progress: reporter)
-            // Close the stream before the result lands, so the consumer's loop ends and the
-            // final `apply` clears the stepper without racing a late event back onto it.
+            // Close the stream so the consumer drains its last events and its loop ends. The
+            // steps are deliberately *not* cleared — they stay as the last sync's summary for
+            // the popover, until the next poll replaces them.
             self.finishProgress(for: generation)
             self.apply(outcome, from: generation)
         }
     }
 
-    /// Arms the initial-sync stepper and returns the reporter the poll's work yields into, or
-    /// nil when this is not the first sync.
+    /// Arms this poll's progress and returns the reporter its work yields into.
+    ///
+    /// Every poll gets one — the popover is available at any time, not only during the first
+    /// sync — so this resets the steps to a fresh run and drains them through a new stream. The
+    /// previous poll's steps stay on screen until the first event of this one lands, so a
+    /// background poll does not blank the last sync's summary before it has anything to replace
+    /// it with.
     ///
     /// The stream buffers, so the events the first page emits before ``consumeProgress(_:for:)``
     /// is scheduled are not lost. The reporter is `@Sendable` and touches only the
     /// continuation, so it is safe to call from the off-main-actor executors the searches run
     /// on; folding each event back onto `syncProgress` happens on the main actor in the
     /// consumer.
-    private func beginProgress(forInitialSync isInitialSync: Bool, generation: Int) -> SyncProgressReporter? {
+    private func beginProgress(generation: Int) -> SyncProgressReporter {
         progressConsumer?.cancel()
         progressContinuation?.finish()
         progressContinuation = nil
 
-        guard isInitialSync else {
-            syncProgress = nil
-            return nil
-        }
-
-        // The first frame already shows the open search active, so the panel says "Finding
+        // The first frame already shows the open search active, so the popover says "Finding
         // open pull requests" the instant the poll starts rather than one page later.
         syncProgress = SyncProgress.initial.applying(.began(.openPullRequests))
 
@@ -354,7 +346,10 @@ final class PanelController: ObservableObject {
         // the only thing that escapes, and it holds a Sendable continuation and nothing more.
         var box: AsyncStream<SyncProgressEvent>.Continuation?
         let stream = AsyncStream<SyncProgressEvent> { box = $0 }
-        guard let continuation = box else { return nil }
+        // A stream's build closure is called synchronously in the initializer, so the box is
+        // set by the time this runs. The fallback reporter is unreachable defensiveness — it
+        // yields nowhere, which is exactly what a poll with no live stream should do.
+        guard let continuation = box else { return { _ in } }
         progressContinuation = continuation
 
         let reporter: SyncProgressReporter = { event in continuation.yield(event) }
@@ -366,16 +361,33 @@ final class PanelController: ObservableObject {
         return reporter
     }
 
-    /// Folds one progress event into the stepper, ignoring anything from a superseded poll.
+    /// Folds one progress event into the steps, ignoring anything from a superseded poll.
+    ///
+    /// Only the *presentation* is rebuilt, not the model: a progress event changes what the
+    /// footer's popover shows and nothing else, so re-deriving rows and re-publishing domain
+    /// events on every page would be work for no change — the model is identical until the
+    /// poll lands and ``apply(_:from:)`` does the full rebuild.
     private func consumeProgress(_ event: SyncProgressEvent, for generation: Int) {
         guard generation == pollGeneration, syncProgress != nil else { return }
         syncProgress = syncProgress?.applying(event)
-        rebuild()
+        rebuildPresentation()
     }
 
-    /// Ends the initial sync's stream. The consumer's loop then finishes on its own; the
-    /// stepper itself is cleared by the `apply` that follows, when the rows are ready to
-    /// replace it.
+    /// Rebuilds only ``panel`` from the last derived model, for a change that touches the
+    /// chrome but not the rows or the events — the sync steps. It reuses ``previous`` rather
+    /// than deriving again, and publishes nothing: nothing about the model or the domain
+    /// events has changed, only what the footer's sync popover shows.
+    private func rebuildPresentation() {
+        panel = PanelPresentation.make(
+            model: previous ?? .empty,
+            status: status,
+            now: clock(),
+            syncProgress: syncProgress
+        )
+    }
+
+    /// Ends this poll's stream. The consumer's loop drains its buffer and finishes; the steps
+    /// themselves stay as the last sync's summary until the next poll resets them.
     private func finishProgress(for generation: Int) {
         guard generation == pollGeneration else { return }
         progressContinuation?.finish()
@@ -536,10 +548,6 @@ final class PanelController: ObservableObject {
             status.record(github: health)
             engine.record(health, for: .github, notBefore: notBefore)
         }
-        // The initial sync is over — whether it fetched, failed or was cancelled — so the
-        // stepper gives way to whatever this rebuild draws: the rows it found, the all-clear
-        // message, or the connect prompt a failure falls back to.
-        syncProgress = nil
         rebuild()
 
         // The poll that just landed was sent under the *previous* account's repository
