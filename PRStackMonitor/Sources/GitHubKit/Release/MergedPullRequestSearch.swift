@@ -69,14 +69,17 @@ extension GitHubClient {
         scope: RepoScope,
         includesDrafts: Bool = false,
         startingAfter cursor: String? = nil,
-        budget: PointBudget? = nil
+        budget: PointBudget? = nil,
+        progress: SyncProgressReporter? = nil
     ) async throws -> PullRequestFetch {
         try await fetchPullRequests(
             scope: scope,
             includesDrafts: includesDrafts,
             extraQualifiers: MergedPullRequestSearch.openQualifiers,
             startingAfter: cursor,
-            budget: budget
+            budget: budget,
+            stage: .openPullRequests,
+            progress: progress
         )
     }
 
@@ -91,14 +94,17 @@ extension GitHubClient {
         unbound: [PRID: UnboundMerge],
         now: Date,
         startingAfter cursor: String? = nil,
-        budget: PointBudget? = nil
+        budget: PointBudget? = nil,
+        progress: SyncProgressReporter? = nil
     ) async throws -> PullRequestFetch {
         try await fetchPullRequests(
             scope: scope,
             includesDrafts: includesDrafts,
             extraQualifiers: MergedPullRequestSearch.qualifiers(unbound: unbound, now: now),
             startingAfter: cursor,
-            budget: budget
+            budget: budget,
+            stage: .mergedPullRequests,
+            progress: progress
         )
     }
 }

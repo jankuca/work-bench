@@ -11,6 +11,12 @@ struct PanelView: View {
     @ObservedObject var controller: PanelController
 
     @State private var contentHeight: CGFloat = Tokens.Panel.minBodyHeight
+    /// Whether the sync-step card is showing. Owned here rather than in the footer so the card
+    /// can float over the rows as a panel-wide overlay instead of being clipped inside the
+    /// footer's own row.
+    @State private var showingProgress = false
+
+    private var progressSteps: [SyncStepPresentation] { controller.panel.footer.progressSteps }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,11 +37,34 @@ struct PanelView: View {
             PanelFooterView(
                 footer: controller.panel.footer,
                 onMarkAllRead: { controller.markAllRead() },
-                onOpenSettings: { controller.openSettings() }
+                onOpenSettings: { controller.openSettings() },
+                onToggleProgress: { showingProgress.toggle() },
+                isProgressShown: showingProgress
             )
         }
         .frame(width: Tokens.Panel.width)
         .background(Tokens.field.color)
+        // The step card, floated over the panel: a dim scrim to catch the click that
+        // dismisses it, and the card itself just above the footer. Never shown once the steps
+        // are gone, so a dismissable card can never strand itself over an empty list.
+        .overlay {
+            if showingProgress, !progressSteps.isEmpty {
+                ZStack(alignment: .bottomLeading) {
+                    Color.black.opacity(0.12)
+                        .contentShape(Rectangle())
+                        .onTapGesture { showingProgress = false }
+                    SyncProgressPopover(
+                        steps: progressSteps,
+                        isSyncing: controller.panel.footer.isSyncing
+                    )
+                    .padding(.leading, 10)
+                    // Clears the footer, so the card sits above the label that opened it.
+                    .padding(.bottom, 34)
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: showingProgress)
     }
 
     @ViewBuilder
