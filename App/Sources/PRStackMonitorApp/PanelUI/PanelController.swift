@@ -1061,11 +1061,17 @@ struct GitHubPanelSource: PanelSource {
             // Linear never fails the poll. It cannot: every row is already complete without
             // it, and losing it costs only the project headings for identifiers that have
             // never been cached (IMPLEMENTATION_PLAN §4).
+            //
+            // The mode follows the same `willResolveLinear` the step reports, not just the
+            // backoff: reaching out with `.fetch` when there is no credential to reach out
+            // *with* would both waste a request that can only fail and make the progress lie —
+            // the step said "skipped" and then a fetch happened. `.cacheOnly` keeps the cached
+            // headings and matches what the step promised.
             let resolution = await LinearPanelSource.resolve(
                 fetched.pullRequests,
                 over: transport,
                 now: plan.now,
-                mode: plan.resolvesLinear ? .fetch : .cacheOnly
+                mode: willResolveLinear ? .fetch : .cacheOnly
             )
             if willResolveLinear { progress?(.finished(.linearProjects)) }
             return .fetched(
