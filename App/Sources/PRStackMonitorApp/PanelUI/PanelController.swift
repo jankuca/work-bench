@@ -42,6 +42,17 @@ final class PanelController: ObservableObject {
     /// Bumped per poll, so a late result can tell whether it is still the current one.
     private var pollGeneration = 0
 
+    /// The first sync's step progress, or nil. Non-nil only while the *initial* sync is in
+    /// flight — set at the top of that poll, cleared when it lands or is cancelled — so the
+    /// presentation only ever draws the stepper for the launch that has no rows yet. A
+    /// steady-state poll leaves this nil and the footer's `syncing…` does the announcing.
+    @Published private(set) var syncProgress: SyncProgress?
+    /// The live end of the initial sync's event stream. The poll's work yields events here
+    /// from off the main actor; ``consumeProgress(_:for:)`` folds them in on it.
+    private var progressContinuation: AsyncStream<SyncProgressEvent>.Continuation?
+    /// The task draining that stream. Cancelled and replaced per initial-sync poll.
+    private var progressConsumer: Task<Void, Never>?
+
     /// What the last completed sweep cost: the most pages either of its searches needed,
     /// and whether both reached the end of theirs.
     ///
@@ -224,6 +235,15 @@ final class PanelController: ObservableObject {
         // observes cancellation, so this actually stops the request.
         pollTask?.cancel()
         pollTask = nil
+        // And with it any first-sync stepper: the cancelled poll's `apply` clears
+        // `syncProgress`, but tear the stream down here too so no consumer outlives the close
+        // if the request is slow to unwind. `isRefreshing` going false below already stops the
+        // stepper rendering; this stops it *accumulating*.
+        progressConsumer?.cancel()
+        progressConsumer = nil
+        progressContinuation?.finish()
+        progressContinuation = nil
+        syncProgress = nil
         digestsWhileOpen = nil
         // The pointer is not over anything once there is nothing to be over. Left set, the
         // next open would begin with a keyboard target the user cannot see.
@@ -250,6 +270,20 @@ final class PanelController: ObservableObject {
         pollGeneration += 1
         let generation = pollGeneration
         status.isRefreshing = true
+
+        // The stepper is the cold first sweep's alone: nothing on screen, nothing ever synced,
+        // a credential to sync with, and no persisted rows for a priority refresh to draw
+        // first. A relaunch that remembers its rows fills them from one request behind the
+        // scenes (``priorityRows``) and never needs the stepper; a refresh under an open panel
+        // has rows already. Both leave `syncProgress` nil and pass no reporter, so they run
+        // exactly as they did before any of this.
+        let reporter = beginProgress(
+            forInitialSync: snapshot.pullRequests.isEmpty
+                && status.lastSyncedAt == nil
+                && status.hasGitHubCredential
+                && priorityRows.isEmpty,
+            generation: generation
+        )
         rebuild()
 
         // The state the poll reads — its unbound merges bound the closed search and give the
@@ -285,9 +319,67 @@ final class PanelController: ObservableObject {
                 sweep.refreshedPoints = refreshed.pointsSpent
             }
 
-            let outcome = await self.source.load(sweep)
+            let outcome = await self.source.load(sweep, progress: reporter)
+            // Close the stream before the result lands, so the consumer's loop ends and the
+            // final `apply` clears the stepper without racing a late event back onto it.
+            self.finishProgress(for: generation)
             self.apply(outcome, from: generation)
         }
+    }
+
+    /// Arms the initial-sync stepper and returns the reporter the poll's work yields into, or
+    /// nil when this is not the first sync.
+    ///
+    /// The stream buffers, so the events the first page emits before ``consumeProgress(_:for:)``
+    /// is scheduled are not lost. The reporter is `@Sendable` and touches only the
+    /// continuation, so it is safe to call from the off-main-actor executors the searches run
+    /// on; folding each event back onto `syncProgress` happens on the main actor in the
+    /// consumer.
+    private func beginProgress(forInitialSync isInitialSync: Bool, generation: Int) -> SyncProgressReporter? {
+        progressConsumer?.cancel()
+        progressContinuation?.finish()
+        progressContinuation = nil
+
+        guard isInitialSync else {
+            syncProgress = nil
+            return nil
+        }
+
+        // The first frame already shows the open search active, so the panel says "Finding
+        // open pull requests" the instant the poll starts rather than one page later.
+        syncProgress = SyncProgress.initial.applying(.began(.openPullRequests))
+
+        // The continuation is captured into a local rather than straight onto `self`, so the
+        // stream's build closure captures nothing of this actor — the yield closure below is
+        // the only thing that escapes, and it holds a Sendable continuation and nothing more.
+        var box: AsyncStream<SyncProgressEvent>.Continuation?
+        let stream = AsyncStream<SyncProgressEvent> { box = $0 }
+        guard let continuation = box else { return nil }
+        progressContinuation = continuation
+
+        let reporter: SyncProgressReporter = { event in continuation.yield(event) }
+        progressConsumer = Task { [weak self] in
+            for await event in stream {
+                self?.consumeProgress(event, for: generation)
+            }
+        }
+        return reporter
+    }
+
+    /// Folds one progress event into the stepper, ignoring anything from a superseded poll.
+    private func consumeProgress(_ event: SyncProgressEvent, for generation: Int) {
+        guard generation == pollGeneration, syncProgress != nil else { return }
+        syncProgress = syncProgress?.applying(event)
+        rebuild()
+    }
+
+    /// Ends the initial sync's stream. The consumer's loop then finishes on its own; the
+    /// stepper itself is cleared by the `apply` that follows, when the rows are ready to
+    /// replace it.
+    private func finishProgress(for generation: Int) {
+        guard generation == pollGeneration else { return }
+        progressContinuation?.finish()
+        progressContinuation = nil
     }
 
     /// The rows the next poll refreshes ahead of its searches, in priority order.
@@ -444,6 +536,10 @@ final class PanelController: ObservableObject {
             status.record(github: health)
             engine.record(health, for: .github, notBefore: notBefore)
         }
+        // The initial sync is over — whether it fetched, failed or was cancelled — so the
+        // stepper gives way to whatever this rebuild draws: the rows it found, the all-clear
+        // message, or the connect prompt a failure falls back to.
+        syncProgress = nil
         rebuild()
 
         // The poll that just landed was sent under the *previous* account's repository
@@ -652,7 +748,7 @@ final class PanelController: ObservableObject {
         previous = derived.model
         previousStatus = status
 
-        panel = PanelPresentation.make(model: derived.model, status: status, now: now)
+        panel = PanelPresentation.make(model: derived.model, status: status, now: now, syncProgress: syncProgress)
         events.publish(
             connection + derived.events,
             context: EventContext(
@@ -769,7 +865,9 @@ struct PollPlan: Sendable {
 /// Where a panel's rows come from. One implementation talks to GitHub; a preview passes
 /// a fixture.
 protocol PanelSource: Sendable {
-    func load(_ plan: PollPlan) async -> PollOutcome
+    /// `progress` is the first-sync stepper's reporter, or nil for every other poll. A source
+    /// that has steps to report threads it into its work; one that does not simply ignores it.
+    func load(_ plan: PollPlan, progress: SyncProgressReporter?) async -> PollOutcome
 
     /// The priority refresh, when the source has one: ``PollPlan/known``'s rows, fetched in
     /// a single request, ahead of ``load(_:)``.
@@ -806,6 +904,18 @@ struct GitHubPanelSource: PanelSource {
     /// Read per poll for the same reason as the scope: Settings writes `UserDefaults`, the
     /// next poll picks it up, and there is no second copy to invalidate.
     var includesDrafts: Bool { AppDefaults.showsDrafts() }
+
+    /// Whether a Linear key exists at all, asked of the same chain a resolution asks. Used
+    /// only to decide whether the first-sync stepper shows a "Grouping by project" step: with
+    /// no key there is no resolution to describe, so the step is skipped rather than shown
+    /// running against a source the user has never connected.
+    static var hasLinearCredential: Bool {
+        CredentialChain.standard(
+            environment: .linear(),
+            keychain: .linear,
+            service: "Linear"
+        ).hasCredential
+    }
 
     /// One transport for the life of the source, shared by both requests.
     ///
@@ -913,7 +1023,7 @@ struct GitHubPanelSource: PanelSource {
         )
     }
 
-    func load(_ plan: PollPlan) async -> PollOutcome {
+    func load(_ plan: PollPlan, progress: SyncProgressReporter? = nil) async -> PollOutcome {
         let poll = pipeline()
 
         do {
@@ -928,8 +1038,18 @@ struct GitHubPanelSource: PanelSource {
                     pointsSpent: plan.refreshedPoints
                 ),
                 resuming: plan.cursors,
-                now: plan.now
+                now: plan.now,
+                progress: progress
             )
+            // The Linear step, reported around the resolution below. Shown only when it will
+            // actually reach out: Linear configured, not backing off this poll, and at least
+            // one identifier in the fetched rows to resolve. Otherwise it is skipped — Linear
+            // is optional, and a step for work that never happens is the flicker the stepper
+            // rules avoid (IMPLEMENTATION_PLAN §4).
+            let willResolveLinear = plan.resolvesLinear
+                && Self.hasLinearCredential
+                && fetched.pullRequests.contains { !IssueIdentifierScanner.identifiers(in: $0).isEmpty }
+            progress?(willResolveLinear ? .began(.linearProjects) : .skipped(.linearProjects))
             // Linear never fails the poll. It cannot: every row is already complete without
             // it, and losing it costs only the project headings for identifiers that have
             // never been cached (IMPLEMENTATION_PLAN §4).
@@ -939,6 +1059,7 @@ struct GitHubPanelSource: PanelSource {
                 now: plan.now,
                 mode: plan.resolvesLinear ? .fetch : .cacheOnly
             )
+            if willResolveLinear { progress?(.finished(.linearProjects)) }
             return .fetched(
                 PollProduct(
                     snapshot: RawSnapshot(

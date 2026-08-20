@@ -280,6 +280,112 @@ struct AllClearView: View {
     }
 }
 
+/// The first-sync checklist: what the poll is doing while the panel has no rows to show yet.
+///
+/// A list, left-aligned, rather than the centred single message the connect and all-clear
+/// states use — it is a sequence of steps, and a sequence reads down a column. Each step
+/// carries the same three-state vocabulary the rest of the panel uses: a done step takes the
+/// success check the all-clear view leads with, an active one the pulsing dot the footer's
+/// sync indicator uses, a pending one a quiet outline.
+struct SyncProgressView: View {
+    var progress: SyncProgressPresentation
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(progress.title)
+                .font(Tokens.text(13.5, .semibold))
+                .foregroundStyle(Tokens.textPrimary.color)
+
+            VStack(alignment: .leading, spacing: 9) {
+                // Keyed by stage, not position: a conditional step appearing pushes nothing
+                // else's identity, so the rows that were already there animate in place rather
+                // than being reused for a different step.
+                ForEach(progress.steps, id: \.stage) { step in
+                    SyncStepRow(step: step)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 34)
+        .padding(.vertical, 28)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// One line of the checklist: state glyph, label, and its running count.
+private struct SyncStepRow: View {
+    var step: SyncStepPresentation
+
+    var body: some View {
+        HStack(spacing: 9) {
+            SyncStepGlyph(state: step.state)
+                // A fixed box so every label starts at the same x whatever glyph precedes it.
+                .frame(width: 15, height: 15)
+            Text(step.title)
+                .font(Tokens.text(12, step.state == .active ? .medium : .regular))
+                .foregroundStyle(
+                    step.state == .pending ? Tokens.textTertiary.color : Tokens.textPrimary.color
+                )
+            if let detail = step.detail {
+                Text(detail)
+                    .font(Tokens.text(11))
+                    .foregroundStyle(Tokens.textTertiary.color)
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The state glyph: a filled check for done, a pulsing dot for active, an outline for pending.
+private struct SyncStepGlyph: View {
+    var state: SyncStepPresentation.State
+
+    /// The same reasoning as ``SyncDot``: the pulse is exactly the motion Reduce Motion turns
+    /// off, and the label beside it already says which step is running, so dropping the
+    /// animation costs nothing.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        switch state {
+        case .done:
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 13))
+                .foregroundStyle(Tokens.success.color)
+                .accessibilityHidden(true)
+        case .active:
+            pulsingDot
+        case .pending:
+            Circle()
+                .strokeBorder(Tokens.textTertiary.color.opacity(0.5), lineWidth: 1.5)
+                .frame(width: 9, height: 9)
+                .accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder
+    private var pulsingDot: some View {
+        let dot = Circle()
+            .fill(Tokens.accent.color)
+            .frame(width: 9, height: 9)
+            .accessibilityHidden(true)
+
+        // A `PhaseAnimator` for the same reason ``SyncDot`` uses one: it confines the
+        // animation to the dot's own opacity, so a relayout as a step lands or the panel
+        // resizes is never swept into an endless autoreverse. Mounted only when motion is
+        // allowed, so nothing runs under Reduce Motion.
+        if reduceMotion {
+            dot
+        } else {
+            dot.phaseAnimator([false, true]) { content, isDim in
+                content.opacity(isDim ? 0.3 : 1)
+            } animation: { _ in
+                .easeInOut(duration: 0.6)
+            }
+        }
+    }
+}
+
 /// Design 1e: nothing connected yet.
 struct ConnectPromptView: View {
     var prompt: ConnectPrompt

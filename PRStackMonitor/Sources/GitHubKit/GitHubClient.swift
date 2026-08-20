@@ -103,6 +103,11 @@ public struct PullRequestFetch: Equatable, Sendable {
     /// GitHub's accounting as of the last page.
     public var rateLimit: RateLimit?
     public var warnings: [FetchWarning]
+    /// GitHub's own count of everything the search matches — its `issueCount`, as of the
+    /// last page. Nil when no page landed to report one. It is the denominator the first-sync
+    /// stepper shows as "12 of 47"; the paging cap and the point budget mean the fetch itself
+    /// may hold fewer than this, which is exactly why the total is worth stating.
+    public var searchTotal: Int?
 
     public init(
         viewerLogin: String,
@@ -112,7 +117,8 @@ public struct PullRequestFetch: Equatable, Sendable {
         stopReason: FetchStopReason,
         pointsSpent: Int,
         rateLimit: RateLimit?,
-        warnings: [FetchWarning]
+        warnings: [FetchWarning],
+        searchTotal: Int? = nil
     ) {
         self.viewerLogin = viewerLogin
         self.pullRequests = pullRequests
@@ -122,6 +128,7 @@ public struct PullRequestFetch: Equatable, Sendable {
         self.pointsSpent = pointsSpent
         self.rateLimit = rateLimit
         self.warnings = warnings
+        self.searchTotal = searchTotal
     }
 
     /// What ``PRStackCore`` derives from, **before** Linear resolution.
@@ -268,12 +275,19 @@ public struct GitHubClient {
     /// instead of starting again at the full allowance. Omitting it gives this search a
     /// budget of its own, which is right for a single search and wrong for a poll made of
     /// three.
+    ///
+    /// `stage`/`progress` are the first-sync stepper's, and both optional: with no reporter
+    /// this pages exactly as it always has. When given, the reporter is told the step began,
+    /// then handed a running count and GitHub's `issueCount` total after each page, then told
+    /// it finished — so the panel can say "12 of 47" while the pages are still landing.
     public func fetchPullRequests(
         scope: RepoScope,
         includesDrafts: Bool = false,
         extraQualifiers: [String] = [],
         startingAfter cursor: String? = nil,
-        budget shared: PointBudget? = nil
+        budget shared: PointBudget? = nil,
+        stage: SyncStage? = nil,
+        progress: SyncProgressReporter? = nil
     ) async throws -> PullRequestFetch {
         guard let query = SearchQuery.build(
             scope: scope,
@@ -281,7 +295,9 @@ public struct GitHubClient {
             extraQualifiers: extraQualifiers
         ) else {
             // An empty selection is not the same query as `all`, and must not be run as
-            // one. No request goes out.
+            // one. No request goes out — and the step, having nothing to do, is skipped
+            // rather than shown running against a search that never happens.
+            if let stage { progress?(.skipped(stage)) }
             return PullRequestFetch(
                 viewerLogin: "",
                 pullRequests: [],
@@ -293,6 +309,8 @@ public struct GitHubClient {
                 warnings: droppedWarnings(for: scope)
             )
         }
+
+        if let stage { progress?(.began(stage)) }
 
         var warnings = query.droppedRepositories.map(FetchWarning.repositoryDropped)
         var budget = shared ?? PointBudget(points: configuration.pointBudget)
@@ -307,6 +325,8 @@ public struct GitHubClient {
         var pages = 0
         var nextCursor = cursor
         var stopReason: FetchStopReason = .complete
+        // GitHub's `issueCount` from the last page that reported one — the stepper's total.
+        var searchTotal: Int?
         // Reduced, never restored, for the rest of this pagination: an account whose page of
         // 50 GitHub could not compute will not compute page eight of 50 either. Smaller pages
         // mean the page cap covers fewer pull requests, which is what `nextCursor` and the
@@ -410,6 +430,13 @@ public struct GitHubClient {
                 }
             }
 
+            // Reported per page and kept: the count is stable across pages of one search, but
+            // a page GitHub failed the connection on carries none, so the last real one holds.
+            if let reported = payload.search?.issueCount { searchTotal = reported }
+            if let stage {
+                progress?(.advanced(stage, found: collected.count, total: searchTotal))
+            }
+
             // A null `search` means GitHub failed the connection and said why in `errors`,
             // which are already banked as warnings above. Treating it as the end of
             // pagination is right: there is no cursor to go on with.
@@ -454,6 +481,11 @@ public struct GitHubClient {
             }
         }
 
+        // Finished however pagination stopped — completed, capped, or interrupted after
+        // banking pages. The one exit that does not reach here is the first-page outage that
+        // throws above, which is a failure the step must not report as a tidy finish.
+        if let stage { progress?(.finished(stage)) }
+
         return PullRequestFetch(
             viewerLogin: viewerLogin,
             pullRequests: collected,
@@ -462,7 +494,8 @@ public struct GitHubClient {
             stopReason: stopReason,
             pointsSpent: spent,
             rateLimit: rateLimit,
-            warnings: warnings
+            warnings: warnings,
+            searchTotal: searchTotal
         )
     }
 

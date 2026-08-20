@@ -74,6 +74,10 @@ struct PanelView: View {
                 onConnectLinear: { controller.openSettings() }
             )
             .frame(minHeight: Tokens.Panel.minBodyHeight)
+
+        case .syncing(let progress):
+            SyncProgressView(progress: progress)
+                .frame(minHeight: Tokens.Panel.minBodyHeight)
         }
     }
 

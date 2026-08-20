@@ -311,6 +311,46 @@ public struct AllClearMessage: Equatable, Sendable {
     }
 }
 
+/// One line of the first-sync checklist: a labelled step, its state, and its running count.
+///
+/// A skipped step never becomes one of these — it is dropped from the list entirely, the
+/// same way the connect prompt drops the button for an account that is already connected.
+/// So the state here is only the three a visible step can be in.
+public struct SyncStepPresentation: Equatable, Sendable {
+    public enum State: Equatable, Sendable {
+        /// Not started. Shown only for the two searches, which always run.
+        case pending
+        case active
+        case done
+    }
+
+    public var stage: SyncStage
+    public var title: String
+    public var state: State
+    /// `12 of 47`, `8 merges`, or nil while a step is only pending. The counterpart of the
+    /// footer's `synced 34s ago`: what the step is doing, said in the fewest words that
+    /// still carry a number.
+    public var detail: String?
+
+    public init(stage: SyncStage, title: String, state: State, detail: String? = nil) {
+        self.stage = stage
+        self.title = title
+        self.state = state
+        self.detail = detail
+    }
+}
+
+/// The whole first-sync progress view: a short heading and the ordered step list.
+public struct SyncProgressPresentation: Equatable, Sendable {
+    public var title: String
+    public var steps: [SyncStepPresentation]
+
+    public init(title: String, steps: [SyncStepPresentation]) {
+        self.title = title
+        self.steps = steps
+    }
+}
+
 // MARK: - Panel
 
 public struct PanelPresentation: Equatable, Sendable {
@@ -324,6 +364,12 @@ public struct PanelPresentation: Equatable, Sendable {
         case allClear(AllClearMessage)
         /// Never connected. No rows exist to be honest or stale about.
         case connect(ConnectPrompt)
+        /// The first sync is running and there is nothing to draw yet, so the content area
+        /// shows what the poll is doing rather than an empty invitation to connect an account
+        /// that is already connected. Only ever the *first* sync — once one has landed the
+        /// panel has rows, and a steady-state poll refreshes them under an open panel with the
+        /// footer's `syncing…` doing the announcing.
+        case syncing(SyncProgressPresentation)
     }
 
     public var header: HeaderPresentation
@@ -349,7 +395,16 @@ public struct PanelPresentation: Equatable, Sendable {
         self.attentionCount = attentionCount
     }
 
-    public static func make(model: PanelModel, status: PanelStatus, now: Date) -> PanelPresentation {
+    /// `syncProgress` is non-nil only while the *first* sync is in flight — the caller
+    /// tracks that and passes nil the rest of the time. It is what turns the empty content
+    /// area into the step checklist; a nil one leaves the connect/all-clear decision exactly
+    /// as it was, which is why every existing caller and golden is unaffected.
+    public static func make(
+        model: PanelModel,
+        status: PanelStatus,
+        now: Date,
+        syncProgress: SyncProgress? = nil
+    ) -> PanelPresentation {
         let sections = model.sections.map { section in
             SectionPresentation(
                 kind: section.kind,
@@ -370,7 +425,7 @@ public struct PanelPresentation: Equatable, Sendable {
                 isRefreshing: status.isRefreshing
             ),
             banner: banner(for: status.github),
-            body: body(sections: sections, status: status),
+            body: body(sections: sections, status: status, syncProgress: syncProgress),
             footer: footer(model: model, status: status, now: now),
             attentionCount: status.github.isConnected ? model.attentionCount : 0
         )
@@ -378,8 +433,30 @@ public struct PanelPresentation: Equatable, Sendable {
 
     // MARK: Body
 
-    private static func body(sections: [SectionPresentation], status: PanelStatus) -> Body {
+    private static func body(
+        sections: [SectionPresentation],
+        status: PanelStatus,
+        syncProgress: SyncProgress?
+    ) -> Body {
         if !sections.isEmpty { return .sections(sections) }
+
+        // The first sync, in flight, with something to say. All three conditions matter:
+        //
+        // - a poll actually running (`isRefreshing`), so the steps are describing work that
+        //   is happening rather than a picture frozen at whatever the last poll reached;
+        // - nothing synced *ever* (`lastSyncedAt == nil`), because this is the initial-sync
+        //   view — once a sync has landed the panel has rows, and a later poll refreshes them
+        //   in place while the footer says `syncing…`;
+        // - a GitHub credential to sync *with*, so a launch with no token stays on the connect
+        //   prompt instead of flashing "Finding pull requests" for a request that never goes.
+        if status.isRefreshing,
+           status.lastSyncedAt == nil,
+           status.hasGitHubCredential,
+           let syncProgress,
+           let progress = syncingProgress(from: syncProgress) {
+            return .syncing(progress)
+        }
+
         // "Everything's clear" is a claim about the user's pull requests, so the panel may
         // only make it once it has actually seen them. What licenses the claim is a
         // *completed sync*, not the health of the connection right now:
@@ -445,6 +522,71 @@ public struct PanelPresentation: Equatable, Sendable {
             githubActionTitle: needsGitHub ? "Connect GitHub" : nil,
             linearActionTitle: needsLinear ? "Connect Linear" : nil
         )
+    }
+
+    // MARK: Syncing
+
+    /// The first-sync checklist, or nil when there is nothing worth showing.
+    ///
+    /// A step is shown once it is no longer merely pending — active or done — and always for
+    /// the two searches, which run on every poll. A *skipped* step never appears: the tag and
+    /// Linear steps only exist when there is work for them, and revealing one and then taking
+    /// it away is the flicker this rule avoids. Nil comes back only if even the searches have
+    /// nothing to show, which is the empty-scope poll that has no business drawing a stepper.
+    static func syncingProgress(from progress: SyncProgress) -> SyncProgressPresentation? {
+        let steps = SyncStage.allCases.compactMap { stage -> SyncStepPresentation? in
+            let step = progress.step(stage)
+            switch step.lifecycle {
+            case .skipped:
+                return nil
+            case .pending:
+                // Only the always-run steps are worth showing before they begin; a
+                // conditional one that never began might be about to be skipped.
+                guard stage.isAlwaysRun else { return nil }
+                return SyncStepPresentation(stage: stage, title: title(for: stage), state: .pending)
+            case .active:
+                return SyncStepPresentation(
+                    stage: stage,
+                    title: title(for: stage),
+                    state: .active,
+                    detail: detail(for: stage, step: step)
+                )
+            case .done:
+                return SyncStepPresentation(
+                    stage: stage,
+                    title: title(for: stage),
+                    state: .done,
+                    detail: detail(for: stage, step: step)
+                )
+            }
+        }
+        guard !steps.isEmpty else { return nil }
+        return SyncProgressPresentation(title: "Syncing your pull requests", steps: steps)
+    }
+
+    private static func title(for stage: SyncStage) -> String {
+        switch stage {
+        case .openPullRequests: return "Finding open pull requests"
+        case .mergedPullRequests: return "Finding merged pull requests"
+        case .releaseTags: return "Checking release tags"
+        case .linearProjects: return "Grouping by project"
+        }
+    }
+
+    /// What the step says beside its title. The searches carry a real "of N" from GitHub's
+    /// `issueCount`; the tag and Linear steps carry a plain count of the work in hand, with
+    /// its own unit so a bare number never has to stand for two different things.
+    private static func detail(for stage: SyncStage, step: SyncProgress.Step) -> String? {
+        switch stage {
+        case .openPullRequests, .mergedPullRequests:
+            guard let found = step.found else { return nil }
+            if let total = step.total { return "\(found) of \(total)" }
+            return "\(found)"
+        case .releaseTags:
+            return step.found.map { "\($0) merge\($0 == 1 ? "" : "s")" }
+        case .linearProjects:
+            return step.found.map { "\($0) issue\($0 == 1 ? "" : "s")" }
+        }
     }
 
     // MARK: Header

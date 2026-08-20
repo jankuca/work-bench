@@ -83,13 +83,19 @@ public struct GitHubPoll {
     /// is a patch over what the caller already has and says so
     /// (``GitHubPollResult/isResumed``); handing it back ``SweepCursors/none`` is a poll that
     /// starts at page one, which is every poll after a sweep that finished.
+    ///
+    /// `progress` is the first-sync stepper's reporter, threaded to the two searches (which
+    /// report their own running counts) and used here for the release-tags step. Optional,
+    /// and nil on every steady-state poll: with no reporter this runs exactly as it did
+    /// before the stepper existed.
     public func run(
         scope: RepoScope,
         includesDrafts: Bool = false,
         local: LocalState,
         refreshed: KnownPullRequestFetch = .empty,
         resuming cursors: SweepCursors = .none,
-        now: Date
+        now: Date,
+        progress: SyncProgressReporter? = nil
     ) async throws -> GitHubPollResult {
         // One budget for the whole poll rather than one per search. Each search used to be
         // given the full allowance, and the priority refresh none at all, so a poll could
@@ -110,7 +116,8 @@ public struct GitHubPoll {
             scope: scope,
             includesDrafts: includesDrafts,
             startingAfter: resumed.open,
-            budget: budget
+            budget: budget,
+            progress: progress
         )
         budget.record(open.pointsSpent)
         let closed = try await client.fetchClosedPullRequests(
@@ -119,7 +126,8 @@ public struct GitHubPoll {
             unbound: local.unboundMerges,
             now: now,
             startingAfter: resumed.closed,
-            budget: budget
+            budget: budget,
+            progress: progress
         )
 
         var pullRequests: [PullRequest] = []
@@ -183,13 +191,25 @@ public struct GitHubPoll {
             // it would cost the *open* list its next poll, which is the half of the panel
             // that is time-sensitive.
             if isBelowFloor {
+                // Deferred, so the step never runs and never shows.
+                progress?(.skipped(.releaseTags))
                 let limit = recovered.rateLimit ?? closed.rateLimit ?? open.rateLimit
                 let counts = limit.map { "(\($0.remaining) of \($0.limit) points left)" } ?? ""
                 release.warnings = [
                     .releaseTrackingDeferred(reason: "GitHub allowance low \(counts)".trimmingCharacters(in: .whitespaces))
                 ]
             } else {
-                release = try await tracker.poll(unbound: working.unboundMerges, now: now)
+                let pending = working.unboundMerges
+                // The step only exists when there is a merge to place; an empty poll runs the
+                // tracker (it returns quickly) but shows nothing for it.
+                if pending.isEmpty {
+                    progress?(.skipped(.releaseTags))
+                } else {
+                    progress?(.began(.releaseTags))
+                    progress?(.advanced(.releaseTags, found: pending.count, total: pending.count))
+                }
+                release = try await tracker.poll(unbound: pending, now: now)
+                if !pending.isEmpty { progress?(.finished(.releaseTags)) }
             }
         }
 

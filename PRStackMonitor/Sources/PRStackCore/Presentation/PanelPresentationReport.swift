@@ -42,6 +42,19 @@ public enum PanelPresentationReport {
                     + " github=\(prompt.githubActionTitle.map(quoted) ?? "-")"
                     + " linear=\(prompt.linearActionTitle.map(quoted) ?? "-")"
             )
+        case .syncing(let progress):
+            // The dump never reaches this state — it renders finished fixtures, which have
+            // rows — so no golden pins it. The branch exists so the switch stays exhaustive,
+            // and renders the checklist the same flat way for the unit test that drives it
+            // directly.
+            lines.append("syncing title=\(quoted(progress.title))")
+            for step in progress.steps {
+                lines.append(
+                    "  step stage=\(step.stage.rawValue)"
+                        + " state=\(render(step.state))"
+                        + " detail=\(step.detail.map(quoted) ?? "-")"
+                )
+            }
         }
 
         // `linear=`, `syncing=` and `error=` are emitted only when there is something to
@@ -56,6 +69,14 @@ public enum PanelPresentationReport {
         footer.append("markAllRead=\(panel.footer.showsMarkAllRead)")
         lines.append(footer.joined(separator: " "))
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    private static func render(_ state: SyncStepPresentation.State) -> String {
+        switch state {
+        case .pending: return "pending"
+        case .active: return "active"
+        case .done: return "done"
+        }
     }
 
     private static func render(_ section: SectionPresentation) -> String {
