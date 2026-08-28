@@ -54,6 +54,14 @@ public enum FetchWarning: Equatable, Sendable, CustomStringConvertible {
     /// The priority refresh of the rows already on screen did not answer. Nothing is lost
     /// but latency: the searches behind it cover the same rows.
     case priorityRefreshFailed(reason: String)
+    /// A merge into another pull request's branch could not be followed this poll. The row
+    /// keeps saying `awaiting release`, which is where it already was, and a later poll
+    /// asks again.
+    case baseBranchUnresolved(reason: String)
+    /// More than one pull request claims the branch a merge landed on, so which one it
+    /// went into cannot be told. Left unresolved deliberately — the release binding downstream of
+    /// this is permanent.
+    case baseBranchAmbiguous(repository: String, branch: String)
 
     public var description: String {
         switch self {
@@ -71,6 +79,13 @@ public enum FetchWarning: Equatable, Sendable, CustomStringConvertible {
                 + "a release cut before those may not be found yet"
         case .comparisonBudgetExhausted(let spent, let limit):
             return "spent \(spent) of \(limit) release comparisons this poll; the rest resumes next poll"
+        case .baseBranchUnresolved(let reason):
+            return "could not follow a merge to the pull request it went into: \(reason)"
+        case .baseBranchAmbiguous(let repository, let branch):
+            // Count-neutral: the resolver reports this for any candidate count other than
+            // one, and it reads up to `candidatesPerBranch` of them.
+            return "more than one pull request in \(repository) claims '\(branch)'; "
+                + "not guessing which one the merge went into"
         case .releaseTrackingFailed(let repository, let reason):
             return "could not check \(repository)'s releases: \(reason)"
         case .releaseTrackingDeferred(let reason):

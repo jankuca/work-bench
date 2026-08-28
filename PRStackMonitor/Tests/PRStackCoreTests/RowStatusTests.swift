@@ -122,11 +122,24 @@ final class RowStatusTests: XCTestCase {
         XCTAssertEqual(Set(attention), Set<RowStatus>([.conflicted, .changesRequested, .checksFailing]))
     }
 
-    func testOnlyClosedAndShippedBelongInDone() {
+    /// Done holds the statuses nothing further will be learned about. `mergedUntracked`
+    /// joins the two obvious ones: it merged onto a branch whose releases cannot be
+    /// followed, so there is no signal still coming and leaving it in the live list would
+    /// recreate the row that says `awaiting release` forever.
+    func testOnlyTerminalStatusesBelongInDone() {
         let done = RowStatus
             .allCases(sampleParent: parent, sampleTag: "v1.0.0")
             .filter(\.belongsInDone)
-        XCTAssertEqual(Set(done), Set<RowStatus>([.closed, .shipped(tag: "v1.0.0")]))
+        XCTAssertEqual(
+            Set(done),
+            Set<RowStatus>([.closed, .shipped(tag: "v1.0.0"), .mergedUntracked])
+        )
+    }
+
+    /// `merged` specifically does *not*: it is still in flight, waiting for a release tag,
+    /// and it is what the header's "N shipping" counts.
+    func testAMergeAwaitingATagIsNotDone() {
+        XCTAssertFalse(RowStatus.merged.belongsInDone)
     }
 
     func testNoStatusIsBothAttentionAndDone() {

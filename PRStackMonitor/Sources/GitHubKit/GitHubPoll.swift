@@ -26,22 +26,28 @@ public struct GitHubPoll {
     private let tracker: (any ReleaseTracker)?
     private let recovery: MergeCommitRecovery?
     private let priority: PriorityRefresh?
+    private let baseBranches: BaseBranchResolver?
 
     /// `tracker` is optional so a poll can run without release tracking — that is what the
     /// debug dump does by default, and what a build with no `Contents: read` scope would
     /// have to do. `recovery` is the §3 fallback for a merged pull request GitHub reports no
     /// merge commit for; it costs nothing when there is none. `priority` is the refresh
-    /// above; without one a poll is exactly what it was before it existed.
+    /// above; without one a poll is exactly what it was before it existed. `baseBranches`
+    /// follows a merge that landed on somebody else's branch to the pull request that owns
+    /// it — the one question the searches cannot answer, since both of them carry
+    /// `author:@me` and neither will ever return a colleague's pull request.
     public init(
         client: GitHubClient,
         tracker: (any ReleaseTracker)? = nil,
         recovery: MergeCommitRecovery? = nil,
-        priority: PriorityRefresh? = nil
+        priority: PriorityRefresh? = nil,
+        baseBranches: BaseBranchResolver? = nil
     ) {
         self.client = client
         self.tracker = tracker
         self.recovery = recovery
         self.priority = priority
+        self.baseBranches = baseBranches
     }
 
     /// Phase one: the rows named by `ids`, refreshed in one request.
@@ -184,6 +190,24 @@ public struct GitHubPoll {
         var working = local
         working.recordMerges(from: pullRequests)
 
+        // A merge that landed on another pull request's branch has nothing on trunk for a
+        // tag to contain — a squash further up rewrote it away — so it is followed to
+        // whatever *did* land instead. Chains inside the snapshot resolve for free in
+        // derivation; this is only for the ones that leave it, which in practice means a
+        // pull request opened on top of somebody else's (IMPLEMENTATION_PLAN §3).
+        var resolution = BaseBranchResolution.empty
+        if let baseBranches, !isBelowFloor {
+            let unresolved = MergeChain.unresolved(among: pullRequests, local: working, now: now)
+            if !unresolved.isEmpty {
+                resolution = try await baseBranches.resolve(unresolved, now: now)
+                isBelowFloor = resolution.rateLimit?.isBelowFloor ?? isBelowFloor
+                // Applied to the working copy before the tracker runs, so a chain resolved
+                // this poll is compared against the commit it actually put on trunk on the
+                // same poll rather than the next one.
+                working.apply(resolution)
+            }
+        }
+
         var release = ReleaseTrackerResult.empty
         if let tracker {
             // Below the floor the comparison budget drops to zero as well. A merge that has
@@ -199,7 +223,16 @@ public struct GitHubPoll {
                     .releaseTrackingDeferred(reason: "GitHub allowance low \(counts)".trimmingCharacters(in: .whitespaces))
                 ]
             } else {
-                let pending = working.unboundMerges
+                // Not every unbound merge is worth a comparison. One waiting on another
+                // pull request binds by inheriting that pull request's release, and one
+                // whose chain was abandoned never binds at all — testing either against
+                // every new tag is the cost that made a stranded row expensive as well as
+                // wrong.
+                let pending = MergeChain.comparable(
+                    working.unboundMerges,
+                    among: pullRequests,
+                    local: working
+                )
                 // The step only exists when there is a merge to place; an empty poll runs the
                 // tracker (it returns quickly) but shows nothing for it.
                 if pending.isEmpty {
@@ -223,6 +256,7 @@ public struct GitHubPoll {
             closed: closed,
             release: release,
             recovery: recovered,
+            baseBranches: resolution,
             priority: refreshed,
             resumedFrom: resumed,
             cursors: SweepCursors.next(
@@ -278,6 +312,10 @@ public struct GitHubPollResult: Equatable, Sendable {
     /// Merge commits recovered from trunk. Already applied to ``pullRequests`` — this is
     /// here so the dump and the footer can say that it happened.
     public var recovery: MergeCommitRecoveryResult
+    /// What the merges that landed on another pull request's branch were followed to.
+    /// Not applied to ``pullRequests`` — it is state, not row data, and the caller folds it
+    /// into `LocalState` along with everything else.
+    public var baseBranches: BaseBranchResolution
     /// The priority refresh this poll ran ahead of the searches, already merged into
     /// ``pullRequests``. Here for its points, its warnings and the diagnostics.
     public var priority: KnownPullRequestFetch
@@ -294,6 +332,7 @@ public struct GitHubPollResult: Equatable, Sendable {
         closed: PullRequestFetch,
         release: ReleaseTrackerResult = .empty,
         recovery: MergeCommitRecoveryResult = .empty,
+        baseBranches: BaseBranchResolution = .empty,
         priority: KnownPullRequestFetch = .empty,
         resumedFrom: SweepCursors = .none,
         cursors: SweepCursors = .none
@@ -304,6 +343,7 @@ public struct GitHubPollResult: Equatable, Sendable {
         self.closed = closed
         self.release = release
         self.recovery = recovery
+        self.baseBranches = baseBranches
         self.priority = priority
         self.resumedFrom = resumedFrom
         self.cursors = cursors
@@ -324,18 +364,20 @@ public struct GitHubPollResult: Equatable, Sendable {
 
     /// In the order the requests went out, so a footer or a dump reads chronologically.
     public var warnings: [FetchWarning] {
-        priority.warnings + open.warnings + closed.warnings + recovery.warnings + release.warnings
+        priority.warnings + open.warnings + closed.warnings
+            + recovery.warnings + baseBranches.warnings + release.warnings
     }
 
     /// GraphQL points across the refresh, both searches and the tag queries.
     public var pointsSpent: Int {
         priority.pointsSpent + open.pointsSpent + closed.pointsSpent
-            + recovery.pointsSpent + release.pointsSpent
+            + recovery.pointsSpent + baseBranches.pointsSpent + release.pointsSpent
     }
 
     /// The most recent accounting any of them reported.
     public var rateLimit: RateLimit? {
-        release.rateLimit ?? closed.rateLimit ?? open.rateLimit ?? priority.rateLimit
+        release.rateLimit ?? baseBranches.rateLimit ?? closed.rateLimit
+            ?? open.rateLimit ?? priority.rateLimit
     }
 
     /// True when both searches ran to completion. When false the footer says so rather than
@@ -344,10 +386,20 @@ public struct GitHubPollResult: Equatable, Sendable {
         open.stopReason.isComplete && closed.stopReason.isComplete
     }
 
-    /// Folds the poll into local state: the merges it found, then the releases they bound
-    /// to. The single writer calls this, and nothing else writes either key.
+    /// Folds the poll into local state: the merges it found, where the nested ones
+    /// actually landed, then the releases they bound to. The single writer calls this, and
+    /// nothing else writes any of these keys.
+    ///
+    /// The order is not incidental. Recording comes first because a merge has to exist
+    /// before it can be re-pointed; the anchors come next because they are what decides
+    /// *which* commit a tag has to contain; then the bindings, which retire the record both
+    /// of the others just wrote; and last the stacks those bindings carried with them,
+    /// which can only be read once the release they inherit has been written.
     public func apply(to local: inout LocalState) {
         local.recordMerges(from: pullRequests)
+        local.apply(baseBranches)
         local.apply(release)
+        // Last, so a parent that bound on this very poll takes its whole stack with it.
+        local.bindInheritedReleases(from: pullRequests)
     }
 }

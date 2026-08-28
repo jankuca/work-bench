@@ -194,6 +194,13 @@ public struct LocalState: Equatable, Sendable {
     public var releaseBindings: [PRID: String]
     /// Merged pull requests still waiting for a tag, keyed the same way as everything else.
     public var unboundMerges: [PRID: UnboundMerge]
+    /// What became of the branch a nested merge landed on, for the chains the snapshot
+    /// cannot follow on its own — see ``MergeAnchor``.
+    ///
+    /// Persisted for the same reason the bindings are. A settled answer is a fact about a
+    /// pull request that has already merged, so re-asking GitHub for it on every launch
+    /// would spend a request to learn something that cannot have changed.
+    public var mergeAnchors: [PRID: MergeAnchor]
     /// The rows the panel last drew, in the order the next poll should refresh them.
     ///
     /// The one entry here that is not the user's own doing, and the only one that is a
@@ -213,6 +220,7 @@ public struct LocalState: Equatable, Sendable {
         readDigests: [PRID: ReadDigest] = [:],
         releaseBindings: [PRID: String] = [:],
         unboundMerges: [PRID: UnboundMerge] = [:],
+        mergeAnchors: [PRID: MergeAnchor] = [:],
         displayed: [PRID] = []
     ) {
         self.dismissed = dismissed
@@ -220,6 +228,7 @@ public struct LocalState: Equatable, Sendable {
         self.readDigests = readDigests
         self.releaseBindings = releaseBindings
         self.unboundMerges = unboundMerges
+        self.mergeAnchors = mergeAnchors
         self.displayed = displayed
     }
 
@@ -271,11 +280,12 @@ public struct LocalState: Equatable, Sendable {
             snapshot.pullRequests.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
         )
+        let index = MergeChain.headIndex(snapshot.pullRequests)
         for id in ids {
             guard let pullRequest = byID[id] else { continue }
             // Read `self` fully before mutating it, rather than nesting the lookup inside
             // the subscript assignment.
-            let stage = Derivation.releaseStage(for: pullRequest, local: self)
+            let stage = Derivation.releaseStage(for: pullRequest, in: index, local: self)
             let digest = ReadDigest.make(for: pullRequest, releaseStage: stage)
             readDigests[id] = digest
         }
@@ -337,10 +347,31 @@ public struct LocalState: Equatable, Sendable {
                   // A dismissed row is suppressed forever, so binding it to a tag would
                   // spend comparisons on something that can never appear again.
                   !dismissed.contains(pullRequest.id),
+                  // The chain this merge sits in has finished without a release — it was
+                  // abandoned, or it landed somewhere untrackable and spent its allowance.
+                  // Re-recording it here is what would otherwise undo that on the next poll.
+                  !hasFinishedReleaseTracking(pullRequest.id),
                   let commit = pullRequest.mergeCommit,
                   !commit.isEmpty,
                   let mergedAt = pullRequest.mergedAt
             else { continue }
+
+            // A chain that has reached trunk is tracked against the commit it put *there*,
+            // never against this row's own — which is the whole point, because a squash
+            // further up may have rewritten that one away.
+            //
+            // This has to be re-asserted on every poll rather than done once when the
+            // anchor lands. The row keeps reporting its own merge commit for as long as it
+            // is in the snapshot, so the plain re-record below would overwrite the
+            // retargeted commit every poll — and take `comparedTags` with it, since the
+            // commit changed. The tracker would then re-test every candidate tag, every
+            // poll, forever, against a commit no tag can contain. Nothing else would put it
+            // right either: a landed anchor is settled, so the resolver never re-answers
+            // and `retarget` would never run again.
+            if case .landed(_, let trunkCommit, let landedAt) = mergeAnchors[pullRequest.id]?.outcome {
+                retarget(pullRequest.id, toTrunkCommit: trunkCommit, mergedAt: landedAt)
+                continue
+            }
 
             if let existing = unboundMerges[pullRequest.id], existing.mergeCommit == commit {
                 unboundMerges[pullRequest.id]?.mergedAt = mergedAt
@@ -364,6 +395,9 @@ public struct LocalState: Equatable, Sendable {
         for id in removed {
             dismissed.insert(id)
             unboundMerges[id] = nil
+            // Nothing will ever ask about this row's chain again, and the answer is only
+            // ever read to draw it.
+            mergeAnchors[id] = nil
             // A dismissed row never renders again, so its wake time has nothing left to
             // wake. Left behind it would sit in the file forever, since nothing else ever
             // looks the id up again.
@@ -380,11 +414,113 @@ public struct LocalState: Equatable, Sendable {
         dismiss(CollectionOfOne(id))
     }
 
+    /// Records what became of the branch a nested merge landed on, and acts on it.
+    ///
+    /// The two halves belong together, the same way dismissal and its cleanup do. An
+    /// anchor is not a note: `landed` is the only thing that makes the pull request
+    /// comparable at all, and `abandoned` is the only thing that makes it stop.
+    public mutating func recordAnchor(_ anchor: MergeAnchor, for id: PRID) {
+        guard !dismissed.contains(id), releaseBindings[id] == nil else { return }
+        // A settled answer is a fact about a pull request that has already merged, so
+        // nothing later can improve on it — and an unsettled one replacing it would be a
+        // strict loss: `landed` carries the trunk commit the whole binding depends on, and
+        // overwriting that with "could not answer this time" would strand the row for good.
+        // ``MergeChain/unresolved(among:local:now:backoff:limit:)`` does not re-ask a
+        // settled chain, so this only closes the door on a caller that does.
+        if let existing = mergeAnchors[id]?.outcome, existing.isSettled, !anchor.outcome.isSettled {
+            return
+        }
+        mergeAnchors[id] = anchor
+
+        switch anchor.outcome {
+        case .landed(_, let commit, let mergedAt):
+            retarget(id, toTrunkCommit: commit, mergedAt: mergedAt)
+        case .abandoned:
+            // Nothing left to compare, and the record is what drags the closed search's
+            // lower bound backwards and holds the app at the awaiting-release cadence.
+            unboundMerges[id] = nil
+        case .pending, .untracked, .unresolved:
+            break
+        }
+    }
+
+    /// Points a nested merge's release tracking at the commit its chain actually put on
+    /// trunk, rather than at its own merge commit.
+    ///
+    /// This is the whole of what makes a squashed chain bindable. The pull request's own
+    /// merge commit is on a branch that the squash rewrote away, so no tag will ever
+    /// contain it; the commit the chain's root put on trunk is on trunk by definition, and
+    /// the earliest tag containing it is the release this pull request shipped in.
+    ///
+    /// The compared-tag set is dropped when the commit changes, and that is load-bearing
+    /// rather than tidy: those negatives were recorded against a commit no tag was ever
+    /// going to contain, and carrying them over would silently skip the very tag that
+    /// contains the new one.
+    public mutating func retarget(_ id: PRID, toTrunkCommit commit: String, mergedAt: Date) {
+        guard releaseBindings[id] == nil, !dismissed.contains(id), !commit.isEmpty else { return }
+        if let existing = unboundMerges[id], existing.mergeCommit == commit {
+            unboundMerges[id]?.mergedAt = mergedAt
+            return
+        }
+        unboundMerges[id] = UnboundMerge(mergeCommit: commit, mergedAt: mergedAt)
+    }
+
     /// Binds a pull request to the release it shipped in. Permanent, and it retires the
     /// unbound record — including its compared-tag set, which has nothing left to bound.
     public mutating func bind(_ id: PRID, toRelease tag: String) {
         releaseBindings[id] = tag
         unboundMerges[id] = nil
+        // The anchor answered "where did this land"; the binding answers "and which release
+        // contains it", which is strictly more. Nothing reads the anchor again — derivation
+        // short-circuits on the binding before it ever gets there.
+        mergeAnchors[id] = nil
+    }
+
+    /// Writes down the releases that nested merges inherited from the pull requests they
+    /// merged into.
+    ///
+    /// Derivation works this out on its own from the snapshot, so it would be tempting to
+    /// leave it derived. It cannot be. The proof lives in the snapshot — the parent row —
+    /// and the snapshot is bounded by the closed search's lower bound, which *shrinks* as
+    /// merges bind. So the parent eventually stops being fetched, and a purely derived
+    /// answer would flip the child back to `awaiting release` months after it shipped, with
+    /// nothing left to work it out from a second time.
+    ///
+    /// Writing it down also ends the row's cost: ``bind(_:toRelease:)`` retires the unbound
+    /// record, which is what was dragging the closed search's lower bound backwards and
+    /// holding the app at the awaiting-release cadence.
+    ///
+    /// One pass is enough for a chain of any depth. The walk goes all the way to the root
+    /// before it answers, so a leaf three levels down reads the root's binding directly
+    /// rather than waiting for the level above it to be written first.
+    public mutating func bindInheritedReleases<PullRequests: Sequence>(
+        from pullRequests: PullRequests
+    ) where PullRequests.Element == PullRequest {
+        let all = Array(pullRequests)
+        let index = MergeChain.headIndex(all)
+
+        // Collected before anything is written: `nestedStage` reads `releaseBindings`, and
+        // binding as we go would let one row's answer depend on where another happened to
+        // sit in the iteration order.
+        var inherited: [PRID: String] = [:]
+        for pullRequest in all {
+            guard pullRequest.state == .merged,
+                  releaseBindings[pullRequest.id] == nil,
+                  !dismissed.contains(pullRequest.id),
+                  MergeChain.isNested(pullRequest)
+            else { continue }
+            guard case .released(let tag) = MergeChain.nestedStage(
+                for: pullRequest,
+                in: index,
+                local: self
+            ) else { continue }
+            inherited[pullRequest.id] = tag
+        }
+
+        for id in inherited.keys.sorted(by: PRID.panelOrder) {
+            guard let tag = inherited[id] else { continue }
+            bind(id, toRelease: tag)
+        }
     }
 
     /// Records that `tag` was tested against this pull request's merge commit and did not
@@ -392,6 +528,38 @@ public struct LocalState: Equatable, Sendable {
     /// nothing left to compare.
     public mutating func recordComparison(_ id: PRID, against tag: String) {
         unboundMerges[id]?.comparedTags.insert(tag)
+        retireIfAllowanceSpent(id)
+    }
+
+    /// Drops the unbound record of an untracked merge once it has spent its allowance.
+    ///
+    /// ``MergeChain/comparable(_:among:local:)`` already stops *selecting* such a record,
+    /// but stopping there leaves it in the file forever — and the record itself has two
+    /// live effects that have nothing to do with comparisons: it is what
+    /// ``oldestUnboundMergeAt`` reads to hold the closed search's lower bound open, and
+    /// what the app reads to decide it is still awaiting a release and should keep polling
+    /// at the shorter interval. A row that has stopped asking must stop costing, or this
+    /// is the same permanent drag it was written to remove.
+    private mutating func retireIfAllowanceSpent(_ id: PRID) {
+        guard case .untracked = mergeAnchors[id]?.outcome,
+              let merge = unboundMerges[id],
+              merge.comparedTags.count >= MergeChain.untrackedComparisonCap
+        else { return }
+        unboundMerges[id] = nil
+    }
+
+    /// Whether release tracking for this pull request has finished for good.
+    ///
+    /// Two ways to be done without ever binding: the chain was abandoned, or it landed on a
+    /// branch nobody owns and has spent its allowance of tags. The second is read from the
+    /// *absence* of the record rather than from a flag, because retiring it is what being
+    /// done means here — and without this, ``recordMerges(from:)`` would put it straight
+    /// back on the next poll.
+    func hasFinishedReleaseTracking(_ id: PRID) -> Bool {
+        guard let outcome = mergeAnchors[id]?.outcome else { return false }
+        if outcome.stopsComparisons { return true }
+        if case .untracked = outcome, unboundMerges[id] == nil { return true }
+        return false
     }
 
     /// The oldest merge still waiting for a tag, which is the merged query's lower bound.
@@ -408,6 +576,7 @@ extension LocalState: Codable {
         case readDigests
         case releaseBindings
         case unboundMerges
+        case mergeAnchors
         case displayed
     }
 
@@ -424,6 +593,10 @@ extension LocalState: Codable {
         let digests = try container.decodeIfPresent([String: String].self, forKey: .readDigests) ?? [:]
         let bindings = try container.decodeIfPresent([String: String].self, forKey: .releaseBindings) ?? [:]
         let merges = try container.decodeIfPresent([String: UnboundMerge].self, forKey: .unboundMerges) ?? [:]
+        // Absent from every file written before nested merges were followed. An empty map
+        // is exactly right for one: nothing has been resolved, so every nested merge is
+        // asked about once and then settles.
+        let anchors = try container.decodeIfPresent([String: MergeAnchor].self, forKey: .mergeAnchors) ?? [:]
         // Absent from every file written before the priority refresh existed, and from a
         // file written by a launch that never completed a poll. Both mean the same thing:
         // the first poll of this launch has nothing to refresh ahead of its search and is
@@ -435,6 +608,7 @@ extension LocalState: Codable {
             readDigests: LocalState.rekey(digests) { ReadDigest(value: $0) },
             releaseBindings: LocalState.rekey(bindings) { $0 },
             unboundMerges: LocalState.rekey(merges) { $0 },
+            mergeAnchors: LocalState.rekey(anchors) { $0 },
             displayed: displayed.compactMap(PRID.init(rawValue:))
         )
     }
@@ -453,6 +627,7 @@ extension LocalState: Codable {
         try container.encode(LocalState.stringKeyed(readDigests) { $0.value }, forKey: .readDigests)
         try container.encode(LocalState.stringKeyed(releaseBindings) { $0 }, forKey: .releaseBindings)
         try container.encode(LocalState.stringKeyed(unboundMerges) { $0 }, forKey: .unboundMerges)
+        try container.encode(LocalState.stringKeyed(mergeAnchors) { $0 }, forKey: .mergeAnchors)
         // Not sorted, unlike `dismissed`: this list *is* an order — the order the next poll
         // refreshes in — and sorting it would throw away the only thing it says.
         try container.encode(displayed.map(\.rawValue), forKey: .displayed)

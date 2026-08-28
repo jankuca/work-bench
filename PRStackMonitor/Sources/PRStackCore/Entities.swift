@@ -183,6 +183,22 @@ public enum ReleaseStage: Hashable, Sendable {
     case unmerged
     case mergedAwaitingTag
     case released(tag: String)
+    /// Merged into another pull request's branch, and that pull request has not shipped
+    /// yet — it is open, or merged to trunk and waiting for a tag of its own.
+    ///
+    /// The row is still in flight, so it stays out of Done. What it is waiting for is
+    /// named, which `merged · awaiting release` never was: the release it is waiting for
+    /// is not its own.
+    case mergedIntoPullRequest(PRID)
+    /// Merged into a pull request that was then closed without merging. The work never
+    /// reached trunk and no release will ever contain it, so the row is finished.
+    case mergedIntoAbandonedPullRequest(PRID)
+    /// Merged into a branch no pull request owns — a long-lived integration branch.
+    ///
+    /// Nothing can be followed and nothing more will be learned, so the row is finished
+    /// rather than left asking. It is still compared against new tags, under a cap: an
+    /// integration branch merged into trunk with a merge commit does carry the work there.
+    case mergedIntoBranch(String)
     /// Reserved — not produced in v1.
     case deploying(tag: String)
     /// Reserved — not produced in v1.
@@ -194,6 +210,10 @@ public enum ReleaseStage: Hashable, Sendable {
         case .unmerged: return "unmerged"
         case .mergedAwaitingTag: return "mergedAwaitingTag"
         case .released(let tag): return "released:\(tag)"
+        case .mergedIntoPullRequest(let parent): return "mergedIntoPullRequest:\(parent.rawValue)"
+        case .mergedIntoAbandonedPullRequest(let parent):
+            return "mergedIntoAbandonedPullRequest:\(parent.rawValue)"
+        case .mergedIntoBranch(let branch): return "mergedIntoBranch:\(branch)"
         case .deploying(let tag): return "deploying:\(tag)"
         case .deployFailed(let tag): return "deployFailed:\(tag)"
         }
@@ -214,6 +234,13 @@ public struct PullRequest: Equatable, Sendable {
     public var url: URL
     public var headRef: String
     public var baseRef: String
+    /// The repository's default branch, as GitHub reports it.
+    ///
+    /// Carried so that "merged to trunk" can be told from "merged into somebody's branch"
+    /// without guessing at a name. Nil for a pull request decoded from a state file older
+    /// than this field, and for any caller that does not set it; ``mergedIntoDefaultBranch``
+    /// reads that as trunk, which is what keeps those rows tracking exactly as they did.
+    public var defaultBranch: String?
     public var isDraft: Bool
     public var state: GitHubState
     /// Only the viewer's own pull requests may act as stack parents, so authorship has
@@ -242,6 +269,7 @@ public struct PullRequest: Equatable, Sendable {
         url: URL? = nil,
         headRef: String,
         baseRef: String,
+        defaultBranch: String? = nil,
         isDraft: Bool = false,
         state: GitHubState = .open,
         authorLogin: String = "",
@@ -264,6 +292,7 @@ public struct PullRequest: Equatable, Sendable {
         self.url = url ?? PullRequest.defaultURL(repo: repo, number: number)
         self.headRef = headRef
         self.baseRef = baseRef
+        self.defaultBranch = defaultBranch
         self.isDraft = isDraft
         self.state = state
         self.authorLogin = authorLogin
@@ -281,6 +310,17 @@ public struct PullRequest: Equatable, Sendable {
     }
 
     public var id: PRID { PRID(repo: repo, number: number) }
+
+    /// Whether this pull request targets its repository's trunk.
+    ///
+    /// An unknown default branch reads as trunk. That is the conservative direction: it
+    /// leaves release tracking doing exactly what it did before this field existed, where
+    /// treating an unknown as *not* trunk would send every row down the chain resolver on
+    /// the strength of a missing value.
+    public var mergedIntoDefaultBranch: Bool {
+        guard let defaultBranch, !defaultBranch.isEmpty else { return true }
+        return baseRef == defaultBranch
+    }
 
     /// First linked issue that has a project; falls back to the first linked issue;
     /// nil when none are linked. Drives section placement and the meta line.
@@ -308,6 +348,7 @@ extension PullRequest: Codable {
         case url
         case headRef
         case baseRef
+        case defaultBranch
         case isDraft
         case state
         case authorLogin = "author"
@@ -350,6 +391,7 @@ extension PullRequest: Codable {
             url: try container.decodeIfPresent(URL.self, forKey: .url),
             headRef: try container.decodeIfPresent(String.self, forKey: .headRef) ?? "",
             baseRef: try container.decodeIfPresent(String.self, forKey: .baseRef) ?? "",
+            defaultBranch: try container.decodeIfPresent(String.self, forKey: .defaultBranch),
             isDraft: try container.decodeIfPresent(Bool.self, forKey: .isDraft) ?? false,
             state: try container.decodeIfPresent(GitHubState.self, forKey: .state) ?? .open,
             authorLogin: try container.decodeIfPresent(String.self, forKey: .authorLogin) ?? "",

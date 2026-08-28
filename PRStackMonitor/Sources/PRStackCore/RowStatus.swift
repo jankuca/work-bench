@@ -10,6 +10,14 @@ public enum RowStatus: Hashable, Sendable {
     // Terminal — checked first.
     case closed
     case shipped(tag: String)
+    /// Merged into a branch whose release cannot be followed — an integration branch no
+    /// pull request owns.
+    ///
+    /// Terminal, and that is the point rather than a convenience. Nothing further will be
+    /// learned about it, so leaving it in the live list would recreate exactly the row that
+    /// sits at `merged · awaiting release` forever. It is *not* ``shipped``: no tag has been
+    /// shown to contain it, and the phrase names the branch instead of claiming a release.
+    case mergedUntracked
     case merged
     // Open pull requests only, first match wins.
     /// Work in progress, only ever present when the user has asked for drafts (§3).
@@ -41,11 +49,12 @@ public enum RowStatus: Hashable, Sendable {
         }
     }
 
-    /// Closed and shipped rows move to Done. `merged` does not: it is still in flight,
-    /// waiting for a release tag, and it is what the header's "N shipping" counts.
+    /// Closed and shipped rows move to Done, and so does a merge whose release can no
+    /// longer be followed. `merged` does not: it is still in flight, waiting for a release
+    /// tag, and it is what the header's "N shipping" counts.
     public var belongsInDone: Bool {
         switch self {
-        case .closed, .shipped: return true
+        case .closed, .shipped, .mergedUntracked: return true
         default: return false
         }
     }
@@ -55,6 +64,7 @@ public enum RowStatus: Hashable, Sendable {
         switch self {
         case .closed: return "closed"
         case .shipped(let tag): return "shipped:\(tag)"
+        case .mergedUntracked: return "mergedUntracked"
         case .merged: return "merged"
         case .draft: return "draft"
         case .conflicted: return "conflicted"
@@ -73,6 +83,7 @@ public enum RowStatus: Hashable, Sendable {
         [
             .closed,
             .shipped(tag: sampleTag),
+            .mergedUntracked,
             .merged,
             .draft,
             .conflicted,
@@ -115,8 +126,19 @@ enum RowStatusResolver {
         case .closed:
             return .closed
         case .merged:
-            if case .released(let tag) = releaseStage { return .shipped(tag: tag) }
-            return .merged
+            switch releaseStage {
+            case .released(let tag):
+                return .shipped(tag: tag)
+            // Merged into a pull request that was closed without merging. The work is not
+            // going anywhere, so the row is finished — as plain `closed`, since that is
+            // what became of the change. The phrase says which pull request took it down.
+            case .mergedIntoAbandonedPullRequest:
+                return .closed
+            case .mergedIntoBranch:
+                return .mergedUntracked
+            default:
+                return .merged
+            }
         case .open:
             break
         }

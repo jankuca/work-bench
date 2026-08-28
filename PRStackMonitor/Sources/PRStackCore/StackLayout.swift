@@ -249,9 +249,15 @@ public struct StackLayout: Equatable, Sendable {
 
     /// Whether a pull request is still part of the stack it was opened into.
     ///
-    /// Open always is. A merge is until a release contains it — at which point the row is
-    /// Done, and a group straddling the Done heading is one the panel cannot draw. Closed
-    /// without merging never is: nothing was contributed to the branch below it.
+    /// Open always is. A merge is until its release stage becomes terminal — at which point
+    /// the row is Done, and a group straddling the Done heading is one the panel cannot
+    /// draw. Closed without merging never is: nothing was contributed to the branch below
+    /// it.
+    ///
+    /// "Terminal" is asked of the row status rather than listed here, so this cannot fall
+    /// out of step with ``RowStatus/belongsInDone``. A merge into a chain that was
+    /// abandoned, or onto a branch whose releases cannot be followed, is as finished as a
+    /// released one and leaves the run for the same reason.
     private static func isInFlight(
         _ pullRequest: PullRequest,
         releaseStages: [PRID: ReleaseStage]
@@ -263,8 +269,11 @@ public struct StackLayout: Equatable, Sendable {
             return false
         case .merged:
             guard let stage = releaseStages[pullRequest.id] else { return true }
-            if case .released = stage { return false }
-            return true
+            return !RowStatusResolver.resolve(
+                pullRequest: pullRequest,
+                releaseStage: stage,
+                parent: nil
+            ).belongsInDone
         }
     }
 
