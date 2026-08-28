@@ -248,6 +248,20 @@ final class MergeChainTests: XCTestCase {
             "a tag has to contain what the chain put on trunk, not this row's own merge commit"
         )
         XCTAssertEqual(local.unboundMerges[child.id]?.mergedAt, landedAt)
+
+        // The row goes on reporting its own merge commit for as long as it is in the
+        // snapshot, so the next poll's `recordMerges` must not undo any of this. If it
+        // did, the negatives would go with it and the tracker would re-test every
+        // candidate tag on every poll, against a commit no tag can ever contain.
+        local.recordComparison(child.id, against: "v1.0.0")
+        local.recordMerges(from: [child])
+        XCTAssertEqual(local.unboundMerges[child.id]?.mergeCommit, "trunk9")
+        XCTAssertEqual(local.unboundMerges[child.id]?.mergedAt, landedAt)
+        XCTAssertEqual(
+            local.unboundMerges[child.id]?.comparedTags,
+            ["v1.0.0"],
+            "a negative recorded against the trunk commit is still about the right commit"
+        )
     }
 
     /// Negatives recorded against the row's own merge commit were about a commit no tag was

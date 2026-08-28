@@ -356,6 +356,23 @@ public struct LocalState: Equatable, Sendable {
                   let mergedAt = pullRequest.mergedAt
             else { continue }
 
+            // A chain that has reached trunk is tracked against the commit it put *there*,
+            // never against this row's own — which is the whole point, because a squash
+            // further up may have rewritten that one away.
+            //
+            // This has to be re-asserted on every poll rather than done once when the
+            // anchor lands. The row keeps reporting its own merge commit for as long as it
+            // is in the snapshot, so the plain re-record below would overwrite the
+            // retargeted commit every poll — and take `comparedTags` with it, since the
+            // commit changed. The tracker would then re-test every candidate tag, every
+            // poll, forever, against a commit no tag can contain. Nothing else would put it
+            // right either: a landed anchor is settled, so the resolver never re-answers
+            // and `retarget` would never run again.
+            if case .landed(_, let trunkCommit, let landedAt) = mergeAnchors[pullRequest.id]?.outcome {
+                retarget(pullRequest.id, toTrunkCommit: trunkCommit, mergedAt: landedAt)
+                continue
+            }
+
             if let existing = unboundMerges[pullRequest.id], existing.mergeCommit == commit {
                 unboundMerges[pullRequest.id]?.mergedAt = mergedAt
                 continue

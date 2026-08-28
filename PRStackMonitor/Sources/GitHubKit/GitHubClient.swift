@@ -58,8 +58,8 @@ public enum FetchWarning: Equatable, Sendable, CustomStringConvertible {
     /// keeps saying `awaiting release`, which is where it already was, and a later poll
     /// asks again.
     case baseBranchUnresolved(reason: String)
-    /// Two pull requests claim the branch a merge landed on, so which one it went into
-    /// cannot be told. Left unresolved deliberately — the release binding downstream of
+    /// More than one pull request claims the branch a merge landed on, so which one it
+    /// went into cannot be told. Left unresolved deliberately — the release binding downstream of
     /// this is permanent.
     case baseBranchAmbiguous(repository: String, branch: String)
 
