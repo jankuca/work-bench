@@ -272,6 +272,50 @@ final class BaseBranchResolverTests: XCTestCase {
         XCTAssertFalse(result.anchors[child.id]?.outcome.isSettled ?? true)
     }
 
+    /// A chain that closes on itself is a fact about the shape of these pull requests, not
+    /// evidence that nobody owns the branch. Writing `untracked` for it would retire the row
+    /// to Done permanently on the strength of a loop.
+    func testACycleIsUnresolvedRatherThanUntracked() async throws {
+        let child = mine(210, base: "morgan/a")
+        // Two of theirs based on each other, both merged at the same instant so each
+        // still claims the other's branch when the walk reaches it.
+        let a = node(
+            98,
+            head: "morgan/a",
+            base: "morgan/b",
+            state: "MERGED",
+            mergedAt: "2026-01-08T22:00:00Z",
+            mergeCommit: "aoid"
+        )
+        let b = node(
+            99,
+            head: "morgan/b",
+            base: "morgan/a",
+            state: "MERGED",
+            mergedAt: "2026-01-08T22:00:00Z",
+            mergeCommit: "boid"
+        )
+        let transport = StubTransport(responses: [
+            .json(page([a])),
+            .json(page([b])),
+            .json(page([a]))
+        ])
+
+        let result = try await resolver(transport).resolve([child], now: now)
+
+        XCTAssertEqual(result.anchors[child.id]?.outcome, .unresolved(branch: "morgan/a"))
+        XCTAssertFalse(result.anchors[child.id]?.outcome.isSettled ?? true)
+        XCTAssertTrue(
+            result.warnings.contains { warning in
+                if case .baseBranchUnresolved(let reason) = warning {
+                    return reason.contains("loops back")
+                }
+                return false
+            },
+            "the loop is reported rather than passed off as an unowned branch"
+        )
+    }
+
     /// The document reports the branches it aliased, which is what keeps "never asked" apart
     /// from "asked and got nothing".
     func testTheDocumentReportsOnlyTheBranchesItCouldAskAbout() throws {

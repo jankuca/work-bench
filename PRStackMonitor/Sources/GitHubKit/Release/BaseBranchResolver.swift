@@ -161,9 +161,30 @@ public struct BaseBranchResolver {
                     continue
                 }
 
-                let candidates = (index[key] ?? []).filter { candidate in
-                    guard !walk.seen.contains(candidate.id) else { return false }
-                    return BaseBranchResolver.claims(candidate, mergedAt: walk.merged)
+                // Two filters, deliberately not one. Folding the `seen` check into the
+                // claims filter makes "the only pull request that claims this branch is one
+                // this walk has already been through" indistinguishable from "nothing
+                // claims this branch" — and the second answer is terminal.
+                let claimed = (index[key] ?? []).filter {
+                    BaseBranchResolver.claims($0, mergedAt: walk.merged)
+                }
+                let candidates = claimed.filter { !walk.seen.contains($0.id) }
+
+                if !claimed.isEmpty, candidates.isEmpty {
+                    // The chain closed on itself. That is a fact about the shape of these
+                    // pull requests, not evidence that the branch is unowned, so it is
+                    // recorded as unresolved: the row keeps its stage, and the backoff stops
+                    // the cycle being re-walked on every poll.
+                    result.warnings.append(
+                        .baseBranchUnresolved(
+                            reason: "merge chain loops back on itself at '\(walk.branch)' in \(walk.repo)"
+                        )
+                    )
+                    result.anchors[walk.id] = MergeAnchor(
+                        outcome: .unresolved(branch: walk.branch),
+                        checkedAt: now
+                    )
+                    continue
                 }
 
                 guard let parent = candidates.first else {
