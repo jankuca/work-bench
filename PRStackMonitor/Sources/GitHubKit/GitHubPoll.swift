@@ -46,7 +46,6 @@ public struct GitHubPoll {
         self.client = client
         self.tracker = tracker
         self.recovery = recovery
-        self.baseBranches = baseBranches
         self.priority = priority
         self.baseBranches = baseBranches
     }
@@ -344,6 +343,7 @@ public struct GitHubPollResult: Equatable, Sendable {
         self.closed = closed
         self.release = release
         self.recovery = recovery
+        self.baseBranches = baseBranches
         self.priority = priority
         self.resumedFrom = resumedFrom
         self.cursors = cursors
