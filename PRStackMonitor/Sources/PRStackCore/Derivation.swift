@@ -58,7 +58,10 @@ public enum Derivation {
         rows.reserveCapacity(visible.count)
         for pullRequest in visible {
             let placement = layout.placement(for: pullRequest.id)
-            let stage = releaseStage(for: pullRequest, in: branches, local: local)
+            // The value the layout was built from, rather than a second walk of the same
+            // chain: one lookup instead of one traversal per row, and the two can never
+            // disagree about a row's stage.
+            let stage = stages[pullRequest.id] ?? releaseStage(for: pullRequest, in: branches, local: local)
             let status = RowStatusResolver.resolve(
                 pullRequest: pullRequest,
                 releaseStage: stage,

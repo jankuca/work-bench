@@ -102,14 +102,14 @@ public struct BaseBranchResolver {
                 of: walks.map { BranchKey(repo: $0.repo, ref: $0.branch) },
                 limit: configuration.branchesPerRound
             )
-            guard let query = BaseBranchQuery.text(
+            guard let asked = BaseBranchQuery.document(
                 for: branches,
                 candidates: configuration.candidatesPerBranch
             ) else { break }
 
             let payload: GraphQLResult<BaseBranchPayload>
             do {
-                payload = try await graphQL.perform(query: query)
+                payload = try await graphQL.perform(query: asked.text)
             } catch let error as GitHubError {
                 // An expired token or a spent allowance ends the poll; anything narrower
                 // leaves these chains for the next one, which is where they already were.
@@ -129,12 +129,34 @@ public struct BaseBranchResolver {
             // refresh uses, and for the same reason.
             let index = MergeChain.headIndex(payload.data.pullRequests)
 
+            // A response that reported errors may have nulled a repository this asked
+            // about, and an empty answer for a branch is then indistinguishable from a
+            // branch nobody owns. `untracked` is terminal, so it is only ever written off
+            // an answer that came back whole.
+            let answersAreWhole = payload.errors.isEmpty
+
             var next: [Walk] = []
             for walk in walks {
                 let key = BranchKey(repo: walk.repo, ref: walk.branch)
+                // A branch no document can carry — a ref longer than a query can spell.
+                // Waiting for a later round would wait forever, so it is answered as
+                // unresolved: unsettled, so the row keeps its stage and the backoff applies.
+                guard BaseBranchQuery.canSpell(key) else {
+                    result.warnings.append(
+                        .baseBranchUnresolved(reason: "cannot query '\(walk.branch)' in \(walk.repo)")
+                    )
+                    result.anchors[walk.id] = MergeAnchor(
+                        outcome: .unresolved(branch: walk.branch),
+                        checkedAt: now
+                    )
+                    continue
+                }
                 // Not asked about this round: the branch cap deferred it. Carried forward
-                // untouched so the next round picks it up.
-                guard branches.contains(key) else {
+                // untouched so the next round picks it up. Tested against the branches the
+                // document *actually* aliased, never against the ones this round wanted —
+                // reading "never asked" as an empty answer is how a question that was never
+                // put becomes a permanent terminal finding.
+                guard asked.branches.contains(key) else {
                     next.append(walk)
                     continue
                 }
@@ -147,18 +169,28 @@ public struct BaseBranchResolver {
                 guard let parent = candidates.first else {
                     // Nothing owns the branch. That is an answer, not a failure: a merge
                     // into a long-lived integration branch has no pull request to follow,
-                    // and saying so is what stops the row asking forever.
+                    // and saying so is what stops the row asking forever — but only when
+                    // the answer can be trusted to be complete.
                     result.anchors[walk.id] = MergeAnchor(
-                        outcome: .untracked(branch: walk.branch),
+                        outcome: answersAreWhole
+                            ? .untracked(branch: walk.branch)
+                            : .unresolved(branch: walk.branch),
                         checkedAt: now
                     )
                     continue
                 }
                 guard candidates.count == 1 else {
-                    // A reused branch name with two live claims. Left unresolved rather
-                    // than guessed at: the binding downstream of this is permanent.
+                    // A reused branch name with several live claims. Left unresolved rather
+                    // than guessed at: the binding downstream of this is permanent. Recorded
+                    // rather than dropped, so the backoff applies — an ambiguous branch name
+                    // never self-corrects, and re-asking it every poll forever is the cost
+                    // of saying nothing at all.
                     result.warnings.append(
                         .baseBranchAmbiguous(repository: walk.repo, branch: walk.branch)
+                    )
+                    result.anchors[walk.id] = MergeAnchor(
+                        outcome: .unresolved(branch: walk.branch),
+                        checkedAt: now
                     )
                     continue
                 }
@@ -172,6 +204,10 @@ public struct BaseBranchResolver {
                     guard let parentMergedAt = parent.mergedAt else {
                         result.warnings.append(
                             .baseBranchUnresolved(reason: "\(parent.id) reports no merge date")
+                        )
+                        result.anchors[walk.id] = MergeAnchor(
+                            outcome: .unresolved(branch: walk.branch),
+                            checkedAt: now
                         )
                         continue
                     }
@@ -192,6 +228,10 @@ public struct BaseBranchResolver {
                         // far more often than it is permanent.
                         result.warnings.append(
                             .baseBranchUnresolved(reason: "\(parent.id) reports no merge commit")
+                        )
+                        result.anchors[walk.id] = MergeAnchor(
+                            outcome: .unresolved(branch: walk.branch),
+                            checkedAt: now
                         )
                         continue
                     }
@@ -215,6 +255,18 @@ public struct BaseBranchResolver {
                 )
                 break
             }
+        }
+
+        // Whatever is still walking has run out of rounds — a chain deeper than the cap, or
+        // one that kept being deferred. Recorded as unresolved rather than left blank, so
+        // the backoff applies: without an anchor these come back into every poll's lookup
+        // budget forever, and a chain that is too deep this time is too deep next time too.
+        for walk in walks {
+            guard result.anchors[walk.id] == nil else { continue }
+            result.anchors[walk.id] = MergeAnchor(
+                outcome: .unresolved(branch: walk.branch),
+                checkedAt: now
+            )
         }
 
         return result
@@ -302,7 +354,21 @@ enum BaseBranchQuery {
     /// The branch has *not* — a ref may contain almost anything — so it is escaped rather
     /// than trusted, and a branch that cannot be spelled safely is dropped.
     static func text(for branches: Set<BranchKey>, candidates: Int) -> String? {
+        document(for: branches, candidates: candidates)?.text
+    }
+
+    /// The document, and **the branches it actually asked about**.
+    ///
+    /// The second half is not bookkeeping. A key this cannot spell is skipped, and a caller
+    /// that assumed every key was asked would read the empty answer as "no pull request
+    /// owns this branch" — a terminal finding — when the truth is that the question was
+    /// never put. Handing back the asked set is what keeps those two apart.
+    static func document(
+        for branches: Set<BranchKey>,
+        candidates: Int
+    ) -> (text: String, branches: Set<BranchKey>)? {
         var selections: [String] = []
+        var asked: Set<BranchKey> = []
         let ordered = branches.sorted { left, right in
             if left.repo != right.repo { return left.repo < right.repo }
             return left.ref < right.ref
@@ -311,6 +377,7 @@ enum BaseBranchQuery {
         for (index, key) in ordered.enumerated() {
             guard let (owner, name) = TagRefsClient.ownerAndName(key.repo),
                   let ref = BaseBranchQuery.escaped(key.ref) else { continue }
+            asked.insert(key)
             selections.append(
                 "  b\(index): repository(owner: \"\(owner)\", name: \"\(name)\")"
                     + " { pullRequests(headRefName: \(ref), first: \(candidates),"
@@ -320,7 +387,7 @@ enum BaseBranchQuery {
         }
         guard !selections.isEmpty else { return nil }
 
-        return """
+        let text = """
         query BaseBranchPullRequests {
           rateLimit { limit cost remaining resetAt }
         \(selections.joined(separator: "\n"))
@@ -328,6 +395,17 @@ enum BaseBranchQuery {
 
         \(PullRequestQuery.fields)
         """
+        return (text: text, branches: asked)
+    }
+
+    /// Whether this branch can be put into a document at all.
+    ///
+    /// The same predicate ``document(for:candidates:)`` applies, exposed so the walk can
+    /// tell a branch deferred by the per-round cap from one that can never be asked about:
+    /// the first waits for a later round, the second is answered as unresolved rather than
+    /// waited on forever.
+    static func canSpell(_ key: BranchKey) -> Bool {
+        TagRefsClient.ownerAndName(key.repo) != nil && escaped(key.ref) != nil
     }
 
     /// A branch name as a GraphQL string literal, or nil when it cannot be one.

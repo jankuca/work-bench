@@ -229,7 +229,60 @@ final class BaseBranchResolverTests: XCTestCase {
         let result = try await resolver(transport, configuration: configuration).resolve([child], now: now)
 
         XCTAssertEqual(transport.requests.count, 3)
-        XCTAssertNil(result.anchors[child.id], "an unfinished walk writes nothing rather than guessing")
+        XCTAssertEqual(
+            result.anchors[child.id]?.outcome,
+            .unresolved(branch: "morgan/l4"),
+            "an unfinished walk records that it could not answer rather than guessing at one"
+        )
+        XCTAssertFalse(result.anchors[child.id]?.outcome.isSettled ?? true)
+    }
+
+    // MARK: - Never turning a failure into a finding
+
+    /// `untracked` is terminal: it moves the row to Done and stops it asking. It must only
+    /// ever be written off an answer that actually came back, never off a question that was
+    /// never put — a ref too long for the query to carry is enough to trigger that.
+    func testABranchTheQueryCannotSpellIsUnresolvedRatherThanUntracked() async throws {
+        let unspellable = String(repeating: "b", count: 300)
+        let child = mine(100, base: unspellable)
+        let transport = StubTransport(responses: [])
+
+        let result = try await resolver(transport).resolve([child], now: now)
+
+        XCTAssertEqual(result.anchors[child.id]?.outcome, .unresolved(branch: unspellable))
+        XCTAssertTrue(transport.requests.isEmpty, "there was nothing it could ask")
+    }
+
+    /// A response that reported errors may have nulled a repository, and an empty answer is
+    /// then indistinguishable from a branch nobody owns. Writing `untracked` off that would
+    /// retire a row permanently on the strength of a failure.
+    func testAnErroredResponseDoesNotProduceATerminalUntracked() async throws {
+        let child = mine(110, base: "morgan/feature")
+        let errored = """
+        {
+          "data": { "b0": null },
+          "errors": [ { "message": "Could not resolve to a Repository" } ]
+        }
+        """
+        let transport = StubTransport(responses: [.json(errored)])
+
+        let result = try await resolver(transport).resolve([child], now: now)
+
+        XCTAssertEqual(result.anchors[child.id]?.outcome, .unresolved(branch: "morgan/feature"))
+        XCTAssertFalse(result.anchors[child.id]?.outcome.isSettled ?? true)
+    }
+
+    /// The document reports the branches it aliased, which is what keeps "never asked" apart
+    /// from "asked and got nothing".
+    func testTheDocumentReportsOnlyTheBranchesItCouldAskAbout() throws {
+        let good = BranchKey(repo: "acme/billing", ref: "morgan/feature")
+        let unspellable = BranchKey(repo: "acme/billing", ref: String(repeating: "b", count: 300))
+
+        let document = try XCTUnwrap(BaseBranchQuery.document(for: [good, unspellable], candidates: 5))
+
+        XCTAssertEqual(document.branches, [good])
+        XCTAssertFalse(BaseBranchQuery.canSpell(unspellable))
+        XCTAssertTrue(BaseBranchQuery.canSpell(good))
     }
 
     // MARK: - Refusing to guess
@@ -246,7 +299,15 @@ final class BaseBranchResolverTests: XCTestCase {
 
         let result = try await resolver(transport).resolve([child], now: now)
 
-        XCTAssertNil(result.anchors[child.id])
+        XCTAssertEqual(
+            result.anchors[child.id]?.outcome,
+            .unresolved(branch: "team/shared"),
+            "recorded rather than dropped, so the backoff applies — but never as a terminal answer"
+        )
+        XCTAssertFalse(
+            result.anchors[child.id]?.outcome.isSettled ?? true,
+            "an ambiguous branch is a failure to answer, not a finding"
+        )
         XCTAssertEqual(
             result.warnings,
             [.baseBranchAmbiguous(repository: "acme/billing", branch: "team/shared")]

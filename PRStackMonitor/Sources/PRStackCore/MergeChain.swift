@@ -38,6 +38,16 @@ public enum MergeAnchorOutcome: Equatable, Sendable {
     /// hand. There is nothing to follow, so the row is shown as merged into that branch
     /// and stops asking.
     case untracked(branch: String)
+    /// The lookup ran and could not answer: an ambiguous branch, a parent GitHub reported
+    /// without a merge commit, a chain deeper than the cap, or a branch this cannot spell
+    /// into a query.
+    ///
+    /// Deliberately *not* ``untracked``. Both mean "no answer this time", but `untracked`
+    /// is a finding — nothing owns the branch — and it is terminal, so recording it here
+    /// would move a row to Done and stop asking on the strength of a failure. This one is
+    /// unsettled: the row reads as an ordinary merge awaiting a tag, and the backoff
+    /// applies so the question is asked again later rather than on every poll.
+    case unresolved(branch: String)
 
     /// Whether this outcome ends release tracking outright.
     ///
@@ -51,13 +61,17 @@ public enum MergeAnchorOutcome: Equatable, Sendable {
 
     /// Whether asking GitHub again could change this answer.
     ///
-    /// Only ``pending`` can move. A merged or closed pull request is immutable, and a
-    /// branch that no pull request owns is not going to acquire one in a way this would
-    /// notice — if the user opens one later it is their own, and the local walk finds it
-    /// in the snapshot without a request.
+    /// Two can move. ``pending`` can, because the pull request it names is still open;
+    /// ``unresolved`` can, because nothing was learned and the question is still open. The
+    /// rest cannot: a merged or closed pull request is immutable, and a branch no pull
+    /// request owns is not going to acquire one in a way this would notice — if the user
+    /// opens one later it is their own, and the local walk finds it in the snapshot
+    /// without a request.
     public var isSettled: Bool {
-        if case .pending = self { return false }
-        return true
+        switch self {
+        case .pending, .unresolved: return false
+        case .landed, .abandoned, .untracked: return true
+        }
     }
 }
 
@@ -242,6 +256,10 @@ public enum MergeChain {
             return .mergedIntoAbandonedPullRequest(parent)
         case .untracked(let branch):
             return .mergedIntoBranch(branch)
+        // Nothing was learned, so the row says what it said before the lookup ran. Reading
+        // this as a terminal state would be claiming a finding that was really a failure.
+        case .unresolved:
+            return .mergedAwaitingTag
         }
     }
 
@@ -305,6 +323,7 @@ extension MergeAnchorOutcome: Codable {
         case landed
         case abandoned
         case untracked
+        case unresolved
     }
 
     public init(from decoder: any Decoder) throws {
@@ -322,6 +341,8 @@ extension MergeAnchorOutcome: Codable {
             self = .abandoned(try container.decode(PRID.self, forKey: .pullRequest))
         case .untracked:
             self = .untracked(branch: try container.decode(String.self, forKey: .branch))
+        case .unresolved:
+            self = .unresolved(branch: try container.decode(String.self, forKey: .branch))
         }
     }
 
@@ -341,6 +362,9 @@ extension MergeAnchorOutcome: Codable {
             try container.encode(id, forKey: .pullRequest)
         case .untracked(let branch):
             try container.encode(Kind.untracked, forKey: .kind)
+            try container.encode(branch, forKey: .branch)
+        case .unresolved(let branch):
+            try container.encode(Kind.unresolved, forKey: .kind)
             try container.encode(branch, forKey: .branch)
         }
     }

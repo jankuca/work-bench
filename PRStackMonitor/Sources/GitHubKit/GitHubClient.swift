@@ -82,7 +82,9 @@ public enum FetchWarning: Equatable, Sendable, CustomStringConvertible {
         case .baseBranchUnresolved(let reason):
             return "could not follow a merge to the pull request it went into: \(reason)"
         case .baseBranchAmbiguous(let repository, let branch):
-            return "two pull requests in \(repository) claim '\(branch)'; "
+            // Count-neutral: the resolver reports this for any candidate count other than
+            // one, and it reads up to `candidatesPerBranch` of them.
+            return "more than one pull request in \(repository) claims '\(branch)'; "
                 + "not guessing which one the merge went into"
         case .releaseTrackingFailed(let repository, let reason):
             return "could not check \(repository)'s releases: \(reason)"

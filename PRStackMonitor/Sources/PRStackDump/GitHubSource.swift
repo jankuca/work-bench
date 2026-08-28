@@ -168,6 +168,8 @@ enum GitHubSource {
             return "merged into \(parent.rawValue), closed without merging"
         case .untracked(let branch):
             return "merged into '\(branch)', which no pull request owns"
+        case .unresolved(let branch):
+            return "merged into '\(branch)', which could not be followed this time"
         }
     }
 

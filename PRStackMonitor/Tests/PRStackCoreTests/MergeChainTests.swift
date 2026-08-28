@@ -433,6 +433,78 @@ final class MergeChainTests: XCTestCase {
         )
     }
 
+    /// Stopping the comparisons is not enough. The record itself is what holds the closed
+    /// search's lower bound open and keeps the app on its awaiting-release cadence, so a row
+    /// that has stopped asking has to stop costing too — and must not come back on the next
+    /// poll that sees the same merged pull request.
+    func testAnUntrackedMergeRetiresItsRecordOnceTheAllowanceIsSpent() {
+        let child = pullRequest(1850, head: "avery/child", base: "develop", mergedDaysIn: 2)
+
+        var local = LocalState.empty
+        local.recordMerges(from: [child])
+        local.recordAnchor(
+            MergeAnchor(outcome: .untracked(branch: "develop"), checkedAt: start),
+            for: child.id
+        )
+
+        for index in 0..<(MergeChain.untrackedComparisonCap - 1) {
+            local.recordComparison(child.id, against: "v\(index)")
+        }
+        XCTAssertNotNil(local.unboundMerges[child.id], "still inside its allowance")
+
+        local.recordComparison(child.id, against: "v-last")
+        XCTAssertNil(local.unboundMerges[child.id])
+        XCTAssertNil(local.oldestUnboundMergeAt, "nothing left holding the search window open")
+
+        local.recordMerges(from: [child])
+        XCTAssertNil(local.unboundMerges[child.id], "and the next poll must not put it back")
+    }
+
+    /// A lookup that could not answer is unsettled, so it is asked again — but on the
+    /// backoff, not on every poll. Without a recorded anchor these consume a lookup every
+    /// single poll, forever, for a question that may never have an answer.
+    func testAnUnresolvedAnchorBacksOffRatherThanBeingAskedEveryPoll() {
+        let child = pullRequest(1900, head: "avery/child", base: "team/shared", mergedDaysIn: 2)
+        let checkedAt = start.addingTimeInterval(10 * day)
+
+        var local = LocalState.empty
+        local.recordAnchor(
+            MergeAnchor(outcome: .unresolved(branch: "team/shared"), checkedAt: checkedAt),
+            for: child.id
+        )
+
+        XCTAssertFalse(MergeAnchorOutcome.unresolved(branch: "x").isSettled)
+        XCTAssertTrue(
+            MergeChain.unresolved(
+                among: [child],
+                local: local,
+                now: checkedAt.addingTimeInterval(MergeChain.anchorBackoff - 1)
+            ).isEmpty
+        )
+        XCTAssertEqual(
+            MergeChain.unresolved(
+                among: [child],
+                local: local,
+                now: checkedAt.addingTimeInterval(MergeChain.anchorBackoff)
+            ).map(\.id),
+            [child.id]
+        )
+    }
+
+    /// It must also not read as a terminal state: the row says exactly what it said before
+    /// the lookup ran.
+    func testAnUnresolvedAnchorLeavesTheRowWhereItWas() {
+        let child = pullRequest(1950, head: "avery/child", base: "team/shared", mergedDaysIn: 2)
+
+        var local = LocalState.empty
+        local.recordAnchor(
+            MergeAnchor(outcome: .unresolved(branch: "team/shared"), checkedAt: start),
+            for: child.id
+        )
+
+        XCTAssertEqual(stage(child, among: [child], local: local), .mergedAwaitingTag)
+    }
+
     // MARK: - What is worth asking GitHub
 
     func testOnlyChainsTheSnapshotCannotFollowAreAskedAbout() {
@@ -534,6 +606,10 @@ final class MergeChainTests: XCTestCase {
         state.recordAnchor(
             MergeAnchor(outcome: .untracked(branch: "develop"), checkedAt: start),
             for: id(4)
+        )
+        state.recordAnchor(
+            MergeAnchor(outcome: .unresolved(branch: "team/shared"), checkedAt: start),
+            for: id(5)
         )
 
         let encoder = JSONEncoder()

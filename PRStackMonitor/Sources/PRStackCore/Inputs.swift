@@ -347,10 +347,10 @@ public struct LocalState: Equatable, Sendable {
                   // A dismissed row is suppressed forever, so binding it to a tag would
                   // spend comparisons on something that can never appear again.
                   !dismissed.contains(pullRequest.id),
-                  // The chain this merge sits in ended in a pull request that was closed
-                  // without merging. No tag will ever contain it, and re-recording it here
-                  // is what would otherwise undo ``recordAnchor(_:for:)`` on the next poll.
-                  mergeAnchors[pullRequest.id]?.outcome.stopsComparisons != true,
+                  // The chain this merge sits in has finished without a release — it was
+                  // abandoned, or it landed somewhere untrackable and spent its allowance.
+                  // Re-recording it here is what would otherwise undo that on the next poll.
+                  !hasFinishedReleaseTracking(pullRequest.id),
                   let commit = pullRequest.mergeCommit,
                   !commit.isEmpty,
                   let mergedAt = pullRequest.mergedAt
@@ -404,6 +404,15 @@ public struct LocalState: Equatable, Sendable {
     /// comparable at all, and `abandoned` is the only thing that makes it stop.
     public mutating func recordAnchor(_ anchor: MergeAnchor, for id: PRID) {
         guard !dismissed.contains(id), releaseBindings[id] == nil else { return }
+        // A settled answer is a fact about a pull request that has already merged, so
+        // nothing later can improve on it — and an unsettled one replacing it would be a
+        // strict loss: `landed` carries the trunk commit the whole binding depends on, and
+        // overwriting that with "could not answer this time" would strand the row for good.
+        // ``MergeChain/unresolved(among:local:now:backoff:limit:)`` does not re-ask a
+        // settled chain, so this only closes the door on a caller that does.
+        if let existing = mergeAnchors[id]?.outcome, existing.isSettled, !anchor.outcome.isSettled {
+            return
+        }
         mergeAnchors[id] = anchor
 
         switch anchor.outcome {
@@ -413,7 +422,7 @@ public struct LocalState: Equatable, Sendable {
             // Nothing left to compare, and the record is what drags the closed search's
             // lower bound backwards and holds the app at the awaiting-release cadence.
             unboundMerges[id] = nil
-        case .pending, .untracked:
+        case .pending, .untracked, .unresolved:
             break
         }
     }
@@ -502,6 +511,38 @@ public struct LocalState: Equatable, Sendable {
     /// nothing left to compare.
     public mutating func recordComparison(_ id: PRID, against tag: String) {
         unboundMerges[id]?.comparedTags.insert(tag)
+        retireIfAllowanceSpent(id)
+    }
+
+    /// Drops the unbound record of an untracked merge once it has spent its allowance.
+    ///
+    /// ``MergeChain/comparable(_:among:local:)`` already stops *selecting* such a record,
+    /// but stopping there leaves it in the file forever — and the record itself has two
+    /// live effects that have nothing to do with comparisons: it is what
+    /// ``oldestUnboundMergeAt`` reads to hold the closed search's lower bound open, and
+    /// what the app reads to decide it is still awaiting a release and should keep polling
+    /// at the shorter interval. A row that has stopped asking must stop costing, or this
+    /// is the same permanent drag it was written to remove.
+    private mutating func retireIfAllowanceSpent(_ id: PRID) {
+        guard case .untracked = mergeAnchors[id]?.outcome,
+              let merge = unboundMerges[id],
+              merge.comparedTags.count >= MergeChain.untrackedComparisonCap
+        else { return }
+        unboundMerges[id] = nil
+    }
+
+    /// Whether release tracking for this pull request has finished for good.
+    ///
+    /// Two ways to be done without ever binding: the chain was abandoned, or it landed on a
+    /// branch nobody owns and has spent its allowance of tags. The second is read from the
+    /// *absence* of the record rather than from a flag, because retiring it is what being
+    /// done means here — and without this, ``recordMerges(from:)`` would put it straight
+    /// back on the next poll.
+    func hasFinishedReleaseTracking(_ id: PRID) -> Bool {
+        guard let outcome = mergeAnchors[id]?.outcome else { return false }
+        if outcome.stopsComparisons { return true }
+        if case .untracked = outcome, unboundMerges[id] == nil { return true }
+        return false
     }
 
     /// The oldest merge still waiting for a tag, which is the merged query's lower bound.
