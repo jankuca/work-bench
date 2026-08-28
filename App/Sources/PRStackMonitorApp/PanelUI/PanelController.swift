@@ -842,6 +842,11 @@ struct PollProduct: Sendable {
     var linear: SourceHealth?
     /// Bindings and durable negatives, for the main actor to merge into `LocalState`.
     var release: ReleaseTrackerResult = .empty
+    /// Where the merges that did not target trunk were followed to, for the main actor to
+    /// merge into `LocalState` alongside the bindings. Carried separately from `release`
+    /// because it is applied *before* it: an anchor decides which commit a tag has to
+    /// contain, and a binding written against the old one would be permanent.
+    var baseBranches: BaseBranchResolution = .empty
     var warnings: [FetchWarning] = []
     /// The most pages either search needed, and whether both got to the end of theirs. Not
     /// for the footer — it is what the next poll decides its priority refresh from.
@@ -1096,6 +1101,7 @@ struct GitHubPanelSource: PanelSource {
                     ),
                     linear: resolution.health,
                     release: fetched.release,
+                    baseBranches: fetched.baseBranches,
                     warnings: fetched.warnings,
                     // The longer of the two searches, not their sum: every poll runs both,
                     // so a sum is two before it has said anything about how big the account
