@@ -722,6 +722,72 @@ design draws:
   same visual language; the third fills on tag containment rather than on a production deploy succeeding.
   Segments no longer pulse.
 
+#### Merges that did not land on trunk
+
+Tag containment answers "did this ship" only for a PR merged into trunk. A PR merged into **another PR's
+branch** has nothing on trunk for a tag to contain the moment anything above it is squashed — the squash
+rewrites the branch, and that PR's `mergeCommit` becomes an object no release will ever reach. The row then
+sits at `merged · awaiting release` permanently, and not just cosmetically: its `unboundMerge` record drags the
+closed search's lower bound backwards forever, re-tests every newly cut tag, and holds the whole app at the
+60 s awaiting-release cadence (§4).
+
+The fix never asks *how* anything merged. It asks **whose branch did this merge into, and what happened to
+that PR** — and recurses. Only the root of the chain, which targets trunk, ever needs a commit a tag can
+contain, and its merge commit is on trunk by definition. Multi-level chains and squashes both fall out of that
+for free, with no merge-method detection anywhere.
+
+Two halves, because the answer lives in two different places:
+
+1. **Inside the snapshot** (`MergeChain`, `PRStackCore`) — a pure walk over `(repo, headRef)`, costing
+   nothing. Your own stack is always here: the closed search's lower bound is the oldest merge still waiting
+   for a tag, and the parent merged *after* the child it is holding up, so it is in range by construction.
+2. **Outside it** (`BaseBranchResolver`, `GitHubKit`) — a PR opened on top of **somebody else's**. Both
+   searches carry `is:pr author:@me` and `StackLayout` only indexes the viewer's own, so no local walk can
+   ever reach theirs. It is asked for by branch — `repository { pullRequests(headRefName:) }`, aliased one per
+   branch into a single document — rather than by search: `search` is author-scoped and lags a merge by up to
+   a minute, while this reads the repository live. Chains resolve in rounds inside one call, so a stack three
+   deep costs three requests rather than three polls.
+
+The resolved answer is a `MergeAnchor`, persisted in `LocalState.mergeAnchors`:
+
+| Outcome | Row reads | Comparisons |
+| --- | --- | --- |
+| `pending(PR)` | `merged into #456` | none — nothing has reached trunk |
+| `landed(root, commit, at)` | `awaiting release` | against **`commit`**, not the row's own |
+| `abandoned(PR)` | `merged into #456, closed` → Done | none, and the unbound record is retired |
+| `untracked(branch)` | `merged into develop` → Done | capped at 25 tags, then rests |
+
+`landed` is the whole of what makes a squashed chain bindable: `LocalState.retarget` re-points the unbound
+merge at the commit the chain actually put on trunk and **drops its compared-tag set**, because those
+negatives were recorded against a commit no tag was ever going to contain.
+
+Three rules keep a permanent binding from being written on a guess:
+
+- **The lifetime guard.** A merge into a branch can only have happened while that branch's PR was open, so
+  `parent.createdAt <= child.mergedAt <= parent.mergedAt`. This is the whole defence against a reused branch
+  name — `integration` cut, merged, deleted and cut again a month later has two PRs claiming it.
+- **Ambiguity resolves to nothing.** Two claimants leaves the row where it was. A row saying `awaiting
+  release` for another poll is recoverable; a row bound to the wrong release is not.
+- **An unknown default branch reads as trunk.** A PR decoded from a state file older than the
+  `defaultBranch` field tracks exactly as it did rather than diverting into chain resolution on a missing
+  value.
+
+**The inherited release is written down, not left derived.** The proof that a child shipped is the parent row,
+and the closed search stops returning that row once it binds — so a purely derived answer would flip the child
+back to `awaiting release` months after it shipped, with nothing left to work it out from. `bindInheritedReleases`
+runs last in `GitHubPollResult.apply(to:)`, after the bindings it reads.
+
+Cost: **zero extra requests** for an all-your-own stack, and net negative overall — retiring a stranded row's
+record is what stops the ever-widening `closed:>=` window, the perpetual re-comparisons, and the pinned
+cadence. A foreign chain costs one aliased query per level, once, cached permanently; only `pending` is
+re-asked, on a 10-minute backoff, because it is the one answer that can still move. Settled answers never are:
+a merged or closed PR is immutable.
+
+What it still gives up: a base branch that **no PR owns** cannot be followed at all, so it is shown as
+`merged into <branch>` in Done rather than left asking — it still binds opportunistically if a tag does
+contain it (an integration branch merged to trunk with a merge commit carries the work there), but under a
+fixed allowance rather than an open one.
+
 This is a deliberate simplification and it removes roughly a milestone of work. Everything sits behind a
 `ReleaseTracker` protocol with `TagContainmentTracker` as the v1 implementation. `ReleaseStage` (§2) already
 carries `deploying` and `deployFailed` cases that v1 never produces, and both `PRStackCore` and the row view

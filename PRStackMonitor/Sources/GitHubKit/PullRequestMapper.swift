@@ -46,6 +46,10 @@ enum PullRequestMapper {
                 url: node.url.flatMap(URL.init(string:)),
                 headRef: node.headRefName ?? "",
                 baseRef: node.baseRefName ?? "",
+                // Already selected by the query for its own sake; carried through so that
+                // "merged to trunk" can be told from "merged into somebody's branch"
+                // without guessing at a name (``MergeChain``).
+                defaultBranch: node.repository?.defaultBranchRef?.name,
                 isDraft: node.isDraft ?? false,
                 state: state(node.state),
                 authorLogin: node.author?.login ?? "",

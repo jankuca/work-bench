@@ -37,11 +37,15 @@ public enum Derivation {
         // here can never break a run.
         let visible = snapshot.pullRequests.filter { !local.dismissed.contains($0.id) }
         let byID = Dictionary(visible.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        // Built from the *whole* snapshot rather than from `visible`: a dismissed pull
+        // request is still the pull request its children merged into, and dropping it here
+        // would break a chain over a decision that was only ever about drawing a row.
+        let branches = MergeChain.headIndex(snapshot.pullRequests)
         // The layout needs the stages before it can be built: a merge stays in its stack
         // until a release contains it (``StackLayout/build``). Keyed the same way as `byID`,
         // first occurrence winning, so the two cannot disagree about a repeated id.
         let stages = Dictionary(
-            visible.map { ($0.id, releaseStage(for: $0, local: local)) },
+            visible.map { ($0.id, releaseStage(for: $0, in: branches, local: local)) },
             uniquingKeysWith: { first, _ in first }
         )
         let layout = StackLayout.build(
@@ -54,7 +58,7 @@ public enum Derivation {
         rows.reserveCapacity(visible.count)
         for pullRequest in visible {
             let placement = layout.placement(for: pullRequest.id)
-            let stage = releaseStage(for: pullRequest, local: local)
+            let stage = releaseStage(for: pullRequest, in: branches, local: local)
             let status = RowStatusResolver.resolve(
                 pullRequest: pullRequest,
                 releaseStage: stage,
@@ -107,10 +111,25 @@ public enum Derivation {
     /// v1 binds releases by tag containment (M6). Until a binding exists a merged pull
     /// request sits at `merged · awaiting release`, which per PRD §10 is quiet by design
     /// and not an error state.
-    static func releaseStage(for pullRequest: PullRequest, local: LocalState) -> ReleaseStage {
+    ///
+    /// A merge that did not target trunk is the exception, and it is not a small one: its
+    /// own merge commit may have been rewritten away by a squash further up, so waiting for
+    /// a tag to contain it is waiting for something that will never happen. Those follow
+    /// their chain instead — see ``MergeChain``.
+    ///
+    /// `branches` indexes the snapshot by the branch each pull request produces, as
+    /// ``MergeChain/headIndex(_:)`` builds it. It is passed in rather than rebuilt here
+    /// because both callers derive every row from one snapshot, and rebuilding it per row
+    /// would make derivation quadratic in the size of the panel.
+    static func releaseStage(
+        for pullRequest: PullRequest,
+        in branches: [BranchKey: [PullRequest]],
+        local: LocalState
+    ) -> ReleaseStage {
         guard pullRequest.state == .merged else { return .unmerged }
         if let tag = local.releaseBindings[pullRequest.id] { return .released(tag: tag) }
-        return .mergedAwaitingTag
+        guard MergeChain.isNested(pullRequest) else { return .mergedAwaitingTag }
+        return MergeChain.nestedStage(for: pullRequest, in: branches, local: local)
     }
 
     // MARK: - Sections

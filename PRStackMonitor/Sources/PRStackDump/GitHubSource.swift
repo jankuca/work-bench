@@ -61,7 +61,11 @@ enum GitHubSource {
                     comparisonBudget: options.comparisonBudget
                 )
             ),
-            recovery: MergeCommitRecovery(transport: transport, tokenProvider: credentials)
+            recovery: MergeCommitRecovery(transport: transport, tokenProvider: credentials),
+            // The diagnostic surface for merges that did not target trunk: without this the
+            // dump reports them as awaiting a release and never says what they are actually
+            // waiting on.
+            baseBranches: BaseBranchResolver(transport: transport, tokenProvider: credentials)
         )
 
         let result: GitHubPollResult
@@ -79,6 +83,7 @@ enum GitHubSource {
         report(result.open, label: "open")
         report(result.closed, label: "closed")
         reportRecovery(result.recovery)
+        reportBaseBranches(result.baseBranches)
         reportReleases(result.release)
         return result
     }
@@ -131,6 +136,39 @@ enum GitHubSource {
         lines.append(contentsOf: result.warnings.map { "warning: " + $0.description })
         guard !lines.isEmpty else { return }
         Diagnostics.write(lines.joined(separator: "\n"))
+    }
+
+    /// Where merges that landed on another pull request's branch were followed to.
+    ///
+    /// This is the line that answers "why is #4012 still shipping" for a stacked pull
+    /// request, which before this pass existed had no answer at all: the row said
+    /// `awaiting release` whether it was waiting on a tag, on a colleague's pull request,
+    /// or on nothing that would ever come.
+    private static func reportBaseBranches(_ result: BaseBranchResolution) {
+        guard !result.isEmpty else { return }
+        var lines = [
+            "base branches: \(result.anchors.count) merge(s) followed"
+                + ", \(result.pointsSpent) GraphQL point(s)"
+        ]
+        for id in result.anchors.keys.sorted(by: { $0.rawValue < $1.rawValue }) {
+            guard let anchor = result.anchors[id] else { continue }
+            lines.append("  \(id.rawValue) \(describe(anchor.outcome))")
+        }
+        lines.append(contentsOf: result.warnings.map { "warning: " + $0.description })
+        Diagnostics.write(lines.joined(separator: "\n"))
+    }
+
+    private static func describe(_ outcome: MergeAnchorOutcome) -> String {
+        switch outcome {
+        case .pending(let parent):
+            return "merged into \(parent.rawValue), still open"
+        case .landed(let root, let commit, _):
+            return "reached trunk via \(root.rawValue) as \(commit)"
+        case .abandoned(let parent):
+            return "merged into \(parent.rawValue), closed without merging"
+        case .untracked(let branch):
+            return "merged into '\(branch)', which no pull request owns"
+        }
     }
 
     /// What the release pass actually did. Bindings are the interesting line — everything

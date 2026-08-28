@@ -485,7 +485,16 @@ final class PanelController: ObservableObject {
             // are written here and nowhere else — the tracker hands its bindings back
             // rather than writing the file from its own task.
             local.recordMerges(from: snapshot.pullRequests)
+            // Where the merges that did not target trunk actually landed, before the
+            // bindings: an anchor is what decides which commit a tag has to contain, and a
+            // binding written against the old one would be permanent.
+            local.apply(product.baseBranches)
             local.apply(product.release)
+            // A pull request merged into another one shipped when *that* one shipped. The
+            // proof is the parent row, which the closed search stops returning once it
+            // binds — so the inherited release is written down here rather than re-derived,
+            // or the row would flip back to `awaiting release` months after it shipped.
+            local.bindInheritedReleases(from: snapshot.pullRequests)
             // Deadlines that have passed are already awake as far as derivation is
             // concerned; dropping them here is what stops the file accumulating an entry
             // per pull request the user has ever silenced.
@@ -969,7 +978,12 @@ struct GitHubPanelSource: PanelSource {
             // which is rare and otherwise permanent.
             recovery: MergeCommitRecovery(transport: transport, tokenProvider: credentials),
             // One request for the rows already on screen, ahead of the searches.
-            priority: PriorityRefresh(transport: transport, tokenProvider: credentials)
+            priority: PriorityRefresh(transport: transport, tokenProvider: credentials),
+            // Follows a merge that landed on another pull request's branch to the pull
+            // request that owns it. Costs nothing until one exists, and nothing again once
+            // the answer settles — a merged or closed pull request cannot change, so the
+            // anchor is written once and read from the state file thereafter.
+            baseBranches: BaseBranchResolver(transport: transport, tokenProvider: credentials)
         )
     }
 

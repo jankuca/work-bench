@@ -328,13 +328,30 @@ public struct RowPresentation: Equatable, Sendable {
     static func phrase(for row: PanelRow) -> String {
         switch row.status {
         case .closed:
+            // A pull request merged into one that was then closed unmerged is closed too —
+            // its change never reached trunk — but it was not the thing that got closed,
+            // and "closed without merging" would read as though it were.
+            if case .mergedIntoAbandonedPullRequest(let parent) = row.releaseStage {
+                return "merged into #\(parent.number), closed"
+            }
             return "closed without merging"
         case .shipped(let tag):
             // Not the design's "live in production". Tags-only tracking (§3) knows that a
             // release tag contains the merge commit and nothing about whether it was
             // deployed, so naming the tag is the whole of what was verified.
             return "released in \(tag)"
+        case .mergedUntracked:
+            // Names the branch rather than claiming a release. Nothing has been shown to
+            // contain this merge; what is known is where it went.
+            guard case .mergedIntoBranch(let branch) = row.releaseStage else { return "merged" }
+            return "merged into \(branch)"
         case .merged:
+            // A nested merge is waiting on the pull request it went into, not on a release
+            // of its own, and saying so is the difference between a row that looks stuck
+            // and a row that explains itself.
+            if case .mergedIntoPullRequest(let parent) = row.releaseStage {
+                return "merged into #\(parent.number)"
+            }
             return "awaiting release"
         case .draft:
             return "draft"
@@ -391,7 +408,13 @@ public struct RowPresentation: Equatable, Sendable {
         case .unmerged:
             merged = .empty
             released = .empty
-        case .mergedAwaitingTag, .deploying:
+        case .mergedAwaitingTag, .deploying, .mergedIntoPullRequest:
+            merged = .passing
+            released = .empty
+        // The change merged, and then stopped. Nothing shipped and nothing failed a
+        // deploy, so the third segment stays empty rather than turning red — PRD §10 is
+        // explicit that an untagged merge is quiet by design, not an error.
+        case .mergedIntoAbandonedPullRequest, .mergedIntoBranch:
             merged = .passing
             released = .empty
         case .released:
@@ -441,7 +464,7 @@ public struct RowPresentation: Equatable, Sendable {
         // A draft dims with the rest of the "present but not asking" cases. It is the
         // user's own unfinished work sitting alongside pull requests that are waiting on
         // someone, and full weight would put it ahead of them.
-        case .merged, .blocked, .draft: return .dim
+        case .merged, .mergedUntracked, .blocked, .draft: return .dim
         default: return .normal
         }
     }
@@ -469,7 +492,9 @@ extension StatusTone {
             self = .danger
         case .approved, .readyToMerge, .shipped:
             self = .success
-        case .merged:
+        // Purple, like any other merge. It did merge — the colour says that much, and the
+        // phrase says the release could not be followed.
+        case .merged, .mergedUntracked:
             self = .merged
         case .closed, .blocked, .inReview, .draft:
             self = .neutral
