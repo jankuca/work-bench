@@ -233,6 +233,10 @@ enum Tokens {
         static let segmentHeight: CGFloat = 3
         static let segmentGap: CGFloat = 2
         static let segmentRadius: CGFloat = 2
+        /// A snoozed row's content, gutter to track. Lighter rather than hidden: the row
+        /// is still there and still clickable, it just stops competing with the rows that
+        /// are asking for something.
+        static let snoozedOpacity: Double = 0.5
     }
 
     enum Stack {

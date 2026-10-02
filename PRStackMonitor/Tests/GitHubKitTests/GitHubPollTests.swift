@@ -52,10 +52,18 @@ private final class RecordingTracker: ReleaseTracker {
     private(set) var received: [PRID: UnboundMerge] = [:]
     private(set) var calls = 0
 
+    var latest: [String: ReleaseMark] = [:]
+    private(set) var watched: [Set<String>] = []
+
     func poll(unbound: [PRID: UnboundMerge], now: Date) async throws -> ReleaseTrackerResult {
         calls += 1
         received = unbound
         return result
+    }
+
+    func latestReleases(in repositories: Set<String>) async throws -> ReleaseTrackerResult {
+        watched.append(repositories)
+        return ReleaseTrackerResult(latestReleases: latest.filter { repositories.contains($0.key) })
     }
 }
 
@@ -187,6 +195,41 @@ final class GitHubPollTests: XCTestCase {
         result.apply(to: &local)
         XCTAssertEqual(local.releaseBindings[id], "v1.4.0")
         XCTAssertNil(local.unboundMerges[id], "a bound pull request keeps no unbound record")
+    }
+
+    /// A `next release` snooze has the poll read its repository's newest release, and
+    /// applying the result is what wakes it.
+    func testAReleaseWatchIsReadAndWakesItsSnooze() async throws {
+        let transport = StubTransport(responses: [
+            .json(SearchPage.json(numbers: [], hasNextPage: false, endCursor: nil)),
+            .json(SearchPage.json(numbers: [], hasNextPage: false, endCursor: nil))
+        ])
+        let tracker = RecordingTracker()
+        let snoozed = PRID(repo: "acme/billing", number: 3)
+        let baseline = ReleaseMark(tag: "v1.0.0", taggedAt: now.addingTimeInterval(-86_400), count: 1)
+        tracker.latest = ["acme/billing": ReleaseMark(tag: "v1.1.0", taggedAt: now, count: 2)]
+        var local = LocalState(snoozes: [snoozed: .nextRelease(repository: "acme/billing", baseline: baseline)])
+
+        let result = try await GitHubPoll(client: client(transport), tracker: tracker)
+            .run(scope: .all, local: local, now: now)
+
+        XCTAssertEqual(tracker.watched, [["acme/billing"]])
+        result.apply(to: &local)
+        XCTAssertNil(local.snoozes[snoozed])
+    }
+
+    /// No watch, no request.
+    func testNoReleaseWatchReadsNoReleases() async throws {
+        let transport = StubTransport(responses: [
+            .json(SearchPage.json(numbers: [], hasNextPage: false, endCursor: nil)),
+            .json(SearchPage.json(numbers: [], hasNextPage: false, endCursor: nil))
+        ])
+        let tracker = RecordingTracker()
+
+        _ = try await GitHubPoll(client: client(transport), tracker: tracker)
+            .run(scope: .all, local: .empty, now: now)
+
+        XCTAssertTrue(tracker.watched.isEmpty)
     }
 
     /// A pull request that merges between the two requests appears in both. Derivation

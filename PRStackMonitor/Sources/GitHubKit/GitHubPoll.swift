@@ -243,6 +243,14 @@ public struct GitHubPoll {
                 }
                 release = try await tracker.poll(unbound: pending, now: now)
                 if !pending.isEmpty { progress?(.finished(.releaseTags)) }
+
+                // The repositories a `next release` snooze is waiting on. Read on every
+                // poll while one is, since a release being cut is exactly the change
+                // nothing else here would notice.
+                let watched = local.releaseWatchRepositories
+                if !watched.isEmpty {
+                    release.merge(try await tracker.latestReleases(in: watched))
+                }
             }
         }
 

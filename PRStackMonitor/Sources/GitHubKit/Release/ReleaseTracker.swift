@@ -14,6 +14,10 @@ public struct ReleaseTrackerResult: Equatable, Sendable {
     /// Tags tested against a pull request's merge commit and found **not** to contain it.
     /// Persisting these is what stops the same pair being compared on every poll forever.
     public var comparisons: [PRID: Set<String>]
+    /// The newest release of each repository a `next release` snooze is watching, keyed by
+    /// `owner/name`. A repository whose tags could not be read completely is left out, so
+    /// its snoozes neither take a baseline nor wake on a partial list.
+    public var latestReleases: [String: ReleaseMark]
     /// How many `compare` requests this poll actually spent.
     public var comparisonsMade: Int
     /// GraphQL points spent reading tags.
@@ -25,6 +29,7 @@ public struct ReleaseTrackerResult: Equatable, Sendable {
     public init(
         bindings: [PRID: String] = [:],
         comparisons: [PRID: Set<String>] = [:],
+        latestReleases: [String: ReleaseMark] = [:],
         comparisonsMade: Int = 0,
         pointsSpent: Int = 0,
         rateLimit: RateLimit? = nil,
@@ -33,6 +38,7 @@ public struct ReleaseTrackerResult: Equatable, Sendable {
     ) {
         self.bindings = bindings
         self.comparisons = comparisons
+        self.latestReleases = latestReleases
         self.comparisonsMade = comparisonsMade
         self.pointsSpent = pointsSpent
         self.rateLimit = rateLimit
@@ -43,7 +49,7 @@ public struct ReleaseTrackerResult: Equatable, Sendable {
     public static let empty = ReleaseTrackerResult()
 
     public var isEmpty: Bool {
-        bindings.isEmpty && comparisons.isEmpty && warnings.isEmpty
+        bindings.isEmpty && comparisons.isEmpty && latestReleases.isEmpty && warnings.isEmpty
     }
 }
 
@@ -64,6 +70,35 @@ public protocol ReleaseTracker {
     /// comparison that 404s) comes back as a warning, because the other repositories'
     /// merges are still perfectly bindable.
     func poll(unbound: [PRID: UnboundMerge], now: Date) async throws -> ReleaseTrackerResult
+
+    /// The newest release each of `repositories` has, for the `next release` snoozes.
+    ///
+    /// Answers in ``ReleaseTrackerResult/latestReleases`` and spends nothing on
+    /// comparisons. Throws on the same terms as ``poll(unbound:now:)``.
+    func latestReleases(in repositories: Set<String>) async throws -> ReleaseTrackerResult
+}
+
+extension ReleaseTracker {
+    /// A tracker that cannot list releases answers with nothing, which leaves every
+    /// `next release` snooze asleep until the user wakes it.
+    public func latestReleases(in repositories: Set<String>) async throws -> ReleaseTrackerResult {
+        .empty
+    }
+}
+
+extension ReleaseTrackerResult {
+    /// Folds a second answer from the same tracker into this one — the release watch's,
+    /// into the comparisons' — so the poll reports one release result.
+    public mutating func merge(_ other: ReleaseTrackerResult) {
+        bindings.merge(other.bindings) { first, _ in first }
+        comparisons.merge(other.comparisons) { $0.union($1) }
+        latestReleases.merge(other.latestReleases) { _, last in last }
+        comparisonsMade += other.comparisonsMade
+        pointsSpent += other.pointsSpent
+        rateLimit = other.rateLimit ?? rateLimit
+        restRateLimit = other.restRateLimit ?? restRateLimit
+        warnings += other.warnings
+    }
 }
 
 extension LocalState {
@@ -80,5 +115,6 @@ extension LocalState {
         for (id, tags) in result.comparisons {
             for tag in tags { recordComparison(id, against: tag) }
         }
+        observeReleases(result.latestReleases)
     }
 }

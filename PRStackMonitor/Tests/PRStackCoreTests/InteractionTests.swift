@@ -206,9 +206,9 @@ final class IssueCycleTests: XCTestCase {
     }
 }
 
-/// What the duration menu resolves to. A fixed calendar, because a wake time is a
+/// What the time-based menu choices resolve to. A fixed calendar, because a wake time is a
 /// wall-clock time and the point of the test is that it lands on the right one.
-final class SnoozeDurationTests: XCTestCase {
+final class SnoozeOptionTests: XCTestCase {
     private let calendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Europe/Prague") ?? .init(secondsFromGMT: 0)!
@@ -225,42 +225,34 @@ final class SnoozeDurationTests: XCTestCase {
         calendar.dateComponents([.year, .month, .day, .hour, .minute, .weekday], from: date)
     }
 
-    func testHourlyDurationsAreElapsedTime() throws {
-        let now = try date("2026-08-06T14:32:00Z")
-        XCTAssertEqual(SnoozeDuration.oneHour.wakeTime(from: now, calendar: calendar), now.addingTimeInterval(3600))
-        XCTAssertEqual(SnoozeDuration.fourHours.wakeTime(from: now, calendar: calendar), now.addingTimeInterval(14400))
+    /// The menu is the three times, then the two events, in that order.
+    func testMenuOrder() {
+        XCTAssertEqual(SnoozeOption.durations.map(\.title), ["For 1 day", "For 1 week", "Until Monday"])
+        XCTAssertEqual(SnoozeOption.events.map(\.title), ["Until any change", "Until the next release"])
     }
 
-    /// Tomorrow morning, in the user's own time zone — 2026-08-06T22:32Z is already the
-    /// 7th in Prague, so "tomorrow" is the 8th there and not the 7th.
-    func testTomorrowIsTheNextLocalMorning() throws {
-        let now = try date("2026-08-06T22:32:00Z")
-        let wake = SnoozeDuration.tomorrow.wakeTime(from: now, calendar: calendar)
-        let parts = components(wake)
-
-        XCTAssertEqual(parts.day, 8)
-        XCTAssertEqual(parts.month, 8)
-        XCTAssertEqual(parts.hour, SnoozeDuration.morningHour)
-        XCTAssertEqual(parts.minute, 0)
-        XCTAssertGreaterThan(wake, now)
+    func testDayAndWeekAreElapsedTime() throws {
+        let now = try date("2026-08-06T14:32:00Z")
+        XCTAssertEqual(SnoozeOption.oneDay.wakeTime(from: now, calendar: calendar), now.addingTimeInterval(86_400))
+        XCTAssertEqual(SnoozeOption.oneWeek.wakeTime(from: now, calendar: calendar), now.addingTimeInterval(7 * 86_400))
     }
 
     /// Thursday's "Until Monday" is four days out.
     func testUntilMondayFromMidweek() throws {
         let now = try date("2026-08-06T14:32:00Z") // a Thursday
-        let wake = SnoozeDuration.nextWeek.wakeTime(from: now, calendar: calendar)
+        let wake = try XCTUnwrap(SnoozeOption.untilMonday.wakeTime(from: now, calendar: calendar))
         let parts = components(wake)
 
         XCTAssertEqual(parts.weekday, 2)
         XCTAssertEqual(parts.day, 10)
-        XCTAssertEqual(parts.hour, SnoozeDuration.morningHour)
+        XCTAssertEqual(parts.hour, SnoozeOption.morningHour)
     }
 
     /// The case the "counting from tomorrow" rule exists for: pressed on a Monday, it
     /// means the *next* Monday, not a snooze that expires the same morning.
     func testUntilMondayOnAMondayIsTheFollowingWeek() throws {
         let now = try date("2026-08-10T06:00:00Z") // a Monday, 08:00 local — before the wake hour
-        let wake = SnoozeDuration.nextWeek.wakeTime(from: now, calendar: calendar)
+        let wake = try XCTUnwrap(SnoozeOption.untilMonday.wakeTime(from: now, calendar: calendar))
         let parts = components(wake)
 
         XCTAssertEqual(parts.weekday, 2)
@@ -268,12 +260,22 @@ final class SnoozeDurationTests: XCTestCase {
         XCTAssertGreaterThan(wake.timeIntervalSince(now), 6 * 24 * 3600)
     }
 
-    /// Whatever the calendar does, a snooze always lands in the future — a deadline in the
-    /// past is a control that visibly does nothing.
+    /// Whatever the calendar does, a time snooze always lands in the future — a deadline in
+    /// the past is a control that visibly does nothing.
     func testEveryDurationIsInTheFuture() throws {
         let now = try date("2026-08-06T14:32:00Z")
-        for duration in SnoozeDuration.allCases {
-            XCTAssertGreaterThan(duration.wakeTime(from: now, calendar: calendar), now, "\(duration)")
+        for option in SnoozeOption.durations {
+            let wake = try XCTUnwrap(option.wakeTime(from: now, calendar: calendar), "\(option)")
+            XCTAssertGreaterThan(wake, now, "\(option)")
+        }
+    }
+
+    /// The event choices have no deadline at all.
+    func testEventsHaveNoWakeTime() {
+        let now = Date(timeIntervalSince1970: 0)
+        let target = PRID(repo: "acme/web", number: 1)
+        for option in SnoozeOption.events + [.merged(target), .released(target)] {
+            XCTAssertNil(option.wakeTime(from: now), "\(option)")
         }
     }
 }
@@ -286,14 +288,14 @@ final class LocalStateActionTests: XCTestCase {
     func testSnoozeAndWakeAreASingleKey() {
         var local = LocalState.empty
         local.snooze(id, until: now.addingTimeInterval(3600))
-        XCTAssertEqual(local.snoozedUntil[id], now.addingTimeInterval(3600))
+        XCTAssertEqual(local.snoozes[id], .until(now.addingTimeInterval(3600)))
 
         local.wake(id)
-        XCTAssertNil(local.snoozedUntil[id])
+        XCTAssertNil(local.snoozes[id])
         // Waking a row that is not asleep is what the menu does when the deadline passed
         // while the panel was open.
         local.wake(id)
-        XCTAssertNil(local.snoozedUntil[id])
+        XCTAssertNil(local.snoozes[id])
     }
 
     /// A dismissed row never renders again, so its wake time has nothing left to wake.
@@ -303,7 +305,7 @@ final class LocalStateActionTests: XCTestCase {
         local.dismiss(id)
 
         XCTAssertTrue(local.dismissed.contains(id))
-        XCTAssertNil(local.snoozedUntil[id])
+        XCTAssertNil(local.snoozes[id])
     }
 
     /// Expired deadlines leave the file; live ones stay. Without this the state file grows
@@ -322,7 +324,7 @@ final class LocalStateActionTests: XCTestCase {
 
         local.pruneSnoozes(before: now)
 
-        XCTAssertEqual(Set(local.snoozedUntil.keys), [live])
+        XCTAssertEqual(Set(local.snoozes.keys), [live])
     }
 
     /// M7's other half, end to end: "a dismissal and a snooze set before a relaunch are
@@ -387,6 +389,6 @@ final class LocalStateActionTests: XCTestCase {
 
         XCTAssertEqual(pruned.dismissed, local.dismissed)
         XCTAssertEqual(pruned.releaseBindings, local.releaseBindings)
-        XCTAssertTrue(pruned.snoozedUntil.isEmpty)
+        XCTAssertTrue(pruned.snoozes.isEmpty)
     }
 }

@@ -19,15 +19,15 @@ struct PRRowView: View {
     var onOpen: () -> Void = {}
     var onOpenIssue: (IssueRef) -> Void = { _ in }
     var onMarkRead: () -> Void = {}
-    var onSnooze: (SnoozeDuration) -> Void = { _ in }
+    var onSnooze: (SnoozeOption) -> Void = { _ in }
     var onWake: () -> Void = {}
     var onDismiss: () -> Void = {}
 
     var body: some View {
         HStack(spacing: Tokens.Row.gap) {
             unreadGutter
-            chipColumn
-            titleAndMeta
+            chipColumn.opacity(contentOpacity)
+            titleAndMeta.opacity(contentOpacity)
             trailing
         }
         .padding(.top, Tokens.Row.paddingTop)
@@ -69,11 +69,11 @@ struct PRRowView: View {
                 Button("Wake now", action: onWake)
             }
             if row.supports(.snooze) {
-                // The duration's own capitalisation, not a lowercased join: `Until Monday`
+                // The option's own capitalisation, not a lowercased join: `Until Monday`
                 // read as "until monday" turns the weekday into a common noun, which is
                 // exactly the kind of thing only the rotor would ever say aloud.
-                ForEach(SnoozeDuration.allCases, id: \.self) { duration in
-                    Button("\(RowAction.snooze.title): \(duration.title)") { onSnooze(duration) }
+                ForEach(rotorSnoozeOptions, id: \.self) { option in
+                    Button("\(RowAction.snooze.title): \(option.title)") { onSnooze(option) }
                 }
             }
         }
@@ -99,16 +99,74 @@ struct PRRowView: View {
             if row.isSnoozed {
                 Button("Wake now", action: onWake)
             }
-            Menu(RowAction.snooze.title) {
-                ForEach(SnoozeDuration.allCases, id: \.self) { duration in
-                    Button(duration.title) { onSnooze(duration) }
-                }
-            }
+            Menu(RowAction.snooze.title) { snoozeMenuItems }
         }
         if row.isDismissible {
             Divider()
             Button(RowAction.dismiss.title, action: onDismiss)
         }
+    }
+
+    /// The snooze submenu: the times, the events, then another pull request merging or
+    /// being released. The same layout as the `S` key's menu in `HoverKeys`.
+    @ViewBuilder
+    private var snoozeMenuItems: some View {
+        ForEach(SnoozeOption.durations, id: \.self) { option in
+            Button(option.title) { onSnooze(option) }
+        }
+        Divider()
+        ForEach(SnoozeOption.events, id: \.self) { option in
+            Button(option.title) { onSnooze(option) }
+        }
+        if !row.mergeTargets.isEmpty || !row.releaseTargets.isEmpty {
+            Divider()
+        }
+        if !row.mergeTargets.isEmpty {
+            Menu("Until merged") {
+                targetItems(row.mergeTargets) { SnoozeOption.merged($0) }
+            }
+        }
+        if !row.releaseTargets.isEmpty {
+            Menu("Until released") {
+                targetItems(row.releaseTargets) { SnoozeOption.released($0) }
+            }
+        }
+    }
+
+    /// The row's own stack first, then a divider, then every other pull request in flight.
+    @ViewBuilder
+    private func targetItems(_ targets: [SnoozeTarget], option: @escaping (PRID) -> SnoozeOption) -> some View {
+        let stack = targets.filter(\.isStackMember)
+        let others = targets.filter { !$0.isStackMember }
+        ForEach(stack, id: \.id) { target in
+            Button(target.menuTitle) { onSnooze(option(target.id)) }
+        }
+        if !stack.isEmpty && !others.isEmpty {
+            Divider()
+        }
+        ForEach(others, id: \.id) { target in
+            Button(target.menuTitle) { onSnooze(option(target.id)) }
+        }
+    }
+
+    /// What the rotor offers: every plain option, and the targets in this row's own stack.
+    ///
+    /// Not every target. The submenus can list the whole account behind two entries, but the
+    /// rotor is flat, and fifty `Until #N is released` entries would bury the rest of the
+    /// row's actions. The stack is what a stacked row is almost always waiting on; anything
+    /// further is a pointer away in the row menu.
+    private var rotorSnoozeOptions: [SnoozeOption] {
+        let stack = row.snoozeTargets.filter(\.isStackMember)
+        return SnoozeOption.durations + SnoozeOption.events
+            + stack.filter(\.isOpen).map { SnoozeOption.merged($0.id) }
+            + stack.map { SnoozeOption.released($0.id) }
+    }
+
+    /// A snoozed row is drawn lighter. Applied to the content columns, not the row: the
+    /// hover lift, the unread dot and the ⋯ button stay at full strength, so a snoozed row
+    /// under the pointer still reads as the row the keys will act on.
+    private var contentOpacity: Double {
+        row.isSnoozed ? Tokens.Row.snoozedOpacity : 1
     }
 
     // MARK: - Background
@@ -182,8 +240,10 @@ struct PRRowView: View {
                     overflow: row.overflowReviewers,
                     haloColor: haloColor
                 )
+                .opacity(contentOpacity)
             }
             ReleaseTrackView(segments: row.segments)
+                .opacity(contentOpacity)
             if row.isDismissible {
                 // The keyboard's `X` is an accelerator, never the only path (§5).
                 Button(action: onDismiss) {
@@ -273,10 +333,10 @@ private extension View {
     }
 }
 
-/// The meta line: #number · [repo ·] phrase · age · [snooze ·] [identifier · +N].
+/// The meta line: #number · [repo ·] phrase · [snooze ·] age · [identifier · +N].
 ///
 /// Everything in brackets is conditional — the repo name on the list spanning more than
-/// one repository, the snooze on a wake time still ahead, the identifier on the pull
+/// one repository, the snooze's condition on a row still asleep, the identifier on the pull
 /// request naming a ticket at all. ``RowPresentation`` decides all of it; this view only
 /// draws what arrives.
 ///

@@ -158,7 +158,14 @@ final class PanelController: ObservableObject {
         self.engine.onCadenceChange = { [weak self] in self?.rebuild() }
         // The merges the last launch left waiting decide the interval before the first poll
         // has landed: a release tag cut while the app was closed is found at 60 s, not 5 min.
-        self.engine.setAwaitingRelease(!local.unboundMerges.isEmpty)
+        self.engine.setAwaitingRelease(isAwaitingRelease)
+    }
+
+    /// Whether anything is waiting on a release tag — a merge to bind, or a snooze until
+    /// the next release. Either one is what the shorter interval is for: a tag cut while
+    /// the app was closed is found at 60 s, not 5 min.
+    private var isAwaitingRelease: Bool {
+        !local.unboundMerges.isEmpty || !local.releaseWatchRepositories.isEmpty
     }
 
     // MARK: - Lifecycle
@@ -495,10 +502,16 @@ final class PanelController: ObservableObject {
             // binds — so the inherited release is written down here rather than re-derived,
             // or the row would flip back to `awaiting release` months after it shipped.
             local.bindInheritedReleases(from: snapshot.pullRequests)
-            // Deadlines that have passed are already awake as far as derivation is
-            // concerned; dropping them here is what stops the file accumulating an entry
-            // per pull request the user has ever silenced.
-            local.pruneSnoozes(before: clock())
+            // Snoozes whose condition this poll met — a deadline passed, a target merged,
+            // the row changed. Derivation already reads them as awake; dropping them here
+            // is what keeps them awake if the change is undone, and what stops the file
+            // accumulating an entry per pull request the user has ever silenced. Only a
+            // poll that saw the whole list may also drop a snooze whose row has gone.
+            local.resolveSnoozes(
+                in: snapshot,
+                now: clock(),
+                isComplete: product.isComplete && !product.isResumed
+            )
             // Which rows the next poll — and the next launch — refreshes before it starts
             // paging. Recorded from the snapshot rather than from the derived model because
             // it is about what this poll *fetched*: a row suppressed by a snooze is still a
@@ -539,7 +552,7 @@ final class PanelController: ObservableObject {
             // two table rows that come out of the data.
             engine.record(.connected, for: .github)
             if let linear = product.linear { engine.record(linear, for: .linear) }
-            engine.setAwaitingRelease(!local.unboundMerges.isEmpty)
+            engine.setAwaitingRelease(isAwaitingRelease)
             // "Recently active" reads the pull requests' own timestamps rather than a note
             // this app takes when it happens to notice something. That way it survives a
             // relaunch, and a stack somebody else is pushing to counts as activity even on
@@ -613,14 +626,23 @@ final class PanelController: ObservableObject {
         rebuild()
     }
 
-    /// Suppresses a row's attention state until the duration's wake time.
+    /// Snoozes a row until the option's condition is met.
     ///
-    /// The deadline is resolved here, from the injected clock, rather than in the menu —
-    /// so "until Monday" means the same thing whichever of the three paths asked for it.
-    func snooze(_ id: PRID, for duration: SnoozeDuration) {
-        local.snooze(id, until: duration.wakeTime(from: clock()))
+    /// Resolved here, against the snapshot on screen and the injected clock, rather than in
+    /// the menu — so "until Monday" means the same thing whichever of the three paths asked
+    /// for it, and "until any change" compares against the row the user was looking at.
+    func snooze(_ id: PRID, _ option: SnoozeOption) {
+        local.snooze(id, option, in: snapshot, now: clock())
         persist()
         rebuild()
+        // The next release is measured from the newest one the repository has now, which
+        // only a poll can read. Asking for one straight away keeps the window in which a
+        // release could slip past unnoticed down to one request, and puts the scheduler on
+        // the interval it uses while anything waits on a tag.
+        if option == .nextRelease {
+            engine.setAwaitingRelease(isAwaitingRelease)
+            refresh()
+        }
     }
 
     /// Ends a snooze early. The row resumes full derivation on the next rebuild, which is
@@ -782,14 +804,15 @@ final class PanelController: ObservableObject {
     }
 
     /// Unread as the *menu bar* reads it: against the authoritative digests rather than
-    /// the frozen copy an open panel renders from.
+    /// the frozen copy an open panel renders from, and only for rows that are awake — a
+    /// snoozed row keeps its dot in the panel but does not light the icon.
     ///
     /// With the panel closed the two are the same value. With it open this is zero until
     /// something new actually lands, which is what "opening the panel clears unread"
     /// means for the icon while the dots stay on screen underneath it.
     private func liveUnreadCount(in model: PanelModel) -> Int {
         model.rows.filter { row in
-            local.readDigests[row.id] != ReadDigest.make(
+            !row.isSuppressed && local.readDigests[row.id] != ReadDigest.make(
                 for: row.pullRequest,
                 releaseStage: row.releaseStage
             )

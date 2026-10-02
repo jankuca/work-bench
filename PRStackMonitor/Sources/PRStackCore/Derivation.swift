@@ -41,6 +41,7 @@ public enum Derivation {
         // request is still the pull request its children merged into, and dropping it here
         // would break a chain over a decision that was only ever about drawing a row.
         let branches = MergeChain.headIndex(snapshot.pullRequests)
+        let snoozeContext = SnoozeContext(snapshot: snapshot, local: local, now: now)
         // The layout needs the stages before it can be built: a merge stays in its stack
         // until a release contains it (``StackLayout/build``). Keyed the same way as `byID`,
         // first occurrence winning, so the two cannot disagree about a repeated id.
@@ -67,8 +68,10 @@ public enum Derivation {
                 releaseStage: stage,
                 parent: layout.blockingParentOf[pullRequest.id]
             )
-            let deadline = local.snoozedUntil[pullRequest.id]
-            let isSuppressed = deadline.map { now < $0 } ?? false
+            // A finished row is never suppressed, whatever its snooze says: Done rows
+            // offer dismissal rather than snooze, and "this finished" is never silenced.
+            let isSuppressed = !status.belongsInDone
+                && isSnoozed(pullRequest, releaseStage: stage, context: snoozeContext)
             let digest = ReadDigest.make(for: pullRequest, releaseStage: stage)
 
             rows.append(
@@ -79,7 +82,7 @@ public enum Derivation {
                     // Snooze silences "this needs you", never "this finished".
                     isAttention: status.isAttentionCandidate && !isSuppressed,
                     isSuppressed: isSuppressed,
-                    snoozedUntil: isSuppressed ? deadline : nil,
+                    snooze: isSuppressed ? local.snoozes[pullRequest.id] : nil,
                     // A pull request we have never recorded a digest for is new to the
                     // user, and new is unread.
                     isUnread: local.readDigests[pullRequest.id] != digest,
@@ -98,14 +101,21 @@ public enum Derivation {
             readyCount: rows.filter(\.isReady).count,
             attentionCount: rows.filter(\.isAttention).count,
             unreadCount: rows.filter(\.isUnread).count,
-            summary: PanelSummary(
-                // `status != .draft` rather than `!pullRequest.isDraft`: the status is the
-                // one derived truth about a row, and it already accounts for a draft that
-                // was closed — which is a Done row and belongs in neither count.
-                openCount: rows.filter { $0.pullRequest.state == .open && $0.status != .draft }.count,
-                draftCount: rows.filter { $0.status == .draft }.count,
-                shippingCount: rows.filter { $0.status == .merged }.count
-            )
+            summary: summary(of: rows)
+        )
+    }
+
+    /// The header's counts. A snoozed row is counted as snoozed and nowhere else.
+    private static func summary(of rows: [PanelRow]) -> PanelSummary {
+        let awake = rows.filter { !$0.isSuppressed }
+        return PanelSummary(
+            // `status != .draft` rather than `!pullRequest.isDraft`: the status is the
+            // one derived truth about a row, and it already accounts for a draft that
+            // was closed — which is a Done row and belongs in neither count.
+            openCount: awake.filter { $0.pullRequest.state == .open && $0.status != .draft }.count,
+            draftCount: awake.filter { $0.status == .draft }.count,
+            shippingCount: awake.filter { $0.status == .merged }.count,
+            snoozedCount: rows.count - awake.count
         )
     }
 

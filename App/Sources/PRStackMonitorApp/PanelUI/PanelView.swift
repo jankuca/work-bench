@@ -126,7 +126,7 @@ struct PanelView: View {
                 onOpen: { controller.open(row: row) },
                 onOpenIssue: { controller.open($0.url) },
                 onMarkRead: { controller.markRead(row.id) },
-                onSnooze: { controller.snooze(row.id, for: $0) },
+                onSnooze: { controller.snooze(row.id, $0) },
                 onWake: { controller.wake(row.id) },
                 onDismiss: { controller.dismiss(row.id) }
             )

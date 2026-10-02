@@ -1,0 +1,59 @@
+{
+  "comment": "A stacked pull request snoozed until the one underneath it merges. It reads `snoozed` in grey rather than its own red, counts as snoozed in the header rather than as in review, and stays out of both badges. Its sibling in another stack is snoozed until any change and has been pushed to since, so it is awake again.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 1400,
+        "title": "Base of the stack",
+        "headRef": "jk/n1400",
+        "baseRef": "main",
+        "state": "open",
+        "checks": "passing",
+        "updatedAt": "2026-01-10T09:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1400", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1401,
+        "title": "Waits for the base to merge",
+        "headRef": "jk/n1401",
+        "baseRef": "jk/n1400",
+        "state": "open",
+        "mergeable": "conflicting",
+        "checks": { "state": "failing", "failingCount": 1 },
+        "updatedAt": "2026-01-10T10:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1401", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1410,
+        "title": "Pushed to since it was snoozed",
+        "headRef": "jk/n1410",
+        "baseRef": "main",
+        "state": "open",
+        "checks": { "state": "failing", "failingCount": 2 },
+        "updatedAt": "2026-01-10T11:00:00Z",
+        "linearIssues": [
+          { "identifier": "BIL-1410", "projectId": "proj-billing", "projectName": "Billing" }
+        ]
+      }
+    ]
+  },
+  "local": {
+    "snoozes": {
+      "acme/billing#1401": { "kind": "merged", "pullRequest": "acme/billing#1400" },
+      "acme/billing#1410": {
+        "kind": "anyChange",
+        "digest": "rd=-;ck=failing:2;mg=unknown;cc=0;lc=-;rs=unmerged",
+        "updatedAt": "2026-01-10T08:00:00Z"
+      }
+    }
+  }
+}

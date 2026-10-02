@@ -167,21 +167,23 @@ final class DerivationInvariantTests: XCTestCase {
         XCTAssertNil(model.row(target))
     }
 
-    /// The summary counts what the header claims: open pull requests, and merged ones
-    /// still waiting for a release tag.
+    /// The summary counts what the header claims: open pull requests, merged ones still
+    /// waiting for a release tag, and — instead of either — the snoozed ones.
     func testSummaryCountsMatchTheRows() throws {
         for name in Fixtures.allNames {
             let model = try Fixtures.derive(name)
+            let awake = model.rows.filter { !$0.isSuppressed }
             XCTAssertEqual(
                 model.summary.openCount,
-                model.rows.filter { $0.pullRequest.state == .open }.count,
+                awake.filter { $0.pullRequest.state == .open }.count,
                 name
             )
             XCTAssertEqual(
                 model.summary.shippingCount,
-                model.rows.filter { $0.status == .merged }.count,
+                awake.filter { $0.status == .merged }.count,
                 name
             )
+            XCTAssertEqual(model.summary.snoozedCount, model.rows.count - awake.count, name)
         }
     }
 }

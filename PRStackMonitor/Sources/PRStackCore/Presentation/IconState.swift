@@ -68,7 +68,8 @@ public enum IconState: Hashable, Sendable {
             github: status.github,
             readyCount: model.readyCount,
             attentionCount: model.attentionCount,
-            unreadCount: model.unreadCount
+            // Snoozed rows keep their dots in the panel but stop lighting the menu bar.
+            unreadCount: model.awakeUnreadCount
         )
     }
 

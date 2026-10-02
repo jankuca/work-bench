@@ -186,8 +186,9 @@ public struct LocalState: Equatable, Sendable {
     /// Permanent tombstones. A dismissed pull request is suppressed forever, even if a
     /// later event touches it (PRD §5.3).
     public var dismissed: Set<PRID>
-    /// Wake times. A row is suppressed while `now < deadline`.
-    public var snoozedUntil: [PRID: Date]
+    /// What each snoozed pull request is waiting for. A row is suppressed until its
+    /// condition is met — see ``Snooze``.
+    public var snoozes: [PRID: Snooze]
     /// The digest recorded the last time the panel was open, or `Mark all read` was used.
     public var readDigests: [PRID: ReadDigest]
     /// Permanent pull request → release tag bindings, written by the release tracker at M6.
@@ -216,7 +217,7 @@ public struct LocalState: Equatable, Sendable {
 
     public init(
         dismissed: Set<PRID> = [],
-        snoozedUntil: [PRID: Date] = [:],
+        snoozes: [PRID: Snooze] = [:],
         readDigests: [PRID: ReadDigest] = [:],
         releaseBindings: [PRID: String] = [:],
         unboundMerges: [PRID: UnboundMerge] = [:],
@@ -224,7 +225,7 @@ public struct LocalState: Equatable, Sendable {
         displayed: [PRID] = []
     ) {
         self.dismissed = dismissed
-        self.snoozedUntil = snoozedUntil
+        self.snoozes = snoozes
         self.readDigests = readDigests
         self.releaseBindings = releaseBindings
         self.unboundMerges = unboundMerges
@@ -294,37 +295,6 @@ public struct LocalState: Equatable, Sendable {
     /// `Mark all read` — every pull request in the snapshot.
     public mutating func markAllRead(in snapshot: RawSnapshot) {
         markRead(snapshot.pullRequests.map(\.id), in: snapshot)
-    }
-
-    // MARK: - Snooze
-
-    /// Suppresses a pull request's attention state until `deadline`.
-    ///
-    /// A deadline already in the past is stored rather than rejected, and derivation reads
-    /// it as awake: the two are the same outcome, and refusing it here would mean the one
-    /// caller that computes a deadline from a stale `now` fails silently instead.
-    public mutating func snooze(_ id: PRID, until deadline: Date) {
-        snoozedUntil[id] = deadline
-    }
-
-    /// Wakes a snoozed pull request now. Idempotent — waking a row that is not asleep is
-    /// what the menu does when the deadline passed while it was open.
-    public mutating func wake(_ id: PRID) {
-        snoozedUntil[id] = nil
-    }
-
-    /// Drops deadlines that have already passed.
-    ///
-    /// Cosmetic for derivation, which compares against `now` either way, but not for the
-    /// file: a snooze set once per pull request per week would otherwise accumulate an
-    /// entry per pull request the user has ever silenced, forever. Called once per poll,
-    /// so an expired deadline survives at most one interval.
-    ///
-    /// Safe against the wake-up event, which is diffed from `(status, isSuppressed)` in
-    /// the previous *model* — removing an entry derivation already reads as expired
-    /// changes nothing it sees.
-    public mutating func pruneSnoozes(before now: Date) {
-        snoozedUntil = snoozedUntil.filter { $0.value > now }
     }
 
     // MARK: - Release tracking
@@ -398,10 +368,10 @@ public struct LocalState: Equatable, Sendable {
             // Nothing will ever ask about this row's chain again, and the answer is only
             // ever read to draw it.
             mergeAnchors[id] = nil
-            // A dismissed row never renders again, so its wake time has nothing left to
+            // A dismissed row never renders again, so its snooze has nothing left to
             // wake. Left behind it would sit in the file forever, since nothing else ever
             // looks the id up again.
-            snoozedUntil[id] = nil
+            snoozes[id] = nil
         }
         // The next poll rewrites this list from its own snapshot and leaves dismissals out
         // anyway, so this only closes the window between the two — but a refresh that spent
@@ -572,6 +542,9 @@ public struct LocalState: Equatable, Sendable {
 extension LocalState: Codable {
     private enum CodingKeys: String, CodingKey {
         case dismissed
+        case snoozes
+        /// The wake-time map every file before conditional snoozes was written with. Read,
+        /// never written: each entry becomes a time snooze.
         case snoozedUntil
         case readDigests
         case releaseBindings
@@ -589,7 +562,16 @@ extension LocalState: Codable {
         // of a public initialiser — to the entry itself.
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let dismissed = try container.decodeIfPresent([String].self, forKey: .dismissed) ?? []
-        let snoozed = try container.decodeIfPresent([String: Date].self, forKey: .snoozedUntil) ?? [:]
+        // Each entry decoded on its own, for the same reason as the ids: a snooze kind a
+        // later version wrote must cost that one snooze, not every other one with it.
+        let lossy = try container.decodeIfPresent([String: LossySnooze].self, forKey: .snoozes) ?? [:]
+        var snoozed = lossy.compactMapValues(\.snooze)
+        // A file from before conditional snoozes: its deadlines are time snoozes, and a key
+        // present in both — which nothing writes — goes to the newer map.
+        let legacy = try container.decodeIfPresent([String: Date].self, forKey: .snoozedUntil) ?? [:]
+        for (raw, deadline) in legacy where snoozed[raw] == nil {
+            snoozed[raw] = .until(deadline)
+        }
         let digests = try container.decodeIfPresent([String: String].self, forKey: .readDigests) ?? [:]
         let bindings = try container.decodeIfPresent([String: String].self, forKey: .releaseBindings) ?? [:]
         let merges = try container.decodeIfPresent([String: UnboundMerge].self, forKey: .unboundMerges) ?? [:]
@@ -604,7 +586,7 @@ extension LocalState: Codable {
         let displayed = try container.decodeIfPresent([String].self, forKey: .displayed) ?? []
         self.init(
             dismissed: Set(dismissed.compactMap(PRID.init(rawValue:))),
-            snoozedUntil: LocalState.rekey(snoozed) { $0 },
+            snoozes: LocalState.rekey(snoozed) { $0 },
             readDigests: LocalState.rekey(digests) { ReadDigest(value: $0) },
             releaseBindings: LocalState.rekey(bindings) { $0 },
             unboundMerges: LocalState.rekey(merges) { $0 },
@@ -623,7 +605,7 @@ extension LocalState: Codable {
         // schema to key/value arrays, and the readable object form is the reason
         // `LocalState` has a hand-written `Codable` at all.
         try container.encode(dismissed.map(\.rawValue).sorted(), forKey: .dismissed)
-        try container.encode(LocalState.stringKeyed(snoozedUntil) { $0 }, forKey: .snoozedUntil)
+        try container.encode(LocalState.stringKeyed(snoozes) { $0 }, forKey: .snoozes)
         try container.encode(LocalState.stringKeyed(readDigests) { $0.value }, forKey: .readDigests)
         try container.encode(LocalState.stringKeyed(releaseBindings) { $0 }, forKey: .releaseBindings)
         try container.encode(LocalState.stringKeyed(unboundMerges) { $0 }, forKey: .unboundMerges)
@@ -654,5 +636,14 @@ extension LocalState: Codable {
             result[id.rawValue] = transform(value)
         }
         return result
+    }
+}
+
+/// One snooze that may fail to decode without failing the file around it.
+private struct LossySnooze: Decodable {
+    let snooze: Snooze?
+
+    init(from decoder: any Decoder) throws {
+        snooze = try? Snooze(from: decoder)
     }
 }
