@@ -117,8 +117,9 @@ public enum MetaToken: Hashable, Sendable {
     /// The one status phrase. The only coloured *status* token on the line.
     case phrase(String, tone: StatusTone)
     case age(String)
-    /// `snoozed 2h`. Tertiary — a snooze is a fact about the user, not about the pull
-    /// request.
+    /// What a snoozed row is waiting for — `until #4127 is merged`, `wakes in 2h`. Tertiary,
+    /// and right behind the `snoozed` phrase it explains: a snooze is a fact about the user,
+    /// not about the pull request.
     case snooze(String)
     /// The primary Linear issue. Indigo, opens the issue. Last on the line: the pull
     /// request's own number is what the row is called, and the ticket is where the row
@@ -202,10 +203,14 @@ public struct RowPresentation: Equatable, Sendable {
     public var segments: [SegmentState]
     /// Done rows carry a ✕. Every keyboard action needs a pointer affordance (§5).
     public var isDismissible: Bool
-    /// Snoozed, with a wake time still ahead of it. The meta line already carries the
-    /// remaining time; this is what turns the row menu's `Snooze` into `Wake now`, so the
-    /// view does not have to read a display token back to find out.
+    /// Snoozed, with its condition not met yet. The meta line already says what it waits
+    /// for; this is what adds `Wake now` to the row menu and draws the whole row lighter,
+    /// so the view does not have to read a display token back to find out.
     public var isSnoozed: Bool
+    /// The other rows this one can be snoozed against, stack members first — what the
+    /// `Until merged` and `Until released` submenus list. Filled in by
+    /// ``PanelPresentation``, which is the level that can see the other rows.
+    public var snoozeTargets: [SnoozeTarget]
     /// The primary issue's URL, for the `L` key and the identifier click.
     public var issueURL: URL?
     /// Every linked issue, primary first — what `+N` opens and what repeated `L` cycles.
@@ -227,6 +232,7 @@ public struct RowPresentation: Equatable, Sendable {
         segments: [SegmentState],
         isDismissible: Bool,
         isSnoozed: Bool,
+        snoozeTargets: [SnoozeTarget] = [],
         issueURL: URL?,
         issues: [IssueRef]
     ) {
@@ -245,6 +251,7 @@ public struct RowPresentation: Equatable, Sendable {
         self.segments = segments
         self.isDismissible = isDismissible
         self.isSnoozed = isSnoozed
+        self.snoozeTargets = snoozeTargets
         self.issueURL = issueURL
         self.issues = issues
     }
@@ -258,10 +265,20 @@ public struct RowPresentation: Equatable, Sendable {
         return parts.joined(separator: ", ")
     }
 
+    /// `Until merged` lists only open pull requests; `Until released` also lists the merged
+    /// ones still waiting for a tag.
+    public var mergeTargets: [SnoozeTarget] { snoozeTargets.filter(\.isOpen) }
+    public var releaseTargets: [SnoozeTarget] { snoozeTargets }
+
     public static func make(row: PanelRow, showsRepoName: Bool, now: Date) -> RowPresentation {
         let pullRequest = row.pullRequest
-        let tone = StatusTone(row.status)
-        let reviewers = badges(for: pullRequest.reviews)
+        // A snoozed row is grey, whatever it would otherwise be. The status underneath is
+        // still the row's — it comes back the moment the row wakes — but red and green are
+        // both asking for something, and asking is exactly what the user put it aside to
+        // stop.
+        let isSnoozed = row.snooze != nil
+        let tone = isSnoozed ? StatusTone.neutral : StatusTone(row.status)
+        let reviewers = badges(for: pullRequest.reviews, isSnoozed: isSnoozed)
 
         return RowPresentation(
             id: row.id,
@@ -271,16 +288,18 @@ public struct RowPresentation: Equatable, Sendable {
             isUnread: row.isUnread,
             isTinted: row.isAttention,
             chipTone: tone,
-            chipGlyph: ChipGlyph(row.status),
+            // The bar is "waiting on something else", which is what a snooze is. The slash a
+            // conflict would draw is exactly the signal a snoozed row should not carry.
+            chipGlyph: isSnoozed ? .bar : ChipGlyph(row.status),
             spine: SpineDraw(row.spine),
             meta: metaTokens(row: row, tone: tone, showsRepoName: showsRepoName, now: now),
             reviewers: Array(reviewers.prefix(avatarLimit)),
             overflowReviewers: max(0, reviewers.count - avatarLimit),
-            segments: segments(for: row),
+            segments: segments(for: row, isSnoozed: isSnoozed),
             isDismissible: row.status.belongsInDone,
-            // `snoozedUntil` is already nil once the deadline has passed, so this is
-            // "asleep now" rather than "has ever been snoozed".
-            isSnoozed: row.snoozedUntil != nil,
+            // `snooze` is already nil once the condition is met, so this is "asleep now"
+            // rather than "has ever been snoozed".
+            isSnoozed: isSnoozed,
             issueURL: row.primaryIssue?.url,
             issues: orderedIssues(of: pullRequest)
         )
@@ -303,10 +322,12 @@ public struct RowPresentation: Equatable, Sendable {
             tokens.append(.repository(row.pullRequest.repo))
         }
         tokens.append(.phrase(phrase(for: row), tone: tone))
-        tokens.append(.age(age(for: row, now: now)))
-        if let deadline = row.snoozedUntil {
-            tokens.append(.snooze("snoozed " + RelativeTime.remaining(until: deadline, now: now)))
+        // Right behind the phrase it explains, rather than after the age: `snoozed · until
+        // #4127 is merged` is one thought, and the age between them would split it.
+        if let snooze = row.snooze {
+            tokens.append(.snooze(snoozeDetail(snooze, now: now)))
         }
+        tokens.append(.age(age(for: row, now: now)))
         // The ticket trails the line, after the age. No placeholder when there is none:
         // design 2a's Other-section row reads `#4051 · merge conflict · 2d`, and the
         // section heading already says `Other` (IMPLEMENTATION_PLAN §5).
@@ -326,6 +347,10 @@ public struct RowPresentation: Equatable, Sendable {
     /// single-status rule (§2). The gutter dot already says something changed, and the
     /// pull request page says what.
     static func phrase(for row: PanelRow) -> String {
+        // Snoozed is the status the row shows while it sleeps. A conflict or a red check
+        // under it is not news the user asked to hear, and the phrase is the one place on
+        // the line that would say it.
+        if row.snooze != nil { return "snoozed" }
         switch row.status {
         case .closed:
             // A pull request merged into one that was then closed unmerged is closed too —
@@ -377,6 +402,22 @@ public struct RowPresentation: Equatable, Sendable {
         }
     }
 
+    /// What a snooze is waiting for, in the fewest words that still name it.
+    static func snoozeDetail(_ snooze: Snooze, now: Date) -> String {
+        switch snooze {
+        case .until(let deadline):
+            return "wakes in " + RelativeTime.remaining(until: deadline, now: now)
+        case .anyChange:
+            return "until any change"
+        case .merged(let target):
+            return "until #\(target.number) is merged"
+        case .released(let target):
+            return "until #\(target.number) is released"
+        case .nextRelease:
+            return "until the next release"
+        }
+    }
+
     /// Open rows date from their last update; Done rows date from the merge or close, in
     /// the past form, because "2d" on a finished pull request reads as a duration rather
     /// than a moment.
@@ -393,13 +434,16 @@ public struct RowPresentation: Equatable, Sendable {
     /// Segment 1 is CI, segment 2 fills on merge to trunk, segment 3 when a matching tag
     /// contains the merge commit. No pulse — there is no fourth thing to be in flight
     /// between (§3).
-    private static func segments(for row: PanelRow) -> [SegmentState] {
+    ///
+    /// A snoozed row's failing checks read as an empty segment rather than a red one: the
+    /// track is the last place on the row a failure could still be shouted from.
+    private static func segments(for row: PanelRow, isSnoozed: Bool) -> [SegmentState] {
         let checks: SegmentState
         switch row.pullRequest.checks.state {
         case .noChecks: checks = .empty
         case .running: checks = .running
         case .passing: checks = .passing
-        case .failing: checks = .failing
+        case .failing: checks = isSnoozed ? .empty : .failing
         }
 
         let merged: SegmentState
@@ -436,7 +480,9 @@ public struct RowPresentation: Equatable, Sendable {
     /// approved appears twice. Source order is the mapper's order, which is GitHub's
     /// newest-state-per-reviewer ordering — taking the first occurrence keeps the current
     /// state and drops the history.
-    private static func badges(for reviews: [ReviewerState]) -> [ReviewerBadge] {
+    ///
+    /// On a snoozed row a changes-requested ring goes grey with everything else red on it.
+    private static func badges(for reviews: [ReviewerState], isSnoozed: Bool) -> [ReviewerBadge] {
         var seen: Set<String> = []
         var badges: [ReviewerBadge] = []
         for review in reviews {
@@ -446,7 +492,7 @@ public struct RowPresentation: Equatable, Sendable {
                     login: review.login,
                     initials: ReviewerBadge.initials(for: review.login),
                     avatarURL: review.avatarURL,
-                    tone: StatusTone(review.state)
+                    tone: isSnoozed && review.state == .changesRequested ? .neutral : StatusTone(review.state)
                 )
             )
         }
@@ -457,8 +503,8 @@ public struct RowPresentation: Equatable, Sendable {
 
     private static func emphasis(for row: PanelRow) -> TitleEmphasis {
         if row.isAttention { return .strong }
-        // A snoozed row keeps its status but stops asking, so it dims with the rest of
-        // the "nothing for you here" cases rather than staying at full weight.
+        // A snoozed row stops asking, so it dims with the rest of the "nothing for you
+        // here" cases rather than staying at full weight.
         if row.isSuppressed || row.status.belongsInDone { return .dim }
         switch row.status {
         // A draft dims with the rest of the "present but not asking" cases. It is the

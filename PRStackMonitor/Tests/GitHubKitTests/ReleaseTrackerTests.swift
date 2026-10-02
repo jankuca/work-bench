@@ -94,6 +94,37 @@ final class ReleaseTrackerTests: XCTestCase {
         ]
     }
 
+    /// The release watch reads the same tag list and reports its newest tag and its size,
+    /// with no comparisons at all.
+    func testLatestReleasesReportsTheNewestTagAndTheCount() async throws {
+        let transport = ReleaseStubTransport()
+        transport.tagPages = [
+            .json(TagPage.json(tags: [
+                TagPage.Tag.lightweight("v1.2.0", commit: "c3", date: ReleaseTrackerTests.day(7)),
+                TagPage.Tag.lightweight("v1.0.0", commit: "c1", date: ReleaseTrackerTests.day(5))
+            ]))
+        ]
+
+        let result = try await tracker(transport).latestReleases(in: [repository])
+
+        XCTAssertEqual(
+            result.latestReleases,
+            [repository: ReleaseMark(tag: "v1.2.0", taggedAt: ReleaseTrackerTests.date(7), count: 2)]
+        )
+        XCTAssertTrue(transport.compared.isEmpty)
+    }
+
+    /// A repository with no release yet still has a mark — an empty one — so its first
+    /// release is the one the snooze wakes for.
+    func testLatestReleasesOfARepositoryWithNoTags() async throws {
+        let transport = ReleaseStubTransport()
+        transport.tagPages = [.json(TagPage.json(tags: []))]
+
+        let result = try await tracker(transport).latestReleases(in: [repository])
+
+        XCTAssertEqual(result.latestReleases, [repository: ReleaseMark(tag: nil, taggedAt: nil, count: 0)])
+    }
+
     /// Oldest candidate first, and the first hit wins — which is what makes the binding the
     /// *earliest* release containing the merge rather than an arbitrary one.
     func testBindsTheEarliestContainingTagAndStopsThere() async throws {

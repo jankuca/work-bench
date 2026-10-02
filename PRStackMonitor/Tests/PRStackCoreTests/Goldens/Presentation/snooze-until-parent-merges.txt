@@ -1,0 +1,9 @@
+header title="Pull requests" summary="2 in review · 1 snoozed" refreshing=false attention=1
+section heading="Billing" count=3 muted=false clearAll=-
+  row id=acme/billing#1401 title="Waits for the base to merge" emphasis=dim chip=neutral/bar tint=false unread=true spine=down track=empty|empty|empty reviewers=[]+0 dismissible=false
+    meta num(#1401) phrase(snoozed|neutral) snooze(until #1400 is merged) age(2h) issue(BIL-1401)
+  row id=acme/billing#1400 title="Base of the stack" emphasis=normal chip=neutral/dot tint=false unread=true spine=up track=passing|empty|empty reviewers=[]+0 dismissible=false
+    meta num(#1400) phrase(in review|neutral) age(3h) issue(BIL-1400)
+  row id=acme/billing#1410 title="Pushed to since it was snoozed" emphasis=strong chip=danger/dot tint=true unread=true spine=none track=failing|empty|empty reviewers=[]+0 dismissible=false
+    meta num(#1410) phrase(2 checks failed|danger) age(1h) issue(BIL-1410)
+footer tone=success text="synced 34s ago" markAllRead=true

@@ -161,7 +161,8 @@ public struct PanelStatus: Equatable, Sendable {
 
 public struct HeaderPresentation: Equatable, Sendable {
     public var title: String
-    /// `10 in review · 2 drafts · 3 shipping`. Empty when there is nothing to count.
+    /// `10 in review · 2 drafts · 3 shipping · 2 snoozed`. Empty when there is nothing to
+    /// count.
     public var summary: String
     public var isRefreshing: Bool
 
@@ -400,6 +401,7 @@ public struct PanelPresentation: Equatable, Sendable {
         now: Date,
         syncProgress: SyncProgress? = nil
     ) -> PanelPresentation {
+        let targets = snoozeTargets(in: model)
         let sections = model.sections.map { section in
             SectionPresentation(
                 kind: section.kind,
@@ -407,8 +409,12 @@ public struct PanelPresentation: Equatable, Sendable {
                 count: section.rows.count,
                 isMuted: section.kind == .done,
                 clearAllTitle: section.kind == .done ? "Clear all" : nil,
-                rows: section.rows.map {
-                    RowPresentation.make(row: $0, showsRepoName: model.showsRepoNames, now: now)
+                rows: section.rows.map { row in
+                    var presented = RowPresentation.make(row: row, showsRepoName: model.showsRepoNames, now: now)
+                    if presented.supports(.snooze) {
+                        presented.snoozeTargets = targets(row)
+                    }
+                    return presented
                 }
             )
         }
@@ -429,6 +435,32 @@ public struct PanelPresentation: Equatable, Sendable {
             ),
             attentionCount: status.github.isConnected ? model.attentionCount : 0
         )
+    }
+
+    // MARK: Snooze targets
+
+    /// For each row, the other rows it can be snoozed against: rows in its own stack first,
+    /// then everything else, each part in panel order.
+    ///
+    /// Only rows still in flight — open, or merged and waiting for a release. A finished one
+    /// has nothing left to wait for, so a snooze on it would wake on the next derivation.
+    private static func snoozeTargets(in model: PanelModel) -> (PanelRow) -> [SnoozeTarget] {
+        let candidates = model.rows.filter { !$0.status.belongsInDone }
+        return { row in
+            let others = candidates.filter { $0.id != row.id }
+            let isStackMember: (PanelRow) -> Bool = { candidate in
+                row.stackRoot != nil && candidate.stackRoot == row.stackRoot
+            }
+            let ordered = others.filter(isStackMember) + others.filter { !isStackMember($0) }
+            return ordered.map { candidate in
+                SnoozeTarget(
+                    id: candidate.id,
+                    title: candidate.pullRequest.title,
+                    isStackMember: isStackMember(candidate),
+                    isOpen: candidate.pullRequest.state == .open
+                )
+            }
+        }
     }
 
     // MARK: Body
@@ -569,7 +601,7 @@ public struct PanelPresentation: Equatable, Sendable {
 
     // MARK: Header
 
-    /// `10 in review · 2 drafts · 3 shipping`, dropping any part that is zero — `0 shipping`
+    /// `10 in review · 2 drafts · 3 shipping · 2 snoozed`, dropping any part that is zero — `0 shipping`
     /// is a count of nothing, and the panel below already shows its absence. The drafts part
     /// is therefore absent entirely unless the user has turned drafts on.
     private static func summary(for summary: PanelSummary) -> String {
@@ -579,6 +611,7 @@ public struct PanelPresentation: Equatable, Sendable {
             parts.append("\(summary.draftCount) draft\(summary.draftCount == 1 ? "" : "s")")
         }
         if summary.shippingCount > 0 { parts.append("\(summary.shippingCount) shipping") }
+        if summary.snoozedCount > 0 { parts.append("\(summary.snoozedCount) snoozed") }
         return parts.joined(separator: " · ")
     }
 

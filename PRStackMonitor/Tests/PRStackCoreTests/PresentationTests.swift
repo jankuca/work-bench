@@ -50,19 +50,19 @@ final class RowPresentationTests: XCTestCase {
         )
     }
 
-    /// The ticket trails the age, so a snoozed row's wake time does not separate it from
-    /// the identifier it belongs to.
+    /// The snooze's condition sits right behind the `snoozed` phrase it explains, and the
+    /// ticket still trails the line.
     func testIdentifierComesAfterTheSnoozeToken() throws {
         var pr = pullRequest()
         pr.mergeable = .conflicting
         pr.linearIssues = [IssueRef(identifier: "BIL-312", projectID: "p", projectName: "Billing")]
-        let local = LocalState(snoozedUntil: [pr.id: now.addingTimeInterval(2 * 60 * 60)])
+        let local = LocalState(snoozes: [pr.id: .until(now.addingTimeInterval(2 * 60 * 60))])
 
         let presented = try present(pr, local: local)
 
         XCTAssertEqual(
             presented.meta.map(\.text),
-            ["#100", "merge conflict", "3h", "snoozed 2h", "BIL-312"]
+            ["#100", "snoozed", "wakes in 2h", "3h", "BIL-312"]
         )
     }
 
@@ -118,20 +118,54 @@ final class RowPresentationTests: XCTestCase {
         XCTAssertEqual(presented.meta.dropLast().last?.text, "BIL-312")
     }
 
-    func testSnoozedRowShowsItsRemainingTime() throws {
+    /// `snoozed` is the status a sleeping row shows, in grey, whatever is underneath it —
+    /// a conflict included, which is the one status with a glyph of its own.
+    func testSnoozedRowShowsSnoozedInsteadOfItsStatus() throws {
         var pr = pullRequest()
         pr.mergeable = .conflicting
-        let local = LocalState(snoozedUntil: [pr.id: now.addingTimeInterval(2 * 60 * 60)])
+        let local = LocalState(snoozes: [pr.id: .until(now.addingTimeInterval(2 * 60 * 60))])
 
         let presented = try present(pr, local: local)
 
-        // Also the no-ticket case of where the line ends: at the snooze, not at the age,
-        // since the snooze token outlives the identifier this row does not have.
-        XCTAssertEqual(presented.meta.map(\.text), ["#100", "merge conflict", "3h", "snoozed 2h"])
-        // Snooze silences the ask without hiding the status.
+        XCTAssertEqual(presented.meta.map(\.text), ["#100", "snoozed", "wakes in 2h", "3h"])
+        XCTAssertEqual(presented.meta[1], .phrase("snoozed", tone: .neutral))
         XCTAssertFalse(presented.isTinted)
         XCTAssertEqual(presented.emphasis, .dim)
-        XCTAssertEqual(presented.chipTone, .danger)
+        XCTAssertEqual(presented.chipTone, .neutral)
+        XCTAssertEqual(presented.chipGlyph, .bar)
+        XCTAssertTrue(presented.isSnoozed)
+    }
+
+    /// Red checks and a changes-requested ring are both failures, and a snoozed row shows
+    /// neither: the track's checks segment empties and the ring goes grey.
+    func testSnoozedRowShowsNoFailures() throws {
+        var pr = pullRequest()
+        pr.checks = .failing(2)
+        pr.reviews = [ReviewerState(login: "anna", state: .changesRequested)]
+        let local = LocalState(snoozes: [pr.id: .until(now.addingTimeInterval(3600))])
+
+        let snoozed = try present(pr, local: local)
+        XCTAssertEqual(snoozed.segments, [.empty, .empty, .empty])
+        XCTAssertEqual(snoozed.reviewers.map(\.tone), [.neutral])
+
+        let awake = try present(pr)
+        XCTAssertEqual(awake.segments, [.failing, .empty, .empty])
+        XCTAssertEqual(awake.reviewers.map(\.tone), [.danger])
+    }
+
+    /// Each condition names what it waits on.
+    func testSnoozeConditionsAreNamed() {
+        let target = PRID(repo: "acme/web", number: 4127)
+        let cases: [(Snooze, String)] = [
+            (.until(now.addingTimeInterval(90 * 60)), "wakes in 2h"),
+            (.anyChange(digest: ReadDigest(value: "x"), updatedAt: now), "until any change"),
+            (.merged(target), "until #4127 is merged"),
+            (.released(target), "until #4127 is released"),
+            (.nextRelease(repository: "acme/web", baseline: nil), "until the next release")
+        ]
+        for (snooze, text) in cases {
+            XCTAssertEqual(RowPresentation.snoozeDetail(snooze, now: now), text)
+        }
     }
 
     // MARK: - Status phrase
@@ -145,7 +179,7 @@ final class RowPresentationTests: XCTestCase {
                 releaseStage: .unmerged,
                 isAttention: false,
                 isSuppressed: false,
-                snoozedUntil: nil,
+                snooze: nil,
                 isUnread: false,
                 spine: .none,
                 runBase: nil,

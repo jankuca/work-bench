@@ -28,7 +28,7 @@ final class StateStoreTests: XCTestCase {
         let snoozed = PRID(repo: "acme/web", number: 77)
         return LocalState(
             dismissed: [PRID(repo: "acme/web", number: 12)],
-            snoozedUntil: [snoozed: Date(timeIntervalSince1970: 1_767_960_000)],
+            snoozes: [snoozed: .until(Date(timeIntervalSince1970: 1_767_960_000))],
             readDigests: [snoozed: ReadDigest(value: "rd=-;ck=passing;mg=mergeable;cc=0;lc=-;rs=unmerged")],
             releaseBindings: [shipped: "v1.4.0"],
             unboundMerges: [

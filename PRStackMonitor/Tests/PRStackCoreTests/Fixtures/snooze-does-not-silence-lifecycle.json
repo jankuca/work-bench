@@ -1,5 +1,5 @@
 {
-  "comment": "Snooze silences 'this needs you', not 'this finished'. A snoozed pull request that shipped still resolves to shipped and still moves to Done; it is only marked suppressed so the row renders dimmed.",
+  "comment": "Snooze silences 'this needs you', not 'this finished'. A snoozed pull request that shipped still resolves to shipped and moves to Done, where it is no longer suppressed: a finished row has nothing left to silence.",
   "now": "2026-01-10T12:00:00Z",
   "snapshot": {
     "viewerLogin": "jankuca",

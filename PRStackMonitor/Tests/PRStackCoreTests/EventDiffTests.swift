@@ -107,7 +107,7 @@ final class EventDiffTests: XCTestCase {
     /// carries the transition. Exactly one event, at wake.
     func testStatusChangedWhileAsleepEmitsExactlyOnceAtWake() {
         let deadline = Date(timeIntervalSince1970: 1_000_000)
-        let local = LocalState(snoozedUntil: [id(4001): deadline])
+        let local = LocalState(snoozes: [id(4001): .until(deadline)])
         let snapshotBefore = snapshot(with: [pullRequest(4001)])
         let snapshotAfter = snapshot(with: [pullRequest(4001, checks: .failing(1))])
 
@@ -149,7 +149,7 @@ final class EventDiffTests: XCTestCase {
     /// what stops it here is that the status it wakes into is not an attention status.
     func testSnoozeExpiryWithNoUnderlyingChangeEmitsNothing() {
         let deadline = Date(timeIntervalSince1970: 1_000_000)
-        let local = LocalState(snoozedUntil: [id(4001): deadline])
+        let local = LocalState(snoozes: [id(4001): .until(deadline)])
         let unchanged = snapshot(with: [pullRequest(4001)])
 
         let asleep = Derivation.derive(snapshot: unchanged, local: local, now: deadline.addingTimeInterval(-60))
@@ -161,7 +161,7 @@ final class EventDiffTests: XCTestCase {
     /// Snooze silences "this needs you", not "this finished".
     func testSnoozeDoesNotWithholdReachedProduction() {
         let deadline = Date(timeIntervalSince1970: 1_000_000)
-        var local = LocalState(snoozedUntil: [id(4001): deadline])
+        var local = LocalState(snoozes: [id(4001): .until(deadline)])
         let merged = snapshot(with: [pullRequest(4001, state: .merged)])
 
         let awaiting = Derivation.derive(snapshot: merged, local: local, now: deadline.addingTimeInterval(-120))
@@ -174,10 +174,8 @@ final class EventDiffTests: XCTestCase {
         )
 
         XCTAssertEqual(released.events, [.reachedProduction(id(4001))])
-        XCTAssertTrue(
-            released.model.row(id(4001))?.isSuppressed == true,
-            "The row should still be snoozed — the point is that it shipped anyway"
-        )
+        // And it is no longer asleep: a finished row has nothing left to suppress.
+        XCTAssertEqual(released.model.row(id(4001))?.isSuppressed, false)
 
         // Waking later does not announce it a second time.
         let awake = Derivation.derive(snapshot: merged, local: local, previous: released.model, now: deadline)
@@ -187,7 +185,7 @@ final class EventDiffTests: XCTestCase {
     /// Comments that arrive while a row is asleep are not replayed at wake.
     func testCommentsDuringASnoozeAreNotAnnounced() {
         let deadline = Date(timeIntervalSince1970: 1_000_000)
-        let local = LocalState(snoozedUntil: [id(4001): deadline])
+        let local = LocalState(snoozes: [id(4001): .until(deadline)])
 
         let quiet = Derivation.derive(
             snapshot: snapshot(with: [pullRequest(4001, commentCount: 1)]),
@@ -216,7 +214,7 @@ final class EventDiffTests: XCTestCase {
 
         let deadline = Date(timeIntervalSince1970: 1_000_000)
         let now = deadline.addingTimeInterval(-60)
-        let snoozed = LocalState(snoozedUntil: [id(4001): deadline])
+        let snoozed = LocalState(snoozes: [id(4001): .until(deadline)])
         let cases: [(kind: DomainEventKind, before: PullRequest, after: PullRequest)] = [
             (.changesRequested, pullRequest(4001), pullRequest(4001, reviewDecision: .changesRequested)),
             (.checksFailed, pullRequest(4001), pullRequest(4001, checks: .failing(1))),

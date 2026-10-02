@@ -8,10 +8,11 @@ public struct PanelRow: Equatable, Sendable {
     /// Status 5–7 **and** not snoozed. This is the value the tint, the title weight and
     /// the icon's red badge all read.
     public var isAttention: Bool
-    /// Snoozed with a wake time still in the future.
+    /// Snoozed, with its condition not met yet. Never true on a row that belongs in Done:
+    /// a finished pull request has nothing left to suppress.
     public var isSuppressed: Bool
-    /// The wake time, when snoozed — the meta line shows it.
-    public var snoozedUntil: Date?
+    /// What the row is waiting for, while it is suppressed — the meta line says it.
+    public var snooze: Snooze?
     public var isUnread: Bool
     public var spine: SpinePosition
     public var runBase: PRID?
@@ -23,7 +24,7 @@ public struct PanelRow: Equatable, Sendable {
         releaseStage: ReleaseStage,
         isAttention: Bool,
         isSuppressed: Bool,
-        snoozedUntil: Date?,
+        snooze: Snooze?,
         isUnread: Bool,
         spine: SpinePosition,
         runBase: PRID?,
@@ -34,7 +35,7 @@ public struct PanelRow: Equatable, Sendable {
         self.releaseStage = releaseStage
         self.isAttention = isAttention
         self.isSuppressed = isSuppressed
-        self.snoozedUntil = snoozedUntil
+        self.snooze = snooze
         self.isUnread = isUnread
         self.spine = spine
         self.runBase = runBase
@@ -99,11 +100,16 @@ public struct PanelSummary: Equatable, Sendable {
     public var draftCount: Int
     /// Merged, waiting for a release tag — "3 shipping".
     public var shippingCount: Int
+    /// Snoozed rows — "2 snoozed". Counted here *instead of* in the three above: a snoozed
+    /// row has been put aside, and counting it as in review as well would have the header
+    /// add up to more pull requests than there are.
+    public var snoozedCount: Int
 
-    public init(openCount: Int, draftCount: Int = 0, shippingCount: Int) {
+    public init(openCount: Int, draftCount: Int = 0, shippingCount: Int, snoozedCount: Int = 0) {
         self.openCount = openCount
         self.draftCount = draftCount
         self.shippingCount = shippingCount
+        self.snoozedCount = snoozedCount
     }
 }
 
@@ -140,6 +146,15 @@ public struct PanelModel: Equatable, Sendable {
     }
 
     public var rows: [PanelRow] { sections.flatMap(\.rows) }
+
+    /// Unread rows that are not snoozed — the menu bar's dot.
+    ///
+    /// The row keeps its own dot either way: something did change, and the panel is where
+    /// the user goes to see what. What a snooze takes away is the icon asking them to come
+    /// and look, which is the same thing it takes away from the two badges.
+    public var awakeUnreadCount: Int {
+        rows.filter { $0.isUnread && !$0.isSuppressed }.count
+    }
     public var isEmpty: Bool { sections.isEmpty }
 
     public func row(_ id: PRID) -> PanelRow? {

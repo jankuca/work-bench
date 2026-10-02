@@ -228,6 +228,48 @@ public struct TagContainmentTracker: ReleaseTracker {
 
         return result
     }
+
+    /// The newest matching tag of each repository, and how many there are.
+    ///
+    /// The same tag list ``poll(unbound:now:)`` reads, so the same pattern decides what a
+    /// release is. A truncated list is left out rather than reported: its newest tag may be
+    /// on a page that was never fetched, and a baseline taken from it would make the next
+    /// complete read look like a release.
+    public func latestReleases(in repositories: Set<String>) async throws -> ReleaseTrackerResult {
+        var result = ReleaseTrackerResult()
+        for repository in repositories.sorted() {
+            let fetch: TagFetch
+            do {
+                fetch = try await tags.fetchCandidates(
+                    repository: repository,
+                    glob: configuration.tagPatterns.glob(for: repository)
+                )
+            } catch let error as GitHubError {
+                if error.endsThePoll { throw error }
+                result.warnings.append(
+                    .releaseTrackingFailed(repository: repository, reason: error.description)
+                )
+                continue
+            }
+
+            result.pointsSpent += fetch.pointsSpent
+            result.rateLimit = fetch.rateLimit ?? result.rateLimit
+            result.warnings.append(contentsOf: fetch.warnings)
+
+            if fetch.isComplete {
+                // Already oldest first, so the newest is the last.
+                let newest = fetch.candidates.last
+                result.latestReleases[repository] = ReleaseMark(
+                    tag: newest?.name,
+                    taggedAt: newest?.taggedAt,
+                    count: fetch.candidates.count
+                )
+            }
+            // Below the floor the rest waits for the next poll, as the comparisons do.
+            if let limit = fetch.rateLimit, limit.isBelowFloor { break }
+        }
+        return result
+    }
 }
 
 extension GitHubError {

@@ -106,7 +106,7 @@ From the repository root those are `make dump` and `make panel`.
 {
   "now": "2026-01-10T12:00:00Z",       // the injected clock
   "snapshot": { "viewerLogin": "…", "pullRequests": [ … ] },
-  "local": { "dismissed": [], "snoozedUntil": {}, "readDigests": {}, "releaseBindings": {} },
+  "local": { "dismissed": [], "snoozes": {}, "readDigests": {}, "releaseBindings": {} },
   "readAsOfSnapshot": ["acme/billing#4012"]   // "the panel was open and this is what it looked like"
 }
 ```

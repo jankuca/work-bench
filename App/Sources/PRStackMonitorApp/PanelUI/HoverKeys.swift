@@ -20,7 +20,7 @@ final class HoverKeyMonitor: NSObject {
     /// it does by itself, on the id — and when the panel closes.
     private var issues = IssueCycle()
     /// Which row the open snooze menu is for. Held because `NSMenuItem`'s action carries
-    /// only the duration.
+    /// only the option.
     private var snoozeTarget: PRID?
     /// What `esc` calls. A closure rather than a reference to the popover, so this class goes
     /// on knowing nothing about windows beyond the one it scopes events to.
@@ -126,22 +126,36 @@ final class HoverKeyMonitor: NSObject {
 
     // MARK: - The snooze menu
 
-    /// `S` opens the duration menu inline — at the pointer, over the row it is about.
+    /// `S` opens the snooze menu inline — at the pointer, over the row it is about.
     ///
     /// An `NSMenu` rather than something in SwiftUI because it has to appear from a key
-    /// press with no view to anchor to, and because this way the key and the row menu offer
-    /// one list built from one place.
+    /// press with no view to anchor to. The layout is the row menu's: the times, the events,
+    /// then the `Until merged` and `Until released` submenus, each listing the row's own
+    /// stack before everything else.
     private func presentSnoozeMenu(for row: RowPresentation) {
         guard let window, let view = window.contentView else { return }
         snoozeTarget = row.id
 
         let menu = NSMenu(title: RowAction.snooze.title)
         if row.isSnoozed {
-            menu.addItem(item(title: "Wake now", duration: nil))
+            menu.addItem(item(title: "Wake now", option: nil))
             menu.addItem(.separator())
         }
-        for duration in SnoozeDuration.allCases {
-            menu.addItem(item(title: duration.title, duration: duration))
+        for option in SnoozeOption.durations {
+            menu.addItem(item(title: option.title, option: option))
+        }
+        menu.addItem(.separator())
+        for option in SnoozeOption.events {
+            menu.addItem(item(title: option.title, option: option))
+        }
+        if !row.mergeTargets.isEmpty || !row.releaseTargets.isEmpty {
+            menu.addItem(.separator())
+        }
+        if !row.mergeTargets.isEmpty {
+            menu.addItem(submenu(title: "Until merged", targets: row.mergeTargets) { .merged($0) })
+        }
+        if !row.releaseTargets.isEmpty {
+            menu.addItem(submenu(title: "Until released", targets: row.releaseTargets) { .released($0) })
         }
 
         // `mouseLocationOutsideOfEventStream` is in window coordinates and current as of
@@ -151,23 +165,45 @@ final class HoverKeyMonitor: NSObject {
         _ = menu.popUp(positioning: nil, at: location, in: view)
     }
 
-    private func item(title: String, duration: SnoozeDuration?) -> NSMenuItem {
+    private func submenu(
+        title: String,
+        targets: [SnoozeTarget],
+        option: (PRID) -> SnoozeOption
+    ) -> NSMenuItem {
+        let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let menu = NSMenu(title: title)
+        let stack = targets.filter(\.isStackMember)
+        let others = targets.filter { !$0.isStackMember }
+        for target in stack {
+            menu.addItem(item(title: target.menuTitle, option: option(target.id)))
+        }
+        if !stack.isEmpty && !others.isEmpty {
+            menu.addItem(.separator())
+        }
+        for target in others {
+            menu.addItem(item(title: target.menuTitle, option: option(target.id)))
+        }
+        parent.submenu = menu
+        return parent
+    }
+
+    private func item(title: String, option: SnoozeOption?) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: #selector(snoozePicked(_:)), keyEquivalent: "")
         item.target = self
         // `representedObject` is a strong `Any?`, which is how the enum survives the trip
         // through the menu — `NSMenuItem` has no payload of its own. Assigned only when
         // there is one, so `Wake now` carries a plain absence rather than a boxed `nil`.
-        if let duration { item.representedObject = duration }
+        if let option { item.representedObject = option }
         return item
     }
 
     @objc private func snoozePicked(_ sender: NSMenuItem) {
         guard let controller, let id = snoozeTarget else { return }
         snoozeTarget = nil
-        guard let duration = sender.representedObject as? SnoozeDuration else {
+        guard let option = sender.representedObject as? SnoozeOption else {
             controller.wake(id)
             return
         }
-        controller.snooze(id, for: duration)
+        controller.snooze(id, option)
     }
 }

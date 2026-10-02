@@ -126,7 +126,7 @@ appears on the hovered row, the right-click menu, and the VoiceOver rotor all re
 `RowAction`, so a case added there appears in all three.
 
 With the pointer over a row, the keyboard accelerates the same list: `R` marks it read, `S`
-opens the snooze durations, `X` dismisses a Done row, `↩` opens the pull request, and `L`
+opens the snooze menu, `X` dismisses a Done row, `↩` opens the pull request, and `L`
 opens the primary Linear issue with repeated presses cycling through the rest. The keys are
 a single local `NSEvent` monitor scoped to the popover's window, started on open and stopped
 through one idempotent teardown — a popover close and a resign both fire for the same

@@ -55,7 +55,7 @@ final class CodableTests: XCTestCase {
         let state = try decoder.decode(LocalState.self, from: Data(json.utf8))
 
         XCTAssertEqual(state.dismissed, [PRID(repo: "acme/billing", number: 4012)])
-        XCTAssertEqual(Set(state.snoozedUntil.keys), [PRID(repo: "acme/billing", number: 4013)])
+        XCTAssertEqual(Set(state.snoozes.keys), [PRID(repo: "acme/billing", number: 4013)])
         XCTAssertEqual(Set(state.readDigests.keys), [PRID(repo: "acme/web", number: 77)])
         XCTAssertEqual(Set(state.releaseBindings.keys), [PRID(repo: "acme/web", number: 78)])
     }
@@ -115,7 +115,7 @@ final class CodableTests: XCTestCase {
         let other = PRID(repo: "acme/web", number: 77)
         let state = LocalState(
             dismissed: [other],
-            snoozedUntil: [id: Date(timeIntervalSince1970: 1_767_960_000)],
+            snoozes: [id: .until(Date(timeIntervalSince1970: 1_767_960_000))],
             readDigests: [id: ReadDigest(value: "rd=-;ck=passing;mg=mergeable;cc=0;lc=-;rs=unmerged")],
             releaseBindings: [other: "v1.4.0"]
         )

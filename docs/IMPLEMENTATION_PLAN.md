@@ -116,7 +116,7 @@ func derive(snapshot: RawSnapshot,
             now: Date) -> (model: PanelModel, events: [DomainEvent])
 ```
 
-`local` = dismissed IDs, snooze deadlines, last-read digests, release bindings. `previous` is the model from
+`local` = dismissed IDs, snoozes, last-read digests, release bindings. `previous` is the model from
 the last derivation, held by `SyncEngine` and **not persisted**. Derivation is a pure function of all four
 inputs; the same inputs always yield the same panel and the same event list.
 
@@ -127,15 +127,37 @@ but preserves unread`).
 
 ### Snooze semantics
 
-A PR with a snooze deadline in the future (`local.snoozedUntil[id] > now`) is **suppressed**:
+A snooze (`local.snoozes[id]`) is a **condition**, not just a deadline. The menu offers three times
+(`For 1 day`, `For 1 week`, `Until Monday`), two events (`Until any change`, `Until the next release`), and
+another pull request being merged or released — the row's own stack listed first, then every other row
+still in flight. Each resolves to one `Snooze`:
+
+| Snooze | Wakes when | Evaluated by |
+| --- | --- | --- |
+| `until(date)` | `now >= date` | derivation |
+| `anyChange(digest, updatedAt)` | the read digest differs from the one recorded, or `updatedAt` moved | derivation |
+| `merged(id)` | the target is merged or closed (or already bound to a release) | derivation |
+| `released(id)` | the target belongs in Done — shipped, closed, or untrackable | derivation |
+| `nextRelease(repo, baseline)` | a poll reads a newer release than `baseline` | the poll |
+
+`nextRelease` is the one condition the snapshot cannot answer: while one exists, the poll reads the
+repository's newest matching tag and the tag count (`ReleaseTracker.latestReleases(in:)`). The first read
+becomes the baseline; a later one with more tags, or a newer newest tag, removes the snooze. Every completed
+poll also drops the snoozes whose condition it met (`resolveSnoozes`), which is what keeps `Until any change`
+awake if the change is undone — and, from a poll that saw the whole list, the snoozes of rows that have gone.
+
+A PR whose snooze is not met yet is **suppressed**:
 
 - `RowStatus` still resolves normally, but `isAttention` is forced false — no warm tint, no bolder title.
-- The row counts toward neither of the icon's badges — not the red one, not the green — and cannot raise
-  the icon out of idle. Snooze silences "go merge me" as well as "this needs you".
+- The row counts toward neither of the icon's badges — not the red one, not the green — and its unread dot
+  stays on the row but does not light the menu bar. Snooze silences "go merge me" as well as "this needs you".
+- The header counts it as `N snoozed` and nowhere else — not in review, not shipping.
 - **Attention events** are withheld — `changesRequested`, `checksFailed` and the like. Lifecycle events are
   not: `reachedProduction` still fires, and `shipped`/`closed` still move the row to Done. Snooze silences
-  "this needs you", not "this finished".
-- The row renders dimmed with the wake time in the meta line (PRD §8).
+  "this needs you", not "this finished" — and a row in Done is never suppressed.
+- The row renders lighter, with `snoozed` as its phrase and a grey chip in place of its own status, the
+  condition beside it (`snoozed · until #4127 is merged`), and no failure anywhere on it: the checks segment
+  is empty rather than red, and a changes-requested ring goes grey.
 
 **Effective state, not raw status, is what gets diffed.** Each row carries
 `effective = (status, isSuppressed)`, and `previous` stores that pair. Diffing raw `RowStatus` alone would
@@ -144,7 +166,7 @@ wake time the status is unchanged and no transition exists to detect. With the p
 `(checksFailing, suppressed)` to `(checksFailing, active)` — a real transition, which emits the withheld
 attention event exactly once, at wake.
 
-The deadline is compared against the injected `now`, so expiry is deterministic: at `now >= deadline` the row
+A deadline is compared against the injected `now`, so expiry is deterministic: at `now >= deadline` the row
 resumes full derivation with no further input and no user action. Two fixtures pin it —
 `snooze-status-changed-while-asleep` (the case above) and `snooze-expiry-no-underlying-change` (nothing
 changed during the snooze, so waking emits nothing).
@@ -825,7 +847,7 @@ Linear source is marked stale.
 
 ### Storage
 
-- `~/Library/Application Support/PRStackMonitor/state.json` — dismissed set, snooze deadlines, read
+- `~/Library/Application Support/PRStackMonitor/state.json` — dismissed set, snoozes, read
   digests, PR→tag bindings, **unbound merged PRs with their merge commit and `mergedAt`**, the rows the panel
   last drew (`displayed`, in refresh priority order — §3), per-source last successful sync. Atomic writes,
   schema-versioned.
@@ -838,7 +860,7 @@ Linear source is marked stale.
   but a whole-file failure has to move the original out of the way first: starting from empty and then saving
   over the file in place would destroy state nothing else can supply. Only part of it re-derives. Bindings and
   unbound merges come back from the next poll — except a merge older than the query's 14-day cold-start floor,
-  which stays stranded (§3). `readDigests` and `snoozedUntil` are local-only: a lost digest set costs one burst
+  which stays stranded (§3). `readDigests` and `snoozes` are local-only: a lost digest set costs one burst
   of false unread and self-corrects at the next open, and a lost snooze just wakes its row early. `displayed`
   is local-only too, and the cheapest loss of the lot: the first poll after it is a plain sweep, and the poll
   after that has the list back. Dismissal
@@ -1066,7 +1088,7 @@ select all) at launch. It is a dispatch table, not a UI decision — nothing in 
   hover lift both survive underneath it.
 - Title, 12.5 pt, single line, ellipsis; weight 500 → 560 as the row gains urgency.
 - Meta line, 11 pt: `#number` first, repo name **only when the list spans more than one repo**, **one** status
-  phrase, age, snooze if any, and the Linear identifier (indigo, clickable) **last** — after the age — with a
+  phrase, what a snooze is waiting for if any, age, and the Linear identifier (indigo, clickable) **last** — after the age — with a
   `+N` affix when the PR resolves more than one ticket: `#4014 · waiting on #4012 · 3h · BIL-312 +2`. The
   number leads because it is what the row is called and the one token every row carries; the ticket trails
   because it points *out* of the panel. The affix is tertiary grey so it reads as a count, not a second link,
@@ -1074,7 +1096,7 @@ select all) at launch. It is a dispatch table, not a UI decision — nothing in 
   point or two larger than the tokens beside it. It also sits a **third of the line's gap** from the identifier
   rather than the full one: it is a suffix on `BIL-312`, and at the token gap the two read as two tokens. When
   `primaryIssue` is nil the identifier token is **omitted entirely** — no placeholder, no `Other` label — and
-  the line ends at the age, or at the snooze when the row carries one. This matches design 2a, where the
+  the line ends at the age. This matches design 2a, where the
   Other-section row reads `#4051 · merge conflict · 2d`. The section heading already says `Other`;
   repeating it per row would spend the meta line's scarcest asset on the absence of information. Clicking the
   identifier opens the primary issue; clicking `+N` opens a small menu listing every linked ticket with its
@@ -1098,7 +1120,7 @@ No global hotkey for opening the panel. Once it's open, the row under the pointe
 | --- | --- |
 | `R` | Mark this row read |
 | `X` | Dismiss (Done rows only) |
-| `S` | Snooze — opens the duration menu inline |
+| `S` | Snooze — opens the snooze menu inline |
 | `↩` | Open the PR in the browser (same as click) |
 | `L` | Open the Linear issue — the primary one; repeat presses cycle through the rest when a PR links several. No-op when the row has none |
 
