@@ -189,6 +189,12 @@ public struct LocalState: Equatable, Sendable {
     /// What each snoozed pull request is waiting for. A row is suppressed until its
     /// condition is met — see ``Snooze``.
     public var snoozes: [PRID: Snooze]
+    /// Each stacked pull request the app has snoozed on its own, against the parent it was
+    /// waiting on at the time — see ``autoSnoozeStackedPullRequests(in:isComplete:)``.
+    ///
+    /// Kept apart from `snoozes` because it outlives the snooze it caused: it is what stops
+    /// a row the user woke by hand from being put straight back to sleep on the next poll.
+    public var autoSnoozed: [PRID: PRID]
     /// The digest recorded the last time the panel was open, or `Mark all read` was used.
     public var readDigests: [PRID: ReadDigest]
     /// Permanent pull request → release tag bindings, written by the release tracker at M6.
@@ -218,6 +224,7 @@ public struct LocalState: Equatable, Sendable {
     public init(
         dismissed: Set<PRID> = [],
         snoozes: [PRID: Snooze] = [:],
+        autoSnoozed: [PRID: PRID] = [:],
         readDigests: [PRID: ReadDigest] = [:],
         releaseBindings: [PRID: String] = [:],
         unboundMerges: [PRID: UnboundMerge] = [:],
@@ -226,6 +233,7 @@ public struct LocalState: Equatable, Sendable {
     ) {
         self.dismissed = dismissed
         self.snoozes = snoozes
+        self.autoSnoozed = autoSnoozed
         self.readDigests = readDigests
         self.releaseBindings = releaseBindings
         self.unboundMerges = unboundMerges
@@ -546,6 +554,7 @@ extension LocalState: Codable {
         /// The wake-time map every file before conditional snoozes was written with. Read,
         /// never written: each entry becomes a time snooze.
         case snoozedUntil
+        case autoSnoozed
         case readDigests
         case releaseBindings
         case unboundMerges
@@ -572,6 +581,9 @@ extension LocalState: Codable {
         for (raw, deadline) in legacy where snoozed[raw] == nil {
             snoozed[raw] = .until(deadline)
         }
+        // Absent from every file written before stacked pull requests were snoozed on their
+        // own. Empty is right for one: each stack waiting on an open parent is snoozed once.
+        let autoSnoozed = try container.decodeIfPresent([String: String].self, forKey: .autoSnoozed) ?? [:]
         let digests = try container.decodeIfPresent([String: String].self, forKey: .readDigests) ?? [:]
         let bindings = try container.decodeIfPresent([String: String].self, forKey: .releaseBindings) ?? [:]
         let merges = try container.decodeIfPresent([String: UnboundMerge].self, forKey: .unboundMerges) ?? [:]
@@ -587,6 +599,7 @@ extension LocalState: Codable {
         self.init(
             dismissed: Set(dismissed.compactMap(PRID.init(rawValue:))),
             snoozes: LocalState.rekey(snoozed) { $0 },
+            autoSnoozed: LocalState.rekey(autoSnoozed) { PRID(rawValue: $0) }.compactMapValues { $0 },
             readDigests: LocalState.rekey(digests) { ReadDigest(value: $0) },
             releaseBindings: LocalState.rekey(bindings) { $0 },
             unboundMerges: LocalState.rekey(merges) { $0 },
@@ -606,6 +619,7 @@ extension LocalState: Codable {
         // `LocalState` has a hand-written `Codable` at all.
         try container.encode(dismissed.map(\.rawValue).sorted(), forKey: .dismissed)
         try container.encode(LocalState.stringKeyed(snoozes) { $0 }, forKey: .snoozes)
+        try container.encode(LocalState.stringKeyed(autoSnoozed) { $0.rawValue }, forKey: .autoSnoozed)
         try container.encode(LocalState.stringKeyed(readDigests) { $0.value }, forKey: .readDigests)
         try container.encode(LocalState.stringKeyed(releaseBindings) { $0 }, forKey: .releaseBindings)
         try container.encode(LocalState.stringKeyed(unboundMerges) { $0 }, forKey: .unboundMerges)

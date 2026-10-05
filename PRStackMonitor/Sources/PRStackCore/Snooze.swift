@@ -284,6 +284,43 @@ extension LocalState {
         }
     }
 
+    /// Snoozes every stacked pull request until the parent it is waiting on merges.
+    ///
+    /// A layer on top of an open parent can't merge before the parent does, so whatever it
+    /// says in the meantime — a review, a red check, a conflict from the parent moving — is
+    /// rarely something to act on yet. Each one is snoozed `.merged(parent)`, which shows
+    /// up on the row as `until #N is merged` and wakes on its own when it is.
+    ///
+    /// Once per parent, not once per poll: ``autoSnoozed`` records the parent each row was
+    /// snoozed against, so waking it by hand sticks. A row that already has a snooze of
+    /// its own keeps it, and is recorded too, so it is not snoozed again the moment the
+    /// user's own snooze ends. A row that moves onto a *different* open parent — its
+    /// parent closed and it was re-targeted onto another layer — is snoozed again.
+    ///
+    /// Called once per completed poll, after ``resolveSnoozes(in:now:isComplete:)``. The
+    /// record of a row that is no longer open is dropped, and so, from a poll that saw the
+    /// whole list, is the record of a row that has gone. A row whose parent is missing from
+    /// a partial snapshot keeps its record: missing is not merged.
+    public mutating func autoSnoozeStackedPullRequests(in snapshot: RawSnapshot, isComplete: Bool) {
+        let byID = Dictionary(
+            snapshot.pullRequests.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        autoSnoozed = autoSnoozed.filter { id, _ in
+            guard let pullRequest = byID[id] else { return !isComplete }
+            return pullRequest.state == .open
+        }
+
+        let parents = Derivation.stackLayout(snapshot: snapshot, local: self).blockingParentOf
+        for (id, parent) in parents {
+            guard byID[id]?.state == .open, autoSnoozed[id] != parent else { continue }
+            autoSnoozed[id] = parent
+            if snoozes[id] == nil {
+                snoozes[id] = .merged(parent)
+            }
+        }
+    }
+
     /// A baseline another snooze in the same repository has already recorded, so a second
     /// `next release` snooze does not have to wait for a poll to start counting.
     private func releaseBaseline(for repository: String) -> ReleaseMark? {
@@ -317,6 +354,22 @@ extension Derivation {
             self.local = local
             self.now = now
         }
+    }
+
+    /// The stack layout derivation draws for `snapshot`, built the same way: dismissed rows
+    /// left out, every merge staged against the whole snapshot.
+    static func stackLayout(snapshot: RawSnapshot, local: LocalState) -> StackLayout {
+        let visible = snapshot.pullRequests.filter { !local.dismissed.contains($0.id) }
+        let branches = MergeChain.headIndex(snapshot.pullRequests)
+        let stages = Dictionary(
+            visible.map { ($0.id, releaseStage(for: $0, in: branches, local: local)) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return StackLayout.build(
+            pullRequests: visible,
+            viewerLogin: snapshot.viewerLogin,
+            releaseStages: stages
+        )
     }
 
     /// Whether `pullRequest` is snoozed right now. `releaseStage` is its own, already

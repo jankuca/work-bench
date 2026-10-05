@@ -146,6 +146,13 @@ becomes the baseline; a later one with more tags, or a newer newest tag, removes
 poll also drops the snoozes whose condition it met (`resolveSnoozes`), which is what keeps `Until any change`
 awake if the change is undone — and, from a poll that saw the whole list, the snoozes of rows that have gone.
 
+**Stacked pull requests snooze on their own.** After resolving, every poll snoozes each open layer whose
+stack parent is still open as `merged(parent)` (`autoSnoozeStackedPullRequests`): a layer cannot merge
+before its parent, so what it says in the meantime is rarely actionable. It happens once per parent —
+`local.autoSnoozed[child] = parent` records it, so a row woken by hand stays awake, and a row that already
+has a snooze of its own keeps it. A row re-targeted onto a *different* open parent is snoozed again. The
+record is dropped once the row is no longer open, or, from a poll that saw the whole list, once it has gone.
+
 A PR whose snooze is not met yet is **suppressed**:
 
 - `RowStatus` still resolves normally, but `isAttention` is forced false — no warm tint, no bolder title.
