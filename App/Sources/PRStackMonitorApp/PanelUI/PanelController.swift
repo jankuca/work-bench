@@ -512,6 +512,12 @@ final class PanelController: ObservableObject {
                 now: clock(),
                 isComplete: product.isComplete && !product.isResumed
             )
+            // A layer sitting on an open parent sleeps until that parent merges — once per
+            // parent, so a row the user wakes by hand stays awake.
+            local.autoSnoozeStackedPullRequests(
+                in: snapshot,
+                isComplete: product.isComplete && !product.isResumed
+            )
             // Which rows the next poll — and the next launch — refreshes before it starts
             // paging. Recorded from the snapshot rather than from the derived model because
             // it is about what this poll *fetched*: a row suppressed by a snooze is still a

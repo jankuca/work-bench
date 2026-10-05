@@ -66,6 +66,147 @@ final class SnoozeConditionTests: XCTestCase {
         XCTAssertFalse(try isSuppressed(2, [pullRequest(2)], local))
     }
 
+    // MARK: - Stacked pull requests snoozing on their own
+
+    private func autoSnooze(_ local: inout LocalState, _ pullRequests: [PullRequest], isComplete: Bool = true) {
+        local.autoSnoozeStackedPullRequests(
+            in: RawSnapshot(viewerLogin: "viewer", pullRequests: pullRequests),
+            isComplete: isComplete
+        )
+    }
+
+    /// Every layer sitting on an open parent waits for that parent; the base, which
+    /// targets trunk, and a row on nothing at all are left alone.
+    func testAutoSnoozeWaitsForEachLayersParent() throws {
+        let stack = [pullRequest(1), pullRequest(2, base: "jk/1"), pullRequest(3, base: "jk/2"), pullRequest(4)]
+        var local = LocalState()
+        autoSnooze(&local, stack)
+
+        XCTAssertEqual(local.snoozes, [id(2): .merged(id(1)), id(3): .merged(id(2))])
+        XCTAssertFalse(try isSuppressed(1, stack, local))
+        XCTAssertTrue(try isSuppressed(2, stack, local))
+        XCTAssertTrue(try isSuppressed(3, stack, local))
+        XCTAssertFalse(try isSuppressed(4, stack, local))
+    }
+
+    /// The snooze is the ordinary `merged` one, so the parent merging wakes the child and
+    /// the next poll drops it — without snoozing it again against a parent that is gone.
+    func testAutoSnoozeWakesWhenTheParentMerges() throws {
+        var local = LocalState()
+        autoSnooze(&local, [pullRequest(1), pullRequest(2, base: "jk/1")])
+
+        let merged = [pullRequest(1, state: .merged), pullRequest(2, base: "jk/1")]
+        XCTAssertFalse(try isSuppressed(2, merged, local))
+        local.resolveSnoozes(
+            in: RawSnapshot(viewerLogin: "viewer", pullRequests: merged),
+            now: now,
+            isComplete: true
+        )
+        autoSnooze(&local, merged)
+        XCTAssertNil(local.snoozes[id(2)])
+    }
+
+    /// Waking a row by hand sticks: the next poll sees the same parent and leaves it be.
+    func testAutoSnoozeHappensOncePerParent() {
+        let stack = [pullRequest(1), pullRequest(2, base: "jk/1")]
+        var local = LocalState()
+        autoSnooze(&local, stack)
+        local.wake(id(2))
+        autoSnooze(&local, stack)
+
+        XCTAssertNil(local.snoozes[id(2)])
+        XCTAssertEqual(local.autoSnoozed, [id(2): AutoSnooze(parent: id(1), ownsSnooze: false)])
+    }
+
+    /// A row moved onto a different open parent is waiting on something new.
+    func testAutoSnoozeAgainWhenTheParentChanges() {
+        var local = LocalState()
+        autoSnooze(&local, [pullRequest(1), pullRequest(3), pullRequest(2, base: "jk/1")])
+        local.wake(id(2))
+        autoSnooze(&local, [pullRequest(1, state: .closed), pullRequest(3), pullRequest(2, base: "jk/3")])
+
+        XCTAssertEqual(local.snoozes[id(2)], .merged(id(3)))
+    }
+
+    /// A row moved onto a new parent while still asleep on the old one follows it: the new
+    /// parent merging is what wakes it, whatever the old one is doing.
+    func testAutoSnoozeFollowsARetargetWhileAsleep() throws {
+        var local = LocalState()
+        autoSnooze(&local, [pullRequest(1), pullRequest(3), pullRequest(2, base: "jk/1")])
+        let retargeted = [pullRequest(1), pullRequest(3), pullRequest(2, base: "jk/3")]
+        autoSnooze(&local, retargeted)
+
+        XCTAssertEqual(local.snoozes[id(2)], .merged(id(3)))
+        XCTAssertFalse(try isSuppressed(2, [pullRequest(1), pullRequest(3, state: .merged), pullRequest(2, base: "jk/3")], local))
+    }
+
+    /// A parent a whole list no longer holds is not open, so the snooze waiting on it ends.
+    /// A partial list proves nothing about it.
+    func testAutoSnoozeEndsWhenTheParentHasGone() {
+        var local = LocalState()
+        autoSnooze(&local, [pullRequest(1), pullRequest(2, base: "jk/1")])
+
+        autoSnooze(&local, [pullRequest(2, base: "jk/1")], isComplete: false)
+        XCTAssertEqual(local.snoozes[id(2)], .merged(id(1)))
+
+        autoSnooze(&local, [pullRequest(2, base: "jk/1")], isComplete: true)
+        XCTAssertNil(local.snoozes[id(2)])
+    }
+
+    /// A row moved off its stack onto trunk is waiting on nothing, even while the parent it
+    /// left is still open; a row the user snoozed keeps their snooze.
+    func testAutoSnoozeEndsWhenTheRowLeavesItsStack() {
+        var local = LocalState()
+        autoSnooze(&local, [pullRequest(1), pullRequest(2, base: "jk/1"), pullRequest(3, base: "jk/1")])
+        local.snooze(id(3), .merged(id(1)))
+
+        autoSnooze(&local, [pullRequest(1), pullRequest(2), pullRequest(3)], isComplete: false)
+        XCTAssertNil(local.snoozes[id(2)])
+        XCTAssertEqual(local.snoozes[id(3)], .merged(id(1)))
+    }
+
+    /// A snooze the user picks is theirs even when it is the very one the app had set: a
+    /// retarget does not move it, and a parent gone from a whole list does not end it.
+    func testAutoSnoozeLeavesTheSameSnoozeAloneOnceTheUserChoseIt() {
+        var local = LocalState()
+        autoSnooze(&local, [pullRequest(1), pullRequest(3), pullRequest(2, base: "jk/1")])
+        local.snooze(id(2), .merged(id(1)))
+
+        autoSnooze(&local, [pullRequest(1), pullRequest(3), pullRequest(2, base: "jk/3")])
+        XCTAssertEqual(local.snoozes[id(2)], .merged(id(1)))
+
+        var gone = LocalState()
+        autoSnooze(&gone, [pullRequest(1), pullRequest(2, base: "jk/1")])
+        gone.snooze(id(2), .merged(id(1)))
+        autoSnooze(&gone, [pullRequest(2, base: "jk/1")], isComplete: true)
+        XCTAssertEqual(gone.snoozes[id(2)], .merged(id(1)))
+    }
+
+    /// The user's own snooze is never replaced, and once it ends the row stays awake.
+    func testAutoSnoozeKeepsTheUsersOwnSnooze() {
+        let stack = [pullRequest(1), pullRequest(2, base: "jk/1")]
+        let deadline = now.addingTimeInterval(86_400)
+        var local = LocalState(snoozes: [id(2): .until(deadline)])
+        autoSnooze(&local, stack)
+        XCTAssertEqual(local.snoozes[id(2)], .until(deadline))
+
+        local.pruneSnoozes(before: deadline.addingTimeInterval(1))
+        autoSnooze(&local, stack)
+        XCTAssertNil(local.snoozes[id(2)])
+    }
+
+    /// The record goes once the row is no longer open, or — from a poll that saw the whole
+    /// list — once the row has gone. A partial poll proves nothing about what it missed.
+    func testAutoSnoozeRecordIsPruned() {
+        let record = AutoSnooze(parent: id(1), ownsSnooze: false)
+        var local = LocalState(autoSnoozed: [id(2): record, id(3): record, id(4): record])
+        autoSnooze(&local, [pullRequest(2, state: .merged), pullRequest(3)], isComplete: false)
+        XCTAssertEqual(local.autoSnoozed, [id(3): record, id(4): record])
+
+        autoSnooze(&local, [pullRequest(3)], isComplete: true)
+        XCTAssertEqual(local.autoSnoozed, [id(3): record])
+    }
+
     // MARK: - Another pull request being released
 
     func testReleasedWaitsPastTheMergeForTheTag() throws {
@@ -297,6 +438,13 @@ final class SnoozeConditionTests: XCTestCase {
 
         let data = try encoder.encode(LocalState(snoozes: snoozes))
         XCTAssertEqual(try decoder.decode(LocalState.self, from: data).snoozes, snoozes)
+    }
+
+    func testAutoSnoozedRoundTripsAndIsOptional() throws {
+        let records = [id(2): AutoSnooze(parent: id(1), ownsSnooze: true)]
+        let data = try JSONEncoder().encode(LocalState(autoSnoozed: records))
+        XCTAssertEqual(try JSONDecoder().decode(LocalState.self, from: data).autoSnoozed, records)
+        XCTAssertEqual(try JSONDecoder().decode(LocalState.self, from: Data("{}".utf8)).autoSnoozed, [:])
     }
 
     /// A file from before conditional snoozes still loads, as time snoozes; a kind this
