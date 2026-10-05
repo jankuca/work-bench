@@ -152,9 +152,11 @@ before its parent, so what it says in the meantime is rarely actionable. It happ
 `local.autoSnoozed[child]` records the parent, so a row woken by hand stays awake, and a row that already
 has a snooze of its own keeps it. It also records whether the current snooze is still the app's own: any
 snooze or wake the user chooses takes it over — even the same `until #N is merged` — and only the app's own
-is ever moved or ended by what follows. A row re-targeted onto a *different* open parent is snoozed against it,
-whether it was woken or still asleep on the old one. A complete poll holds every open pull request, so an
-auto-snooze whose parent is missing from one ends. The record is dropped once the row is no longer open, or, from a poll that saw the whole list, once it has gone.
+is ever moved or ended by what follows. When a row is re-targeted onto a *different* open parent, the app's own
+snooze moves to it, and a row with no snooze at all (woken by hand) is snoozed against it; a snooze the user
+chose stays as it is. A row re-targeted onto trunk while its old parent is still open loses the app's snooze,
+and so does one whose parent is missing from a complete poll, which holds every open pull request. The record
+is dropped once the row is no longer open, or, from a poll that saw the whole list, once it has gone.
 
 A PR whose snooze is not met yet is **suppressed**:
 

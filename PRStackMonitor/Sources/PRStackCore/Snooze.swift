@@ -353,6 +353,17 @@ extension LocalState {
         }
 
         let parents = Derivation.stackLayout(snapshot: snapshot, local: self).blockingParentOf
+
+        // A row that has left its stack — re-targeted onto trunk while the parent it was
+        // snoozed against is still open — is no longer waiting on anything. Only when the
+        // parent is in the snapshot: a parent missing from a partial one proves nothing,
+        // and one missing from a whole list was handled above.
+        for (id, record) in autoSnoozed
+        where record.ownsSnooze && byID[id] != nil && parents[id] == nil && byID[record.parent] != nil {
+            snoozes[id] = nil
+            autoSnoozed[id]?.ownsSnooze = false
+        }
+
         for (id, parent) in parents {
             guard byID[id]?.state == .open else { continue }
             let previous = autoSnoozed[id]

@@ -153,6 +153,18 @@ final class SnoozeConditionTests: XCTestCase {
         XCTAssertNil(local.snoozes[id(2)])
     }
 
+    /// A row moved off its stack onto trunk is waiting on nothing, even while the parent it
+    /// left is still open; a row the user snoozed keeps their snooze.
+    func testAutoSnoozeEndsWhenTheRowLeavesItsStack() {
+        var local = LocalState()
+        autoSnooze(&local, [pullRequest(1), pullRequest(2, base: "jk/1"), pullRequest(3, base: "jk/1")])
+        local.snooze(id(3), .merged(id(1)))
+
+        autoSnooze(&local, [pullRequest(1), pullRequest(2), pullRequest(3)], isComplete: false)
+        XCTAssertNil(local.snoozes[id(2)])
+        XCTAssertEqual(local.snoozes[id(3)], .merged(id(1)))
+    }
+
     /// A snooze the user picks is theirs even when it is the very one the app had set: a
     /// retarget does not move it, and a parent gone from a whole list does not end it.
     func testAutoSnoozeLeavesTheSameSnoozeAloneOnceTheUserChoseIt() {
