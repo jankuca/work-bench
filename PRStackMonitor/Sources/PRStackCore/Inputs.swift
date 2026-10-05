@@ -189,12 +189,12 @@ public struct LocalState: Equatable, Sendable {
     /// What each snoozed pull request is waiting for. A row is suppressed until its
     /// condition is met — see ``Snooze``.
     public var snoozes: [PRID: Snooze]
-    /// Each stacked pull request the app has snoozed on its own, against the parent it was
-    /// waiting on at the time — see ``autoSnoozeStackedPullRequests(in:isComplete:)``.
+    /// Each stacked pull request the app has considered snoozing on its own, against the
+    /// parent it was waiting on at the time — see ``autoSnoozeStackedPullRequests(in:isComplete:)``.
     ///
     /// Kept apart from `snoozes` because it outlives the snooze it caused: it is what stops
     /// a row the user woke by hand from being put straight back to sleep on the next poll.
-    public var autoSnoozed: [PRID: PRID]
+    public var autoSnoozed: [PRID: AutoSnooze]
     /// The digest recorded the last time the panel was open, or `Mark all read` was used.
     public var readDigests: [PRID: ReadDigest]
     /// Permanent pull request → release tag bindings, written by the release tracker at M6.
@@ -224,7 +224,7 @@ public struct LocalState: Equatable, Sendable {
     public init(
         dismissed: Set<PRID> = [],
         snoozes: [PRID: Snooze] = [:],
-        autoSnoozed: [PRID: PRID] = [:],
+        autoSnoozed: [PRID: AutoSnooze] = [:],
         readDigests: [PRID: ReadDigest] = [:],
         releaseBindings: [PRID: String] = [:],
         unboundMerges: [PRID: UnboundMerge] = [:],
@@ -583,7 +583,7 @@ extension LocalState: Codable {
         }
         // Absent from every file written before stacked pull requests were snoozed on their
         // own. Empty is right for one: each stack waiting on an open parent is snoozed once.
-        let autoSnoozed = try container.decodeIfPresent([String: String].self, forKey: .autoSnoozed) ?? [:]
+        let autoSnoozed = try container.decodeIfPresent([String: LossyAutoSnooze].self, forKey: .autoSnoozed) ?? [:]
         let digests = try container.decodeIfPresent([String: String].self, forKey: .readDigests) ?? [:]
         let bindings = try container.decodeIfPresent([String: String].self, forKey: .releaseBindings) ?? [:]
         let merges = try container.decodeIfPresent([String: UnboundMerge].self, forKey: .unboundMerges) ?? [:]
@@ -599,7 +599,7 @@ extension LocalState: Codable {
         self.init(
             dismissed: Set(dismissed.compactMap(PRID.init(rawValue:))),
             snoozes: LocalState.rekey(snoozed) { $0 },
-            autoSnoozed: LocalState.rekey(autoSnoozed) { PRID(rawValue: $0) }.compactMapValues { $0 },
+            autoSnoozed: LocalState.rekey(autoSnoozed.compactMapValues(\.record)) { $0 },
             readDigests: LocalState.rekey(digests) { ReadDigest(value: $0) },
             releaseBindings: LocalState.rekey(bindings) { $0 },
             unboundMerges: LocalState.rekey(merges) { $0 },
@@ -619,7 +619,7 @@ extension LocalState: Codable {
         // `LocalState` has a hand-written `Codable` at all.
         try container.encode(dismissed.map(\.rawValue).sorted(), forKey: .dismissed)
         try container.encode(LocalState.stringKeyed(snoozes) { $0 }, forKey: .snoozes)
-        try container.encode(LocalState.stringKeyed(autoSnoozed) { $0.rawValue }, forKey: .autoSnoozed)
+        try container.encode(LocalState.stringKeyed(autoSnoozed) { $0 }, forKey: .autoSnoozed)
         try container.encode(LocalState.stringKeyed(readDigests) { $0.value }, forKey: .readDigests)
         try container.encode(LocalState.stringKeyed(releaseBindings) { $0 }, forKey: .releaseBindings)
         try container.encode(LocalState.stringKeyed(unboundMerges) { $0 }, forKey: .unboundMerges)
@@ -659,5 +659,14 @@ private struct LossySnooze: Decodable {
 
     init(from decoder: any Decoder) throws {
         snooze = try? Snooze(from: decoder)
+    }
+}
+
+/// One auto-snooze record that may fail to decode without failing the file around it.
+private struct LossyAutoSnooze: Decodable {
+    let record: AutoSnooze?
+
+    init(from decoder: any Decoder) throws {
+        record = try? AutoSnooze(from: decoder)
     }
 }

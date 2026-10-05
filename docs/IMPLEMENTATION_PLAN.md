@@ -149,8 +149,10 @@ awake if the change is undone — and, from a poll that saw the whole list, the 
 **Stacked pull requests snooze on their own.** After resolving, every poll snoozes each open layer whose
 stack parent is still open as `merged(parent)` (`autoSnoozeStackedPullRequests`): a layer cannot merge
 before its parent, so what it says in the meantime is rarely actionable. It happens once per parent —
-`local.autoSnoozed[child] = parent` records it, so a row woken by hand stays awake, and a row that already
-has a snooze of its own keeps it. A row re-targeted onto a *different* open parent is snoozed against it,
+`local.autoSnoozed[child]` records the parent, so a row woken by hand stays awake, and a row that already
+has a snooze of its own keeps it. It also records whether the current snooze is still the app's own: any
+snooze or wake the user chooses takes it over — even the same `until #N is merged` — and only the app's own
+is ever moved or ended by what follows. A row re-targeted onto a *different* open parent is snoozed against it,
 whether it was woken or still asleep on the old one. A complete poll holds every open pull request, so an
 auto-snooze whose parent is missing from one ends. The record is dropped once the row is no longer open, or, from a poll that saw the whole list, once it has gone.
 

@@ -108,6 +108,25 @@ extension Snooze: Codable {
     }
 }
 
+// MARK: - Auto-snooze
+
+/// What ``LocalState/autoSnoozeStackedPullRequests(in:isComplete:)`` recorded about one
+/// stacked pull request.
+public struct AutoSnooze: Hashable, Sendable, Codable {
+    /// The open parent the row was waiting on when it was last considered.
+    public var parent: PRID
+    /// Whether the row's current snooze is the one the app set, rather than one the user
+    /// chose. Only a snooze the app owns is moved to a new parent or ended when its parent
+    /// has gone; anything the user picks from the menu — even the very same `until #N is
+    /// merged` — is theirs, and is left exactly as they set it.
+    public var ownsSnooze: Bool
+
+    public init(parent: PRID, ownsSnooze: Bool) {
+        self.parent = parent
+        self.ownsSnooze = ownsSnooze
+    }
+}
+
 // MARK: - Release mark
 
 /// The newest release tag a repository had, as one poll saw it.
@@ -144,6 +163,7 @@ extension LocalState {
     /// Snoozes a pull request until `snooze` is met. Replaces any snooze it already had.
     public mutating func snooze(_ id: PRID, _ snooze: Snooze) {
         snoozes[id] = snooze
+        autoSnoozed[id]?.ownsSnooze = false
     }
 
     /// Snoozes a pull request until `deadline`.
@@ -153,6 +173,7 @@ extension LocalState {
     /// caller that computes a deadline from a stale `now` fails silently instead.
     public mutating func snooze(_ id: PRID, until deadline: Date) {
         snoozes[id] = .until(deadline)
+        autoSnoozed[id]?.ownsSnooze = false
     }
 
     /// Snoozes a pull request with one of the menu's choices, resolved against the snapshot
@@ -171,38 +192,43 @@ extension LocalState {
         calendar: Calendar = .autoupdatingCurrent
     ) {
         guard let pullRequest = snapshot.pullRequests.first(where: { $0.id == id }) else { return }
+        let chosen: Snooze
         switch option {
         case .oneDay, .oneWeek, .untilMonday:
             guard let deadline = option.wakeTime(from: now, calendar: calendar) else { return }
-            snoozes[id] = .until(deadline)
+            chosen = .until(deadline)
         case .anyChange:
             let stage = Derivation.releaseStage(
                 for: pullRequest,
                 in: MergeChain.headIndex(snapshot.pullRequests),
                 local: self
             )
-            snoozes[id] = .anyChange(
+            chosen = .anyChange(
                 digest: ReadDigest.make(for: pullRequest, releaseStage: stage),
                 updatedAt: pullRequest.updatedAt
             )
         case .nextRelease:
-            snoozes[id] = .nextRelease(
+            chosen = .nextRelease(
                 repository: pullRequest.repo,
                 baseline: releaseBaseline(for: pullRequest.repo)
             )
         case .merged(let target):
             guard target != id else { return }
-            snoozes[id] = .merged(target)
+            chosen = .merged(target)
         case .released(let target):
             guard target != id else { return }
-            snoozes[id] = .released(target)
+            chosen = .released(target)
         }
+        // Through the one mutator, so whatever is chosen is the user's own — even when it is
+        // the same `until #N is merged` the app had set — and no later poll moves or ends it.
+        snooze(id, chosen)
     }
 
     /// Wakes a snoozed pull request now. Idempotent — waking a row that is not asleep is
     /// what the menu does when the condition was met while it was open.
     public mutating func wake(_ id: PRID) {
         snoozes[id] = nil
+        autoSnoozed[id]?.ownsSnooze = false
     }
 
     /// The repositories a poll has to read the newest release of: every one a
@@ -292,9 +318,11 @@ extension LocalState {
     /// up on the row as `until #N is merged` and wakes on its own when it is.
     ///
     /// Once per parent, not once per poll: ``autoSnoozed`` records the parent each row was
-    /// snoozed against, so waking it by hand sticks. A row that already has a snooze of
-    /// its own keeps it, and is recorded too, so it is not snoozed again the moment the
-    /// user's own snooze ends. A row that moves onto a *different* open parent is snoozed
+    /// snoozed against, so waking it by hand sticks. It also records whether the snooze is
+    /// still the app's own (``AutoSnooze/ownsSnooze``): anything the user sets or wakes
+    /// through the menu takes it over, and only the app's own is ever moved or ended here.
+    /// A row that already has a snooze of its own keeps it, and is recorded too, so it is
+    /// not snoozed again the moment the user's own snooze ends. A row that moves onto a *different* open parent is snoozed
     /// against it — again if it was woken, or moved over if it was still asleep on the old
     /// one. From a poll that saw the whole list, a parent missing from it is no longer
     /// open, and the snooze waiting on it ends.
@@ -318,8 +346,9 @@ extension LocalState {
         // the closed search before a poll could see it. The snooze it caused would otherwise
         // wait on it forever.
         if isComplete {
-            for (id, parent) in autoSnoozed where byID[parent] == nil && snoozes[id] == Snooze.merged(parent) {
+            for (id, record) in autoSnoozed where record.ownsSnooze && byID[record.parent] == nil {
                 snoozes[id] = nil
+                autoSnoozed[id]?.ownsSnooze = false
             }
         }
 
@@ -327,14 +356,14 @@ extension LocalState {
         for (id, parent) in parents {
             guard byID[id]?.state == .open else { continue }
             let previous = autoSnoozed[id]
-            guard previous != parent else { continue }
-            autoSnoozed[id] = parent
+            guard previous?.parent != parent else { continue }
             // A row still asleep on the parent it was moved off is waiting on the wrong
             // pull request now; the snooze follows it to the new one.
-            let isOwnSnooze = previous.map { snoozes[id] == Snooze.merged($0) } ?? false
-            if snoozes[id] == nil || isOwnSnooze {
+            let takesSnooze = snoozes[id] == nil || previous?.ownsSnooze == true
+            if takesSnooze {
                 snoozes[id] = .merged(parent)
             }
+            autoSnoozed[id] = AutoSnooze(parent: parent, ownsSnooze: takesSnooze)
         }
     }
 

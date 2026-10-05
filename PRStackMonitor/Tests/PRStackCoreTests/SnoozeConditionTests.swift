@@ -115,7 +115,7 @@ final class SnoozeConditionTests: XCTestCase {
         autoSnooze(&local, stack)
 
         XCTAssertNil(local.snoozes[id(2)])
-        XCTAssertEqual(local.autoSnoozed, [id(2): id(1)])
+        XCTAssertEqual(local.autoSnoozed, [id(2): AutoSnooze(parent: id(1), ownsSnooze: false)])
     }
 
     /// A row moved onto a different open parent is waiting on something new.
@@ -153,6 +153,23 @@ final class SnoozeConditionTests: XCTestCase {
         XCTAssertNil(local.snoozes[id(2)])
     }
 
+    /// A snooze the user picks is theirs even when it is the very one the app had set: a
+    /// retarget does not move it, and a parent gone from a whole list does not end it.
+    func testAutoSnoozeLeavesTheSameSnoozeAloneOnceTheUserChoseIt() {
+        var local = LocalState()
+        autoSnooze(&local, [pullRequest(1), pullRequest(3), pullRequest(2, base: "jk/1")])
+        local.snooze(id(2), .merged(id(1)))
+
+        autoSnooze(&local, [pullRequest(1), pullRequest(3), pullRequest(2, base: "jk/3")])
+        XCTAssertEqual(local.snoozes[id(2)], .merged(id(1)))
+
+        var gone = LocalState()
+        autoSnooze(&gone, [pullRequest(1), pullRequest(2, base: "jk/1")])
+        gone.snooze(id(2), .merged(id(1)))
+        autoSnooze(&gone, [pullRequest(2, base: "jk/1")], isComplete: true)
+        XCTAssertEqual(gone.snoozes[id(2)], .merged(id(1)))
+    }
+
     /// The user's own snooze is never replaced, and once it ends the row stays awake.
     func testAutoSnoozeKeepsTheUsersOwnSnooze() {
         let stack = [pullRequest(1), pullRequest(2, base: "jk/1")]
@@ -169,12 +186,13 @@ final class SnoozeConditionTests: XCTestCase {
     /// The record goes once the row is no longer open, or — from a poll that saw the whole
     /// list — once the row has gone. A partial poll proves nothing about what it missed.
     func testAutoSnoozeRecordIsPruned() {
-        var local = LocalState(autoSnoozed: [id(2): id(1), id(3): id(1), id(4): id(1)])
+        let record = AutoSnooze(parent: id(1), ownsSnooze: false)
+        var local = LocalState(autoSnoozed: [id(2): record, id(3): record, id(4): record])
         autoSnooze(&local, [pullRequest(2, state: .merged), pullRequest(3)], isComplete: false)
-        XCTAssertEqual(local.autoSnoozed, [id(3): id(1), id(4): id(1)])
+        XCTAssertEqual(local.autoSnoozed, [id(3): record, id(4): record])
 
         autoSnooze(&local, [pullRequest(3)], isComplete: true)
-        XCTAssertEqual(local.autoSnoozed, [id(3): id(1)])
+        XCTAssertEqual(local.autoSnoozed, [id(3): record])
     }
 
     // MARK: - Another pull request being released
@@ -411,8 +429,9 @@ final class SnoozeConditionTests: XCTestCase {
     }
 
     func testAutoSnoozedRoundTripsAndIsOptional() throws {
-        let data = try JSONEncoder().encode(LocalState(autoSnoozed: [id(2): id(1)]))
-        XCTAssertEqual(try JSONDecoder().decode(LocalState.self, from: data).autoSnoozed, [id(2): id(1)])
+        let records = [id(2): AutoSnooze(parent: id(1), ownsSnooze: true)]
+        let data = try JSONEncoder().encode(LocalState(autoSnoozed: records))
+        XCTAssertEqual(try JSONDecoder().decode(LocalState.self, from: data).autoSnoozed, records)
         XCTAssertEqual(try JSONDecoder().decode(LocalState.self, from: Data("{}".utf8)).autoSnoozed, [:])
     }
 
