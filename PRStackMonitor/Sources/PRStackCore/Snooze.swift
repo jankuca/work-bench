@@ -294,8 +294,10 @@ extension LocalState {
     /// Once per parent, not once per poll: ``autoSnoozed`` records the parent each row was
     /// snoozed against, so waking it by hand sticks. A row that already has a snooze of
     /// its own keeps it, and is recorded too, so it is not snoozed again the moment the
-    /// user's own snooze ends. A row that moves onto a *different* open parent — its
-    /// parent closed and it was re-targeted onto another layer — is snoozed again.
+    /// user's own snooze ends. A row that moves onto a *different* open parent is snoozed
+    /// against it — again if it was woken, or moved over if it was still asleep on the old
+    /// one. From a poll that saw the whole list, a parent missing from it is no longer
+    /// open, and the snooze waiting on it ends.
     ///
     /// Called once per completed poll, after ``resolveSnoozes(in:now:isComplete:)``. The
     /// record of a row that is no longer open is dropped, and so, from a poll that saw the
@@ -311,11 +313,26 @@ extension LocalState {
             return pullRequest.state == .open
         }
 
+        // A whole list holds every open pull request, so a parent missing from one is not
+        // open any more — it closed or merged while nothing was polling, and fell out of
+        // the closed search before a poll could see it. The snooze it caused would otherwise
+        // wait on it forever.
+        if isComplete {
+            for (id, parent) in autoSnoozed where byID[parent] == nil && snoozes[id] == Snooze.merged(parent) {
+                snoozes[id] = nil
+            }
+        }
+
         let parents = Derivation.stackLayout(snapshot: snapshot, local: self).blockingParentOf
         for (id, parent) in parents {
-            guard byID[id]?.state == .open, autoSnoozed[id] != parent else { continue }
+            guard byID[id]?.state == .open else { continue }
+            let previous = autoSnoozed[id]
+            guard previous != parent else { continue }
             autoSnoozed[id] = parent
-            if snoozes[id] == nil {
+            // A row still asleep on the parent it was moved off is waiting on the wrong
+            // pull request now; the snooze follows it to the new one.
+            let isOwnSnooze = previous.map { snoozes[id] == Snooze.merged($0) } ?? false
+            if snoozes[id] == nil || isOwnSnooze {
                 snoozes[id] = .merged(parent)
             }
         }

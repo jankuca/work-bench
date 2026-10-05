@@ -150,8 +150,9 @@ awake if the change is undone — and, from a poll that saw the whole list, the 
 stack parent is still open as `merged(parent)` (`autoSnoozeStackedPullRequests`): a layer cannot merge
 before its parent, so what it says in the meantime is rarely actionable. It happens once per parent —
 `local.autoSnoozed[child] = parent` records it, so a row woken by hand stays awake, and a row that already
-has a snooze of its own keeps it. A row re-targeted onto a *different* open parent is snoozed again. The
-record is dropped once the row is no longer open, or, from a poll that saw the whole list, once it has gone.
+has a snooze of its own keeps it. A row re-targeted onto a *different* open parent is snoozed against it,
+whether it was woken or still asleep on the old one. A complete poll holds every open pull request, so an
+auto-snooze whose parent is missing from one ends. The record is dropped once the row is no longer open, or, from a poll that saw the whole list, once it has gone.
 
 A PR whose snooze is not met yet is **suppressed**:
 

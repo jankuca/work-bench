@@ -128,6 +128,31 @@ final class SnoozeConditionTests: XCTestCase {
         XCTAssertEqual(local.snoozes[id(2)], .merged(id(3)))
     }
 
+    /// A row moved onto a new parent while still asleep on the old one follows it: the new
+    /// parent merging is what wakes it, whatever the old one is doing.
+    func testAutoSnoozeFollowsARetargetWhileAsleep() throws {
+        var local = LocalState()
+        autoSnooze(&local, [pullRequest(1), pullRequest(3), pullRequest(2, base: "jk/1")])
+        let retargeted = [pullRequest(1), pullRequest(3), pullRequest(2, base: "jk/3")]
+        autoSnooze(&local, retargeted)
+
+        XCTAssertEqual(local.snoozes[id(2)], .merged(id(3)))
+        XCTAssertFalse(try isSuppressed(2, [pullRequest(1), pullRequest(3, state: .merged), pullRequest(2, base: "jk/3")], local))
+    }
+
+    /// A parent a whole list no longer holds is not open, so the snooze waiting on it ends.
+    /// A partial list proves nothing about it.
+    func testAutoSnoozeEndsWhenTheParentHasGone() {
+        var local = LocalState()
+        autoSnooze(&local, [pullRequest(1), pullRequest(2, base: "jk/1")])
+
+        autoSnooze(&local, [pullRequest(2, base: "jk/1")], isComplete: false)
+        XCTAssertEqual(local.snoozes[id(2)], .merged(id(1)))
+
+        autoSnooze(&local, [pullRequest(2, base: "jk/1")], isComplete: true)
+        XCTAssertNil(local.snoozes[id(2)])
+    }
+
     /// The user's own snooze is never replaced, and once it ends the row stays awake.
     func testAutoSnoozeKeepsTheUsersOwnSnooze() {
         let stack = [pullRequest(1), pullRequest(2, base: "jk/1")]
