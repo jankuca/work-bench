@@ -162,8 +162,13 @@ public final class InMemoryLinearProjectCacheStore: LinearProjectCacheStore, @un
 public final class FileLinearProjectCacheStore: LinearProjectCacheStore, @unchecked Sendable {
     private let url: URL
     private let lock = NSLock()
-    /// What the file holds, as far as this store knows. `nil` until the first load or save.
+    /// What ``load()`` answers with: the latest cache this process has, whether or not it
+    /// reached the file. `nil` until the first load or save.
     private var cached: LinearProjectCache?
+    /// What the file is known to hold — what was read from it, or what was last written to
+    /// it successfully. Kept apart from ``cached`` so a write that failed is retried by the
+    /// next save rather than skipped as a repeat.
+    private var persisted: LinearProjectCache?
 
     public init(url: URL) {
         self.url = url
@@ -177,6 +182,7 @@ public final class FileLinearProjectCacheStore: LinearProjectCacheStore, @unchec
         if let cached { return cached }
         let loaded = readFile()
         cached = loaded
+        persisted = loaded
         return loaded
     }
 
@@ -201,13 +207,14 @@ public final class FileLinearProjectCacheStore: LinearProjectCacheStore, @unchec
     public func save(_ cache: LinearProjectCache) {
         lock.lock()
         defer { lock.unlock() }
-        // Most fetching polls change nothing — every identifier came back as it was — and
-        // rewriting an identical file each time is work for no difference.
-        guard cache != cached else { return }
-        // Memory first: the in-memory copy is what this process answers from, so it holds
-        // the latest cache even when the write below fails, exactly as the file-only store
-        // went on answering from whatever it had last read.
+        // Memory first, unconditionally: it is what this process answers from, so it holds
+        // the latest cache even when the write below fails.
         cached = cache
+        // Most fetching polls change nothing — every identifier came back as it was — and
+        // rewriting an identical file each time is work for no difference. Compared with
+        // what the file holds rather than with memory, so a failed write is not mistaken
+        // for one that already happened.
+        guard cache != persisted else { return }
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -216,6 +223,7 @@ public final class FileLinearProjectCacheStore: LinearProjectCacheStore, @unchec
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        try? data.write(to: url, options: .atomic)
+        guard (try? data.write(to: url, options: .atomic)) != nil else { return }
+        persisted = cache
     }
 }

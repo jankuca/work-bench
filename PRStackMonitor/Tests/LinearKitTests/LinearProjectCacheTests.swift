@@ -141,4 +141,30 @@ final class LinearProjectCacheTests: XCTestCase {
         XCTAssertEqual(store.load(), cache)
         XCTAssertEqual(FileLinearProjectCacheStore(url: url).load(), cache)
     }
+
+    /// Skipping an unchanged save must not skip one whose last attempt failed: the file is
+    /// compared with what was actually written, not with what memory holds.
+    func testAFailedWriteIsRetriedByTheNextSaveOfTheSameCache() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("linear-cache-tests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // A plain file where the cache's directory should be, so neither creating the
+        // directory nor writing into it can succeed.
+        let blocker = directory.appendingPathComponent("blocked")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data().write(to: blocker)
+        let url = blocker.appendingPathComponent("linear-cache.json")
+
+        var cache = LinearProjectCache.empty
+        cache.record(billing, for: "BIL-312", at: now)
+        let store = FileLinearProjectCacheStore(url: url)
+        store.save(cache)
+        XCTAssertEqual(store.load(), cache, "memory holds the cache even though the write failed")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+
+        // The obstacle goes away; the same cache saved again has to reach the file.
+        try FileManager.default.removeItem(at: blocker)
+        store.save(cache)
+        XCTAssertEqual(FileLinearProjectCacheStore(url: url).load(), cache)
+    }
 }
