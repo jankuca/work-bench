@@ -179,7 +179,14 @@ public final class FileLinearProjectCacheStore: LinearProjectCacheStore, @unchec
     public func load() -> LinearProjectCache {
         lock.lock()
         defer { lock.unlock() }
-        if let cached { return cached }
+        if let cached {
+            // A write that failed is retried here as well as by the next save. The resolver
+            // saves only when it fetched something, and a cache whose answers are all fresh
+            // in memory fetches nothing — so without this a failed write could stay pending
+            // until some identifier next went stale, and a relaunch in between would lose it.
+            if cached != persisted { write(cached) }
+            return cached
+        }
         let loaded = readFile()
         cached = loaded
         persisted = loaded
@@ -215,6 +222,13 @@ public final class FileLinearProjectCacheStore: LinearProjectCacheStore, @unchec
         // what the file holds rather than with memory, so a failed write is not mistaken
         // for one that already happened.
         guard cache != persisted else { return }
+        write(cache)
+    }
+
+    /// Writes `cache` and records it as what the file holds — only once the write has
+    /// succeeded, so a failure stays pending for ``load()`` or the next save to retry.
+    /// Called with the lock held.
+    private func write(_ cache: LinearProjectCache) {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

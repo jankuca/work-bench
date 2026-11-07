@@ -167,4 +167,26 @@ final class LinearProjectCacheTests: XCTestCase {
         store.save(cache)
         XCTAssertEqual(FileLinearProjectCacheStore(url: url).load(), cache)
     }
+
+    /// A poll whose identifiers are all fresh in memory never saves, so a pending write has
+    /// to be retried by the load that poll makes instead.
+    func testAFailedWriteIsRetriedByTheNextLoad() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("linear-cache-tests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let blocker = directory.appendingPathComponent("blocked")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data().write(to: blocker)
+        let url = blocker.appendingPathComponent("linear-cache.json")
+
+        var cache = LinearProjectCache.empty
+        cache.record(billing, for: "BIL-312", at: now)
+        let store = FileLinearProjectCacheStore(url: url)
+        store.save(cache)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+
+        try FileManager.default.removeItem(at: blocker)
+        XCTAssertEqual(store.load(), cache)
+        XCTAssertEqual(FileLinearProjectCacheStore(url: url).load(), cache, "the load wrote the pending cache")
+    }
 }
