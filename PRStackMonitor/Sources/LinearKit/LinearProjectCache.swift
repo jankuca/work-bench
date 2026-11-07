@@ -142,9 +142,28 @@ public final class InMemoryLinearProjectCacheStore: LinearProjectCacheStore, @un
 
 /// A JSON file. Atomic writes and sorted keys, so two runs over the same data produce the
 /// same bytes and a corrupt half-written file is not reachable.
+///
+/// **Read once, then served from memory.** The file is read on the first ``load()`` and
+/// never again for the life of the store; ``save(_:)`` updates the in-memory copy and
+/// writes the file only when the cache actually changed. The app holds one store for its
+/// whole life, so the file is read once per launch rather than once or twice per poll.
+///
+/// That is not an optimisation. Each read hands back a file-sized, page-aligned buffer, and
+/// a poll's resolution runs on Swift concurrency's cooperative threads, which do not drain
+/// an autorelease pool between jobs. Reading the file per poll stranded one such buffer per
+/// read — a month at the 60-second interval was 80,000 regions and 4.5 GB of `VM_ALLOCATE`
+/// in a process whose malloc heap was 80 MB. The one read that remains is drained by its
+/// own pool besides (``readFile()``).
+///
+/// This process is the only writer it expects. A file changed underneath a running store —
+/// by `prstack-dump`, or by hand — is picked up on the next launch, and overwritten by the
+/// next save that changes anything before then; it holds nothing that cannot be fetched
+/// again.
 public final class FileLinearProjectCacheStore: LinearProjectCacheStore, @unchecked Sendable {
     private let url: URL
     private let lock = NSLock()
+    /// What the file holds, as far as this store knows. `nil` until the first load or save.
+    private var cached: LinearProjectCache?
 
     public init(url: URL) {
         self.url = url
@@ -155,6 +174,24 @@ public final class FileLinearProjectCacheStore: LinearProjectCacheStore, @unchec
     public func load() -> LinearProjectCache {
         lock.lock()
         defer { lock.unlock() }
+        if let cached { return cached }
+        let loaded = readFile()
+        cached = loaded
+        return loaded
+    }
+
+    /// The one read, inside its own autorelease pool where there is one: the buffer
+    /// `contents(atPath:)` returns is autoreleased, and on a thread that never drains its
+    /// pool it would outlive the decode by the life of the thread.
+    private func readFile() -> LinearProjectCache {
+        #if canImport(ObjectiveC)
+        return autoreleasepool { decodeFile() }
+        #else
+        return decodeFile()
+        #endif
+    }
+
+    private func decodeFile() -> LinearProjectCache {
         guard let data = FileManager.default.contents(atPath: url.path) else { return .empty }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -164,6 +201,13 @@ public final class FileLinearProjectCacheStore: LinearProjectCacheStore, @unchec
     public func save(_ cache: LinearProjectCache) {
         lock.lock()
         defer { lock.unlock() }
+        // Most fetching polls change nothing — every identifier came back as it was — and
+        // rewriting an identical file each time is work for no difference.
+        guard cache != cached else { return }
+        // Memory first: the in-memory copy is what this process answers from, so it holds
+        // the latest cache even when the write below fails, exactly as the file-only store
+        // went on answering from whatever it had last read.
+        cached = cache
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

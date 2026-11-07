@@ -102,7 +102,43 @@ final class LinearProjectCacheTests: XCTestCase {
         store.save(cache)
         XCTAssertEqual(store.load().issue(for: "BIL-312")?.projectName, "Billing")
 
+        // A fresh store, as the next launch would be: a running one reads the file once and
+        // answers from memory after that.
         try Data("half a file".utf8).write(to: url)
-        XCTAssertEqual(store.load(), .empty, "a cache that cannot be read is an empty one, never a crash")
+        XCTAssertEqual(
+            FileLinearProjectCacheStore(url: url).load(),
+            .empty,
+            "a cache that cannot be read is an empty one, never a crash"
+        )
+    }
+
+    /// The leak this store was rewritten for: the app reads its cache on every poll, and
+    /// each read of the file stranded a buffer. After the first load the file is not read
+    /// again — proved here by removing it and getting the same cache back.
+    func testTheFileStoreReadsTheFileOnceAndAnswersFromMemoryAfterThat() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("linear-cache-tests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("linear-cache.json")
+
+        var cache = LinearProjectCache.empty
+        cache.record(billing, for: "BIL-312", at: now)
+        FileLinearProjectCacheStore(url: url).save(cache)
+
+        let store = FileLinearProjectCacheStore(url: url)
+        XCTAssertEqual(store.load(), cache, "the first load reads what the file holds")
+
+        try FileManager.default.removeItem(at: url)
+        XCTAssertEqual(store.load(), cache, "later loads answer from memory, not the file")
+
+        // An unchanged save writes nothing — the file stays gone.
+        store.save(cache)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+
+        // A changed one writes the file, and a fresh store reads it back.
+        cache.recordUnknown("UTF-8", at: now)
+        store.save(cache)
+        XCTAssertEqual(store.load(), cache)
+        XCTAssertEqual(FileLinearProjectCacheStore(url: url).load(), cache)
     }
 }
