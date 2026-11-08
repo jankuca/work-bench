@@ -128,8 +128,12 @@ struct PanelView: View {
                 onMarkRead: { controller.markRead(row.id) },
                 onSnooze: { controller.snooze(row.id, $0) },
                 onWake: { controller.wake(row.id) },
-                onDismiss: { controller.dismiss(row.id) }
+                onDismiss: { controller.dismiss(row.id) },
+                onShowMenu: { controller.rowMenus.presentRowMenu(for: row) }
             )
+            // Skips the body of every row whose inputs did not change — see `PRRowView`'s
+            // `Equatable` conformance. A hover change re-evaluates this whole list.
+            .equatable()
             // The hovered row lives on the controller, not in this view: it is the target
             // of the key monitor, which is an AppKit object outside the view tree.
             .onContinuousHover { phase in
