@@ -224,7 +224,7 @@ struct PRRowView: View {
         if !row.isDismissible {
             Button(action: onShowMenu) {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Tokens.textSecondary.color)
                     .frame(width: 18, height: 16)
                     .background(
