@@ -102,7 +102,91 @@ final class LinearProjectCacheTests: XCTestCase {
         store.save(cache)
         XCTAssertEqual(store.load().issue(for: "BIL-312")?.projectName, "Billing")
 
+        // A fresh store, as the next launch would be: a running one reads the file once and
+        // answers from memory after that.
         try Data("half a file".utf8).write(to: url)
-        XCTAssertEqual(store.load(), .empty, "a cache that cannot be read is an empty one, never a crash")
+        XCTAssertEqual(
+            FileLinearProjectCacheStore(url: url).load(),
+            .empty,
+            "a cache that cannot be read is an empty one, never a crash"
+        )
+    }
+
+    /// The leak this store was rewritten for: the app reads its cache on every poll, and
+    /// each read of the file stranded a buffer. After the first load the file is not read
+    /// again — proved here by removing it and getting the same cache back.
+    func testTheFileStoreReadsTheFileOnceAndAnswersFromMemoryAfterThat() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("linear-cache-tests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("linear-cache.json")
+
+        var cache = LinearProjectCache.empty
+        cache.record(billing, for: "BIL-312", at: now)
+        FileLinearProjectCacheStore(url: url).save(cache)
+
+        let store = FileLinearProjectCacheStore(url: url)
+        XCTAssertEqual(store.load(), cache, "the first load reads what the file holds")
+
+        try FileManager.default.removeItem(at: url)
+        XCTAssertEqual(store.load(), cache, "later loads answer from memory, not the file")
+
+        // An unchanged save writes nothing — the file stays gone.
+        store.save(cache)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+
+        // A changed one writes the file, and a fresh store reads it back.
+        cache.recordUnknown("UTF-8", at: now)
+        store.save(cache)
+        XCTAssertEqual(store.load(), cache)
+        XCTAssertEqual(FileLinearProjectCacheStore(url: url).load(), cache)
+    }
+
+    /// Skipping an unchanged save must not skip one whose last attempt failed: the file is
+    /// compared with what was actually written, not with what memory holds.
+    func testAFailedWriteIsRetriedByTheNextSaveOfTheSameCache() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("linear-cache-tests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // A plain file where the cache's directory should be, so neither creating the
+        // directory nor writing into it can succeed.
+        let blocker = directory.appendingPathComponent("blocked")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data().write(to: blocker)
+        let url = blocker.appendingPathComponent("linear-cache.json")
+
+        var cache = LinearProjectCache.empty
+        cache.record(billing, for: "BIL-312", at: now)
+        let store = FileLinearProjectCacheStore(url: url)
+        store.save(cache)
+        XCTAssertEqual(store.load(), cache, "memory holds the cache even though the write failed")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+
+        // The obstacle goes away; the same cache saved again has to reach the file.
+        try FileManager.default.removeItem(at: blocker)
+        store.save(cache)
+        XCTAssertEqual(FileLinearProjectCacheStore(url: url).load(), cache)
+    }
+
+    /// A poll whose identifiers are all fresh in memory never saves, so a pending write has
+    /// to be retried by the load that poll makes instead.
+    func testAFailedWriteIsRetriedByTheNextLoad() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("linear-cache-tests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let blocker = directory.appendingPathComponent("blocked")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data().write(to: blocker)
+        let url = blocker.appendingPathComponent("linear-cache.json")
+
+        var cache = LinearProjectCache.empty
+        cache.record(billing, for: "BIL-312", at: now)
+        let store = FileLinearProjectCacheStore(url: url)
+        store.save(cache)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+
+        try FileManager.default.removeItem(at: blocker)
+        XCTAssertEqual(store.load(), cache)
+        XCTAssertEqual(FileLinearProjectCacheStore(url: url).load(), cache, "the load wrote the pending cache")
     }
 }

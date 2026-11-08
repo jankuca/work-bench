@@ -981,6 +981,14 @@ struct GitHubPanelSource: PanelSource {
     /// uncached request per pair, which the persisted negatives keep to a handful.
     let etags: any ETagStore = InMemoryETagStore()
 
+    /// The Linear project cache, with the same lifetime as the transport.
+    ///
+    /// One store, read from disk once and answered from memory after that. Built per
+    /// resolution, it re-read `linear-cache.json` once or twice every poll, and each read
+    /// stranded a file-sized buffer on the cooperative thread it ran on — a month of polls
+    /// was 4.5 GB of `VM_ALLOCATE` (see ``FileLinearProjectCacheStore``).
+    let linearCache: any LinearProjectCacheStore = LinearPanelSource.makeCacheStore()
+
     /// The whole pipeline, built per call.
     ///
     /// Per call rather than held, for the same reason the scope and the tag patterns are
@@ -1069,6 +1077,7 @@ struct GitHubPanelSource: PanelSource {
         let resolution = await LinearPanelSource.resolve(
             fetched.pullRequests,
             over: transport,
+            cache: linearCache,
             now: plan.now,
             mode: .cacheOnly
         )
@@ -1118,6 +1127,7 @@ struct GitHubPanelSource: PanelSource {
             let resolution = await LinearPanelSource.resolve(
                 fetched.pullRequests,
                 over: transport,
+                cache: linearCache,
                 now: plan.now,
                 mode: willResolveLinear ? .fetch : .cacheOnly
             )
@@ -1181,6 +1191,7 @@ enum LinearPanelSource {
     static func resolve(
         _ pullRequests: [PullRequest],
         over transport: any HTTPTransport,
+        cache: any LinearProjectCacheStore,
         now: Date,
         mode: LinearResolutionMode
     ) async -> LinearResolution {
@@ -1193,9 +1204,15 @@ enum LinearPanelSource {
                     service: "Linear"
                 )
             ),
-            store: FileLinearProjectCacheStore(url: cacheURL)
+            store: cache
         )
         return await resolver.resolve(pullRequests: pullRequests, now: now, mode: mode)
+    }
+
+    /// The store the panel source holds for its life. Built here so the path stays this
+    /// type's business.
+    static func makeCacheStore() -> any LinearProjectCacheStore {
+        FileLinearProjectCacheStore(url: cacheURL)
     }
 
     /// `~/Library/Application Support/PRStackMonitor/linear-cache.json`.
