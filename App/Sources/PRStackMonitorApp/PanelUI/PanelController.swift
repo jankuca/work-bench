@@ -24,6 +24,10 @@ final class PanelController: ObservableObject {
     /// without owning the answer.
     @Published var hovered: PRID?
 
+    /// The row and snooze menus, built when one is opened rather than by every row's body —
+    /// see ``RowMenuPresenter`` for why that matters on a long list.
+    private(set) lazy var rowMenus = RowMenuPresenter(controller: self)
+
     /// What the `Settings` buttons and the reconnect banner call.
     ///
     /// A closure rather than a reference to the window controller, so the panel keeps

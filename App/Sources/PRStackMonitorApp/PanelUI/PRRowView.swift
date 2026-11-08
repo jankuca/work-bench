@@ -22,6 +22,8 @@ struct PRRowView: View {
     var onSnooze: (SnoozeOption) -> Void = { _ in }
     var onWake: () -> Void = {}
     var onDismiss: () -> Void = {}
+    /// The ⋯ button: opens the row menu, built on demand by ``RowMenuPresenter``.
+    var onShowMenu: () -> Void = {}
 
     var body: some View {
         HStack(spacing: Tokens.Row.gap) {
@@ -38,9 +40,10 @@ struct PRRowView: View {
         .padding(.horizontal, Tokens.Row.horizontalMargin)
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpen)
-        // Right-click reaches the same list the ⋯ button and the `S`/`R`/`X` keys do.
-        // Three paths, one builder — a case added to `RowAction` shows up in all of them.
-        .contextMenu { rowMenuItems }
+        // No `.contextMenu` here: right-click is ``HoverKeyMonitor``'s, which opens the same
+        // menu as the ⋯ button and the `S` key — three paths, one builder in
+        // ``RowMenuPresenter``. A SwiftUI context menu would rebuild that whole menu, with a
+        // submenu entry for every other pull request, on every render of every row.
         // One element per row, not one per control. A panel of 25 rows is 100+ views;
         // exposing each separately turns a glanceable list into a long walk by ear. The
         // named actions below are what keeps that from hiding anything — VoiceOver
@@ -78,75 +81,6 @@ struct PRRowView: View {
             }
         }
         .accessibilityAction(named: RowAction.dismiss.title, when: row.isDismissible, perform: onDismiss)
-    }
-
-    // MARK: - The row menu
-
-    /// Every action this row offers, in `RowAction`'s order. Shared verbatim by the ⋯
-    /// button and the right-click menu.
-    ///
-    /// `Open` is not here: the row itself is the affordance for it, and a menu entry for
-    /// "what clicking already does" is a line of noise on every row.
-    @ViewBuilder
-    private var rowMenuItems: some View {
-        if row.supports(.markRead) {
-            Button(RowAction.markRead.title, action: onMarkRead)
-        }
-        ForEach(Array(row.issues.enumerated()), id: \.offset) { item in
-            Button("Open \(item.element.identifier)") { onOpenIssue(item.element) }
-        }
-        if row.supports(.snooze) {
-            if row.isSnoozed {
-                Button("Wake now", action: onWake)
-            }
-            Menu(RowAction.snooze.title) { snoozeMenuItems }
-        }
-        if row.isDismissible {
-            Divider()
-            Button(RowAction.dismiss.title, action: onDismiss)
-        }
-    }
-
-    /// The snooze submenu: the times, the events, then another pull request merging or
-    /// being released. The same layout as the `S` key's menu in `HoverKeys`.
-    @ViewBuilder
-    private var snoozeMenuItems: some View {
-        ForEach(SnoozeOption.durations, id: \.self) { option in
-            Button(option.title) { onSnooze(option) }
-        }
-        Divider()
-        ForEach(SnoozeOption.events, id: \.self) { option in
-            Button(option.title) { onSnooze(option) }
-        }
-        if !row.mergeTargets.isEmpty || !row.releaseTargets.isEmpty {
-            Divider()
-        }
-        if !row.mergeTargets.isEmpty {
-            Menu("Until merged") {
-                targetItems(row.mergeTargets) { SnoozeOption.merged($0) }
-            }
-        }
-        if !row.releaseTargets.isEmpty {
-            Menu("Until released") {
-                targetItems(row.releaseTargets) { SnoozeOption.released($0) }
-            }
-        }
-    }
-
-    /// The row's own stack first, then a divider, then every other pull request in flight.
-    @ViewBuilder
-    private func targetItems(_ targets: [SnoozeTarget], option: @escaping (PRID) -> SnoozeOption) -> some View {
-        let stack = targets.filter(\.isStackMember)
-        let others = targets.filter { !$0.isStackMember }
-        ForEach(stack, id: \.id) { target in
-            Button(target.menuTitle) { onSnooze(option(target.id)) }
-        }
-        if !stack.isEmpty && !others.isEmpty {
-            Divider()
-        }
-        ForEach(others, id: \.id) { target in
-            Button(target.menuTitle) { onSnooze(option(target.id)) }
-        }
     }
 
     /// What the rotor offers: every plain option, and the targets in this row's own stack.
@@ -277,19 +211,20 @@ struct PRRowView: View {
     /// Done rows keep the ✕ instead: dismissal is the whole of what they offer, and it is
     /// already in the flow.
     ///
+    /// A plain button, not a SwiftUI `Menu`: the menu is built by ``RowMenuPresenter`` when
+    /// it is opened, because a `Menu` here would rebuild its contents — a submenu entry for
+    /// every other pull request — on every render of every row.
+    ///
     /// Mounted for every non-Done row and hidden by **opacity**, rather than added and
-    /// removed with the hover. Moving the pointer off the row and onto the open popup ends
-    /// the hover, and taking the anchor out of the tree at that moment can dismiss the menu
-    /// the pointer is travelling towards. `allowsHitTesting` is what keeps the invisible
-    /// state from being a click target the row's own tap gesture never sees.
+    /// removed with the hover, so the hover arriving changes nothing about the row's layout.
+    /// `allowsHitTesting` is what keeps the invisible state from being a click target the
+    /// row's own tap gesture never sees.
     @ViewBuilder
     private var menuButton: some View {
         if !row.isDismissible {
-            Menu {
-                rowMenuItems
-            } label: {
+            Button(action: onShowMenu) {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Tokens.textSecondary.color)
                     .frame(width: 18, height: 16)
                     .background(
@@ -303,8 +238,7 @@ struct PRRowView: View {
                             }
                     )
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
             .fixedSize()
             .opacity(isHovered ? 1 : 0)
             .allowsHitTesting(isHovered)
@@ -313,6 +247,21 @@ struct PRRowView: View {
             // twice by ear.
             .accessibilityHidden(true)
         }
+    }
+}
+
+/// Compared on what it draws, so a row whose inputs did not change is not re-rendered.
+///
+/// The hovered row is published on the controller, and the panel re-evaluates its body every
+/// time it changes — which, while a long list scrolls under a still pointer, is every row
+/// that passes beneath it. Without this each of those changes re-rendered every row in the
+/// list; with it, only the row that lost the hover and the row that gained it.
+///
+/// The closures are left out on purpose. Each one calls the controller with this row's id,
+/// so two rows with the same ``RowPresentation`` have closures that do the same thing.
+extension PRRowView: Equatable {
+    nonisolated static func == (lhs: PRRowView, rhs: PRRowView) -> Bool {
+        lhs.row == rhs.row && lhs.isHovered == rhs.isHovered && lhs.fieldColor == rhs.fieldColor
     }
 }
 

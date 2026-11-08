@@ -19,9 +19,8 @@ final class HoverKeyMonitor: NSObject {
     /// `(row, index)` for repeated `L` presses. Resets when the hovered row changes — which
     /// it does by itself, on the id — and when the panel closes.
     private var issues = IssueCycle()
-    /// Which row the open snooze menu is for. Held because `NSMenuItem`'s action carries
-    /// only the option.
-    private var snoozeTarget: PRID?
+    /// The right-click monitor, live alongside ``keyMonitor`` and owned the same way.
+    private var clickMonitor: Any?
     /// What `esc` calls. A closure rather than a reference to the popover, so this class goes
     /// on knowing nothing about windows beyond the one it scopes events to.
     private var onCancel: () -> Void = {}
@@ -58,13 +57,26 @@ final class HoverKeyMonitor: NSObject {
             let swallowed = MainActor.assumeIsolated { self?.handle(event) ?? false }
             return swallowed ? nil : event
         }
+        // The row's right-click menu. A SwiftUI `.contextMenu` per row would evaluate its
+        // contents — every other pull request, twice over — on every render of every row;
+        // see ``RowMenuPresenter``. The row under the pointer is already known, so one
+        // monitor can build the menu for it at the moment it is asked for.
+        clickMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.rightMouseDown, .leftMouseDown]
+        ) { [weak self] event in
+            let swallowed = MainActor.assumeIsolated { self?.handleClick(event) ?? false }
+            return swallowed ? nil : event
+        }
     }
 
     /// Stops monitoring. Safe to call twice, which matters: a popover close and a resign
     /// both fire for the same dismissal, and removing a token twice over-releases.
     func stop() {
         issues.reset()
-        snoozeTarget = nil
+        if let token = clickMonitor {
+            clickMonitor = nil
+            NSEvent.removeMonitor(token)
+        }
         window = nil
         onCancel = {}
         guard let token = keyMonitor else { return } // already stopped
@@ -107,6 +119,17 @@ final class HoverKeyMonitor: NSObject {
         return true
     }
 
+    /// A right-click, or a control-click, on a row opens that row's menu. Everything else
+    /// — and any click with no row under it — passes through.
+    private func handleClick(_ event: NSEvent) -> Bool {
+        guard event.window === window else { return false }
+        let isContextClick = event.type == .rightMouseDown
+            || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
+        guard isContextClick, let controller, let row = controller.hoveredRow else { return false }
+        controller.rowMenus.presentRowMenu(for: row)
+        return true
+    }
+
     private func perform(_ action: RowAction, on row: RowPresentation, controller: PanelController) {
         switch action {
         case .open:
@@ -120,90 +143,7 @@ final class HoverKeyMonitor: NSObject {
             // what makes a later press on a *different* row start at its primary.
             if let issue = issues.next(for: row) { controller.open(issue.url) }
         case .snooze:
-            presentSnoozeMenu(for: row)
+            controller.rowMenus.presentSnoozeMenu(for: row)
         }
-    }
-
-    // MARK: - The snooze menu
-
-    /// `S` opens the snooze menu inline — at the pointer, over the row it is about.
-    ///
-    /// An `NSMenu` rather than something in SwiftUI because it has to appear from a key
-    /// press with no view to anchor to. The layout is the row menu's: the times, the events,
-    /// then the `Until merged` and `Until released` submenus, each listing the row's own
-    /// stack before everything else.
-    private func presentSnoozeMenu(for row: RowPresentation) {
-        guard let window, let view = window.contentView else { return }
-        snoozeTarget = row.id
-
-        let menu = NSMenu(title: RowAction.snooze.title)
-        if row.isSnoozed {
-            menu.addItem(item(title: "Wake now", option: nil))
-            menu.addItem(.separator())
-        }
-        for option in SnoozeOption.durations {
-            menu.addItem(item(title: option.title, option: option))
-        }
-        menu.addItem(.separator())
-        for option in SnoozeOption.events {
-            menu.addItem(item(title: option.title, option: option))
-        }
-        if !row.mergeTargets.isEmpty || !row.releaseTargets.isEmpty {
-            menu.addItem(.separator())
-        }
-        if !row.mergeTargets.isEmpty {
-            menu.addItem(submenu(title: "Until merged", targets: row.mergeTargets) { .merged($0) })
-        }
-        if !row.releaseTargets.isEmpty {
-            menu.addItem(submenu(title: "Until released", targets: row.releaseTargets) { .released($0) })
-        }
-
-        // `mouseLocationOutsideOfEventStream` is in window coordinates and current as of
-        // right now, which is what makes the menu appear under the pointer that is already
-        // hovering the row rather than wherever the last mouse *event* was.
-        let location = view.convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        _ = menu.popUp(positioning: nil, at: location, in: view)
-    }
-
-    private func submenu(
-        title: String,
-        targets: [SnoozeTarget],
-        option: (PRID) -> SnoozeOption
-    ) -> NSMenuItem {
-        let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        let menu = NSMenu(title: title)
-        let stack = targets.filter(\.isStackMember)
-        let others = targets.filter { !$0.isStackMember }
-        for target in stack {
-            menu.addItem(item(title: target.menuTitle, option: option(target.id)))
-        }
-        if !stack.isEmpty && !others.isEmpty {
-            menu.addItem(.separator())
-        }
-        for target in others {
-            menu.addItem(item(title: target.menuTitle, option: option(target.id)))
-        }
-        parent.submenu = menu
-        return parent
-    }
-
-    private func item(title: String, option: SnoozeOption?) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: #selector(snoozePicked(_:)), keyEquivalent: "")
-        item.target = self
-        // `representedObject` is a strong `Any?`, which is how the enum survives the trip
-        // through the menu — `NSMenuItem` has no payload of its own. Assigned only when
-        // there is one, so `Wake now` carries a plain absence rather than a boxed `nil`.
-        if let option { item.representedObject = option }
-        return item
-    }
-
-    @objc private func snoozePicked(_ sender: NSMenuItem) {
-        guard let controller, let id = snoozeTarget else { return }
-        snoozeTarget = nil
-        guard let option = sender.representedObject as? SnoozeOption else {
-            controller.wake(id)
-            return
-        }
-        controller.snooze(id, option)
     }
 }
