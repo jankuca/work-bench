@@ -135,7 +135,7 @@ final class HoverKeyMonitor: NSObject {
         case .open:
             controller.open(row: row)
         case .markRead:
-            controller.markRead(row.id)
+            controller.markRead(row.memberIDs)
         case .dismiss:
             controller.dismiss(row.id)
         case .openIssue:

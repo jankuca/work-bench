@@ -48,7 +48,8 @@ final class GoldenPresentationTests: XCTestCase {
     }
 
     /// Every row reaches the view with exactly one status phrase — no row silently loses
-    /// its meta line, and none grows a second phrase.
+    /// its meta line, and none grows a second phrase. A collapsed row carries no number:
+    /// its phrase, `3 snoozed`, stands in for it.
     func testEveryRowCarriesOneNumberAndOnePhrase() throws {
         let names = Fixtures.allNames
         XCTAssertFalse(names.isEmpty, "No fixtures found in \(Fixtures.fixturesDirectory.path)")
@@ -59,7 +60,7 @@ final class GoldenPresentationTests: XCTestCase {
             for row in sections.flatMap(\.rows) {
                 let numbers = row.meta.filter { if case .number = $0 { return true } else { return false } }
                 let phrases = row.meta.filter { if case .phrase = $0 { return true } else { return false } }
-                XCTAssertEqual(numbers.count, 1, "\(name): \(row.id) has \(numbers.count) numbers")
+                XCTAssertEqual(numbers.count, row.isCollapsed ? 0 : 1, "\(name): \(row.id) has \(numbers.count) numbers")
                 XCTAssertEqual(phrases.count, 1, "\(name): \(row.id) has \(phrases.count) phrases")
             }
         }

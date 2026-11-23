@@ -79,6 +79,9 @@ public enum PanelPresentationReport {
             + " track=\(row.segments.map(\.rawValue).joined(separator: "|"))"
             + " reviewers=[\(reviewers)]+\(row.overflowReviewers)"
             + " dismissible=\(row.isDismissible)"
+            // Only on a collapsed row, so the goldens of every fixture without one are
+            // untouched by this field existing.
+            + (row.isCollapsed ? " members=[\(row.memberIDs.map(\.rawValue).joined(separator: ","))]" : "")
     }
 
     private static func render(_ token: MetaToken) -> String {

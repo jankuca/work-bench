@@ -175,6 +175,29 @@ public struct ReviewerBadge: Hashable, Sendable {
     }
 }
 
+// MARK: - Collapsed member
+
+/// One pull request folded into a collapsed row — what the row menu lists, so each layer
+/// can still be opened or woken on its own.
+public struct CollapsedMember: Hashable, Sendable {
+    public var id: PRID
+    public var title: String
+    public var url: URL
+    public var isUnread: Bool
+
+    public init(id: PRID, title: String, url: URL, isUnread: Bool) {
+        self.id = id
+        self.title = title
+        self.url = url
+        self.isUnread = isUnread
+    }
+
+    /// `#1402 Title`, truncated the way the snooze submenus truncate.
+    public var menuTitle: String {
+        SnoozeTarget.menuTitle(number: id.number, title: title)
+    }
+}
+
 // MARK: - Row
 
 /// One row of the panel, fully resolved.
@@ -215,6 +238,10 @@ public struct RowPresentation: Equatable, Sendable {
     public var issueURL: URL?
     /// Every linked issue, primary first — what `+N` opens and what repeated `L` cycles.
     public var issues: [IssueRef]
+    /// The pull requests this row stands for when it is a run of snoozed stack layers
+    /// folded into one, top-most first and the bottom-most — the row's own ``id`` — last.
+    /// Empty on an ordinary row. See ``collapsed(_:showsRepoName:now:)``.
+    public var collapsedMembers: [CollapsedMember]
 
     public init(
         id: PRID,
@@ -234,7 +261,8 @@ public struct RowPresentation: Equatable, Sendable {
         isSnoozed: Bool,
         snoozeTargets: [SnoozeTarget] = [],
         issueURL: URL?,
-        issues: [IssueRef]
+        issues: [IssueRef],
+        collapsedMembers: [CollapsedMember] = []
     ) {
         self.id = id
         self.title = title
@@ -254,6 +282,24 @@ public struct RowPresentation: Equatable, Sendable {
         self.snoozeTargets = snoozeTargets
         self.issueURL = issueURL
         self.issues = issues
+        self.collapsedMembers = collapsedMembers
+    }
+
+    /// Whether this row is several snoozed pull requests folded into one.
+    public var isCollapsed: Bool { !collapsedMembers.isEmpty }
+
+    /// Every pull request the row's actions apply to: the folded members of a collapsed
+    /// row, or the row's own pull request. `Mark read`, `Wake` and `Snooze` act on all of
+    /// them — a collapsed row that woke only the one it is named after would leave the rest
+    /// asleep behind a row that no longer says they are there. Opening is the exception:
+    /// it opens the bottom-most, and marks only that one read.
+    public var memberIDs: [PRID] {
+        isCollapsed ? collapsedMembers.map(\.id) : [id]
+    }
+
+    /// `Wake all` on a collapsed row, so the menu and the rotor say how far it reaches.
+    public var wakeTitle: String {
+        isCollapsed ? "Wake all" : "Wake now"
     }
 
     /// One sentence for VoiceOver. The row is a single accessibility element: reading it
@@ -305,6 +351,78 @@ public struct RowPresentation: Equatable, Sendable {
         )
     }
 
+    // MARK: Collapsed
+
+    /// Two or more adjacent snoozed layers of one stack run, as a single row.
+    ///
+    /// `rows` is the run segment in panel order — top-most first, bottom-most last — and
+    /// every one of them is suppressed. The row is the **bottom-most** one's: its title,
+    /// its link, its ticket and its snooze. That is the layer whose condition is the next
+    /// thing that happens to the whole segment — the ones above it are snoozed on each
+    /// other, `until #N is merged` one rung at a time, and only the bottom-most waits on a
+    /// pull request that is awake. When it is met, that layer wakes and leaves the row, and
+    /// the row shrinks by one.
+    ///
+    /// The number is the one thing of the bottom-most's the row does not show: the phrase
+    /// says `3 snoozed` in its place, and a number would read as though the row were one
+    /// pull request with a count beside it. The age is the newest of the members', because
+    /// the row stands for all of them — paired with the unread dot, which is lit by any of
+    /// them, it is how a change to a layer that has no row of its own still shows.
+    ///
+    /// No reviewers and no release track: a snoozed row already greys both out, and
+    /// three pull requests' worth of either would be noise on the row meant to remove it.
+    public static func collapsed(_ rows: [PanelRow], showsRepoName: Bool, now: Date) -> RowPresentation {
+        precondition(!rows.isEmpty, "A collapsed row needs at least one member")
+        let top = rows[0]
+        let bottom = rows[rows.count - 1]
+        let pullRequest = bottom.pullRequest
+        let newest = rows.map(\.pullRequest.updatedAt).max() ?? pullRequest.updatedAt
+
+        var meta: [MetaToken] = []
+        if showsRepoName {
+            meta.append(.repository(pullRequest.repo))
+        }
+        meta.append(.phrase("\(rows.count) snoozed", tone: .neutral))
+        if let snooze = bottom.snooze {
+            meta.append(.snooze(snoozeDetail(snooze, now: now)))
+        }
+        meta.append(.age(RelativeTime.short(since: newest, now: now)))
+        meta.append(contentsOf: issueTokens(for: bottom))
+
+        return RowPresentation(
+            id: bottom.id,
+            title: pullRequest.title,
+            emphasis: .dim,
+            url: pullRequest.url,
+            isUnread: rows.contains(where: \.isUnread),
+            isTinted: false,
+            chipTone: .neutral,
+            chipGlyph: .bar,
+            // The sleeve enters where the top-most member's did and leaves where the
+            // bottom-most's did. A segment that is the whole run draws none.
+            spine: SpineDraw(
+                drawsUp: SpineDraw(top.spine).drawsUp,
+                drawsDown: SpineDraw(bottom.spine).drawsDown
+            ),
+            meta: meta,
+            reviewers: [],
+            overflowReviewers: 0,
+            segments: [],
+            isDismissible: false,
+            isSnoozed: true,
+            issueURL: bottom.primaryIssue?.url,
+            issues: orderedIssues(of: pullRequest),
+            collapsedMembers: rows.map { row in
+                CollapsedMember(
+                    id: row.id,
+                    title: row.pullRequest.title,
+                    url: row.pullRequest.url,
+                    isUnread: row.isUnread
+                )
+            }
+        )
+    }
+
     // MARK: Meta line
 
     private static func metaTokens(
@@ -328,14 +446,18 @@ public struct RowPresentation: Equatable, Sendable {
             tokens.append(.snooze(snoozeDetail(snooze, now: now)))
         }
         tokens.append(.age(age(for: row, now: now)))
-        // The ticket trails the line, after the age. No placeholder when there is none:
-        // design 2a's Other-section row reads `#4051 · merge conflict · 2d`, and the
-        // section heading already says `Other` (IMPLEMENTATION_PLAN §5).
-        if let issue = row.primaryIssue {
-            tokens.append(.issue(identifier: issue.identifier, url: issue.url))
-            if row.additionalIssueCount > 0 {
-                tokens.append(.additionalIssues(count: row.additionalIssueCount))
-            }
+        tokens.append(contentsOf: issueTokens(for: row))
+        return tokens
+    }
+
+    /// The ticket trails the line, after the age. No placeholder when there is none:
+    /// design 2a's Other-section row reads `#4051 · merge conflict · 2d`, and the section
+    /// heading already says `Other` (IMPLEMENTATION_PLAN §5).
+    private static func issueTokens(for row: PanelRow) -> [MetaToken] {
+        guard let issue = row.primaryIssue else { return [] }
+        var tokens: [MetaToken] = [.issue(identifier: issue.identifier, url: issue.url)]
+        if row.additionalIssueCount > 0 {
+            tokens.append(.additionalIssues(count: row.additionalIssueCount))
         }
         return tokens
     }

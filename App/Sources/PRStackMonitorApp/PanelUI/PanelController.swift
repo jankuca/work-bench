@@ -622,7 +622,13 @@ final class PanelController: ObservableObject {
     /// rewrites the frozen copy the open panel derives from: leaving the dot on a row the
     /// user just marked read is the same failure as an action that visibly does nothing.
     func markRead(_ id: PRID) {
-        local.markRead(CollectionOfOne(id), in: snapshot)
+        markRead([id])
+    }
+
+    /// Every pull request a row stands for — all the layers of a collapsed one at once,
+    /// under one write and one rebuild.
+    func markRead(_ ids: [PRID]) {
+        local.markRead(ids, in: snapshot)
         persist()
         if digestsWhileOpen != nil { digestsWhileOpen = local.readDigests }
         rebuild()
@@ -642,7 +648,15 @@ final class PanelController: ObservableObject {
     /// the menu — so "until Monday" means the same thing whichever of the three paths asked
     /// for it, and "until any change" compares against the row the user was looking at.
     func snooze(_ id: PRID, _ option: SnoozeOption) {
-        local.snooze(id, option, in: snapshot, now: clock())
+        snooze([id], option)
+    }
+
+    /// Every layer of a collapsed row, with the one option, resolved against one clock read.
+    func snooze(_ ids: [PRID], _ option: SnoozeOption) {
+        let now = clock()
+        for id in ids {
+            local.snooze(id, option, in: snapshot, now: now)
+        }
         persist()
         rebuild()
         // The next release is measured from the newest one the repository has now, which
@@ -658,7 +672,14 @@ final class PanelController: ObservableObject {
     /// Ends a snooze early. The row resumes full derivation on the next rebuild, which is
     /// this one.
     func wake(_ id: PRID) {
-        local.wake(id)
+        wake([id])
+    }
+
+    /// `Wake all` on a collapsed row.
+    func wake(_ ids: [PRID]) {
+        for id in ids {
+            local.wake(id)
+        }
         persist()
         rebuild()
     }
@@ -698,9 +719,19 @@ final class PanelController: ObservableObject {
     /// The two belong together: the dot means "changed since you last looked", and having
     /// just looked is exactly what a click is. Opening the URL without this leaves a dot on
     /// the one row the user can be certain has been seen.
+    ///
+    /// A collapsed row opens its bottom-most layer — the one it is named after — and marks
+    /// only that one read: the others were not opened.
     func open(row: RowPresentation) {
         open(row.url)
         markRead(row.id)
+    }
+
+    /// One layer of a collapsed row, from the row menu or the rotor. The same pair as a
+    /// click on its own row would be.
+    func open(member: CollapsedMember) {
+        open(member.url)
+        markRead(member.id)
     }
 
     /// The row as the panel currently presents it, for the callers that hold only an id —

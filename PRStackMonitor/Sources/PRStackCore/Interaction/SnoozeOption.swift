@@ -121,8 +121,12 @@ public struct SnoozeTarget: Hashable, Sendable {
     /// title — truncated, because a menu as wide as the longest title in the account is
     /// a menu nobody can aim at.
     public var menuTitle: String {
+        Self.menuTitle(number: id.number, title: title)
+    }
+
+    static func menuTitle(number: Int, title: String) -> String {
         let limit = 48
         let trimmed = title.count > limit ? String(title.prefix(limit - 1)) + "…" : title
-        return "#\(id.number) \(trimmed)"
+        return "#\(number) \(trimmed)"
     }
 }

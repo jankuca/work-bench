@@ -17,9 +17,10 @@ import PRStackCore
 @MainActor
 final class RowMenuPresenter: NSObject {
     private weak var controller: PanelController?
-    /// Which row the open menu is for. Held because `NSMenuItem`'s action carries only its
-    /// represented object.
-    private var target: PRID?
+    /// The pull requests the open menu acts on: the row's own, or every layer of a
+    /// collapsed row. Held because `NSMenuItem`'s action carries only its represented
+    /// object.
+    private var targets: [PRID] = []
 
     init(controller: PanelController) {
         self.controller = controller
@@ -32,12 +33,18 @@ final class RowMenuPresenter: NSObject {
         case wake
         case snooze(SnoozeOption)
         case dismiss
+        /// One layer of a collapsed row, on its own.
+        case openMember(CollapsedMember)
+        case wakeMember(PRID)
     }
 
     /// The full row menu, at the pointer: everything the row offers, in `RowAction`'s order.
     ///
     /// `Open` is not in it: the row itself is the affordance for that, and a menu entry for
     /// "what clicking already does" is a line of noise on every row.
+    ///
+    /// A collapsed row ends with one submenu per layer folded into it, top-most first, so
+    /// each can still be opened or woken without waking the rest.
     func presentRowMenu(for row: RowPresentation) {
         let menu = NSMenu(title: row.title)
         if row.supports(.markRead) {
@@ -48,22 +55,28 @@ final class RowMenuPresenter: NSObject {
         }
         if row.supports(.snooze) {
             if row.isSnoozed {
-                menu.addItem(item("Wake now", .wake))
+                menu.addItem(item(row.wakeTitle, .wake))
             }
             let parent = NSMenuItem(title: RowAction.snooze.title, action: nil, keyEquivalent: "")
             parent.submenu = snoozeMenu(for: row, includesWake: false)
             menu.addItem(parent)
         }
+        if row.isCollapsed {
+            menu.addItem(.separator())
+            for member in row.collapsedMembers {
+                menu.addItem(memberItem(member))
+            }
+        }
         if row.isDismissible {
             if !menu.items.isEmpty { menu.addItem(.separator()) }
             menu.addItem(item(RowAction.dismiss.title, .dismiss))
         }
-        present(menu, for: row.id)
+        present(menu, for: row.memberIDs)
     }
 
     /// The snooze menu on its own, at the pointer — what `S` opens.
     func presentSnoozeMenu(for row: RowPresentation) {
-        present(snoozeMenu(for: row, includesWake: true), for: row.id)
+        present(snoozeMenu(for: row, includesWake: true), for: row.memberIDs)
     }
 
     // MARK: - Building
@@ -71,7 +84,7 @@ final class RowMenuPresenter: NSObject {
     private func snoozeMenu(for row: RowPresentation, includesWake: Bool) -> NSMenu {
         let menu = NSMenu(title: RowAction.snooze.title)
         if includesWake, row.isSnoozed {
-            menu.addItem(item("Wake now", .wake))
+            menu.addItem(item(row.wakeTitle, .wake))
             menu.addItem(.separator())
         }
         for option in SnoozeOption.durations {
@@ -118,6 +131,16 @@ final class RowMenuPresenter: NSObject {
         return parent
     }
 
+    /// `#1402 Title ▸ Open · Wake now`, for one layer of a collapsed row.
+    private func memberItem(_ member: CollapsedMember) -> NSMenuItem {
+        let parent = NSMenuItem(title: member.menuTitle, action: nil, keyEquivalent: "")
+        let menu = NSMenu(title: member.menuTitle)
+        menu.addItem(item(RowAction.open.title, .openMember(member)))
+        menu.addItem(item("Wake now", .wakeMember(member.id)))
+        parent.submenu = menu
+        return parent
+    }
+
     private func item(_ title: String, _ command: Command) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: #selector(picked(_:)), keyEquivalent: "")
         item.target = self
@@ -134,22 +157,26 @@ final class RowMenuPresenter: NSObject {
     /// In screen coordinates — `in: nil` — so no window or anchor view is needed: the `S`
     /// key has none, and the ⋯ button is a SwiftUI view with no `NSView` of its own.
     /// `popUp` runs the menu's tracking loop and returns once it closes.
-    private func present(_ menu: NSMenu, for id: PRID) {
-        target = id
+    private func present(_ menu: NSMenu, for ids: [PRID]) {
+        targets = ids
         _ = menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
     @objc private func picked(_ sender: NSMenuItem) {
-        guard let controller, let id = target,
+        guard let controller, !targets.isEmpty,
               let command = sender.representedObject as? Command
         else { return }
-        target = nil
+        let ids = targets
+        targets = []
         switch command {
-        case .markRead: controller.markRead(id)
+        case .markRead: controller.markRead(ids)
         case .openIssue(let url): controller.open(url)
-        case .wake: controller.wake(id)
-        case .snooze(let option): controller.snooze(id, option)
-        case .dismiss: controller.dismiss(id)
+        case .wake: controller.wake(ids)
+        case .snooze(let option): controller.snooze(ids, option)
+        // Only ever offered on a Done row, which is never collapsed: one id.
+        case .dismiss: for id in ids { controller.dismiss(id) }
+        case .openMember(let member): controller.open(member: member)
+        case .wakeMember(let id): controller.wake(id)
         }
     }
 }

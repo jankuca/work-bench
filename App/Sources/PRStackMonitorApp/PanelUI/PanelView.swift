@@ -4,9 +4,11 @@ import PRStackCore
 
 /// The panel: header, optional banner, scrolling body, footer.
 ///
-/// 440 pt wide, height to content up to 800 pt and then it scrolls. Nothing collapses —
-/// not stacks, not projects — which is what makes position stability hold: a row never
-/// moves because something above it folded (IMPLEMENTATION_PLAN §5).
+/// 440 pt wide, height to content up to 800 pt and then it scrolls. Nothing collapses on
+/// request — not stacks, not projects — which is what makes position stability hold: a row
+/// never moves because something above it folded (IMPLEMENTATION_PLAN §5). The one fold is
+/// adjacent snoozed stack layers, and that is decided by core from the snooze state alone,
+/// with no expanded or collapsed flag here.
 struct PanelView: View {
     @ObservedObject var controller: PanelController
 
@@ -125,9 +127,12 @@ struct PanelView: View {
                 fieldColor: Tokens.field.color,
                 onOpen: { controller.open(row: row) },
                 onOpenIssue: { controller.open($0.url) },
-                onMarkRead: { controller.markRead(row.id) },
-                onSnooze: { controller.snooze(row.id, $0) },
-                onWake: { controller.wake(row.id) },
+                // `memberIDs` rather than `id`: on a collapsed row these reach every layer
+                // folded into it, and on any other row it is the row's own id.
+                onMarkRead: { controller.markRead(row.memberIDs) },
+                onSnooze: { controller.snooze(row.memberIDs, $0) },
+                onWake: { controller.wake(row.memberIDs) },
+                onOpenMember: { controller.open(member: $0) },
                 onDismiss: { controller.dismiss(row.id) },
                 onShowMenu: { controller.rowMenus.presentRowMenu(for: row) }
             )

@@ -409,11 +409,21 @@ public struct PanelPresentation: Equatable, Sendable {
                 count: section.rows.count,
                 isMuted: section.kind == .done,
                 clearAllTitle: section.kind == .done ? "Clear all" : nil,
-                rows: section.rows.map { row in
-                    var presented = RowPresentation.make(row: row, showsRepoName: model.showsRepoNames, now: now)
-                    if presented.supports(.snooze) {
-                        presented.snoozeTargets = targets(row)
+                rows: collapsingSnoozedLayers(section.rows).map { segment in
+                    if segment.count == 1 {
+                        let row = segment[0]
+                        var presented = RowPresentation.make(row: row, showsRepoName: model.showsRepoNames, now: now)
+                        if presented.supports(.snooze) {
+                            presented.snoozeTargets = targets(row)
+                        }
+                        return presented
                     }
+                    // Snoozing a collapsed row snoozes every member, so none of them is a
+                    // target: a layer cannot wait on itself, and waiting on its neighbour in
+                    // the same row would be a snooze the row could never show.
+                    var presented = RowPresentation.collapsed(segment, showsRepoName: model.showsRepoNames, now: now)
+                    let members = Set(presented.memberIDs)
+                    presented.snoozeTargets = targets(segment[segment.count - 1]).filter { !members.contains($0.id) }
                     return presented
                 }
             )
@@ -435,6 +445,41 @@ public struct PanelPresentation: Equatable, Sendable {
             ),
             attentionCount: status.github.isConnected ? model.attentionCount : 0
         )
+    }
+
+    // MARK: Collapsing
+
+    /// A section's rows, in order, with every run of two or more adjacent snoozed layers of
+    /// one stack run grouped together. Every other row is a group of one.
+    ///
+    /// A layer above an open parent is snoozed on it automatically, so a stack of five is
+    /// four rows saying `snoozed` above the one that is not. They fold into a single row —
+    /// the count stays on the header and the section heading, which count pull requests,
+    /// not rows.
+    ///
+    /// Only within one run, and only while adjacent. An awake layer between two snoozed
+    /// ones splits them, because the row order is the stack's order and folding across the
+    /// awake one would draw it in the wrong place. Sibling runs of a forked stack are
+    /// separate runs and never fold into each other. A loose snoozed row has no run and
+    /// stays as it is.
+    ///
+    /// Nothing about this is state. Which rows fold is decided from the model on every
+    /// derivation, so there is no expanded or collapsed flag to keep, and waking a layer —
+    /// by hand or by its condition — is all it takes to bring it back out.
+    static func collapsingSnoozedLayers(_ rows: [PanelRow]) -> [[PanelRow]] {
+        var groups: [[PanelRow]] = []
+        for row in rows {
+            if row.isSuppressed,
+               let run = row.runBase,
+               let last = groups.last?.last,
+               last.isSuppressed,
+               last.runBase == run {
+                groups[groups.count - 1].append(row)
+            } else {
+                groups.append([row])
+            }
+        }
+        return groups
     }
 
     // MARK: Snooze targets

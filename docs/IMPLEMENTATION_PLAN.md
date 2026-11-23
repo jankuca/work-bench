@@ -170,6 +170,20 @@ A PR whose snooze is not met yet is **suppressed**:
 - The row renders lighter, with `snoozed` as its phrase and a grey chip in place of its own status, the
   condition beside it (`snoozed · until #4127 is merged`), and no failure anywhere on it: the checks segment
   is empty rather than red, and a changes-requested ring goes grey.
+- **Adjacent snoozed layers of one stack run fold into a single row** (`PanelPresentation.collapsingSnoozedLayers`).
+  Auto-snooze makes a stack of five read as four `snoozed` rows above the one that is not, and none of the
+  four is actionable. The folded row is the **bottom-most** layer's — its title, link, ticket and condition,
+  since that layer waits on the awake pull request below it and its condition is the next thing that happens
+  to the whole segment — with `N snoozed` in place of its number: `Third layer` over
+  `3 snoozed · until #1500 is merged · 1h · BIL-1501`. The age is the newest member's, and the unread dot is lit
+  if any member is unread, so a change to a layer with no row of its own still shows. No reviewers, no release
+  track. The sleeve enters where the top-most member's did and leaves where the bottom-most's did. Clicking opens
+  the bottom-most (and marks only it read); `Mark read`, `Snooze` and `Wake all` act on every member; the row menu
+  ends with one submenu per layer to open or wake it alone. Folding never crosses an awake layer, a sibling run of
+  a forked stack, or a loose row, and a single snoozed layer stays an ordinary row. It is presentation only: the
+  model, the events, the badges, the header and the section count all still count pull requests. Nothing about
+  it is state — which rows fold is re-decided on every derivation, so waking a layer is all it takes to bring it
+  back out.
 
 **Effective state, not raw status, is what gets diffed.** Each row carries
 `effective = (status, isSuppressed)`, and `previous` stores that pair. Diffing raw `RowStatus` alone would
@@ -1206,8 +1220,9 @@ message, not an empty list), and **first-run / disconnected** (`1e`: the connect
 banner over cached data).
 
 Dropped: *deploy in flight* has no data source (§3). *Heavy load with collapsed stacks* is out — **nothing
-collapses**. Stacks always render as full runs, projects always render expanded, and a long list simply
-scrolls. This removes the collapsed-stack summary row, the expand/collapse state, the auto-collapse
+collapses on request**. Stacks always render as full runs, projects always render expanded, and a long list simply
+scrolls. The one exception is adjacent snoozed stack layers, which fold into one row (§1 *Snooze semantics*) —
+not a user toggle and not a threshold, but a pure function of the snooze state. This removes the collapsed-stack summary row, the expand/collapse state, the auto-collapse
 threshold, and the per-member segment bar from `1d`/`1f-C`. The panel stays one uninterrupted scroll at every
 list length, which is what makes position stability (PRD §5.1) actually hold — a row never moves because
 something above it folded.
@@ -1307,7 +1322,8 @@ row affordances, the hover key monitor — and touches neither `GitHubKit` nor `
 2. **Keyboard** — no shortcut for opening the panel. Keyboard actions on the **hovered row** (mark read,
    dismiss, snooze, open), spec'd in §5.
 3. **Repository name in the row** — yes, shown when the list spans more than one repo.
-4. **Auto-collapse** — no collapsing at all, of stacks or projects. Scrolling is fine. Removed from §5 and M9.
+4. **Auto-collapse** — no collapsing of stacks or projects. Scrolling is fine. Removed from §5 and M9. Revisited
+   for one case: adjacent snoozed stack layers fold into a row named after the bottom-most (§1).
 5. **Repo scope** — switchable: all repos, or a selected subset. §3.
 6. **Trunk and tags** — trunk is each repo's default branch, read not configured. Releases are tags matching
    a glob, stored **per repository** with `v*` as the default.

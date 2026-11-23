@@ -1,0 +1,13 @@
+panel repoNames=false ready=0 attention=0 unread=1 open=3 draft=0 shipping=0
+section kind=project id=proj-billing name=Billing
+  row id=acme/billing#1701 status=blocked:acme/billing#1700 attention=false suppressed=true unread=false spine=top run=acme/billing#1700 group=acme/billing#1700 issue=BIL-1701 extra=0
+  row id=acme/billing#1700 status=inReview attention=false suppressed=true unread=false spine=base run=acme/billing#1700 group=acme/billing#1700 issue=BIL-1700 extra=0
+  row id=acme/billing#1603 status=blocked:acme/billing#1602 attention=false suppressed=false unread=false spine=top run=acme/billing#1600 group=acme/billing#1600 issue=BIL-1603 extra=0
+  row id=acme/billing#1602 status=blocked:acme/billing#1601 attention=false suppressed=true unread=false spine=middle run=acme/billing#1600 group=acme/billing#1600 issue=BIL-1602 extra=0
+  row id=acme/billing#1601 status=blocked:acme/billing#1600 attention=false suppressed=true unread=false spine=middle run=acme/billing#1600 group=acme/billing#1600 issue=BIL-1601 extra=0
+  row id=acme/billing#1600 status=inReview attention=false suppressed=false unread=false spine=base run=acme/billing#1600 group=acme/billing#1600 issue=BIL-1600 extra=0
+  row id=acme/billing#1503 status=blocked:acme/billing#1502 attention=false suppressed=true unread=false spine=top run=acme/billing#1500 group=acme/billing#1500 issue=BIL-1503 extra=0
+  row id=acme/billing#1502 status=checksFailing attention=false suppressed=true unread=true spine=middle run=acme/billing#1500 group=acme/billing#1500 issue=BIL-1502 extra=0
+  row id=acme/billing#1501 status=conflicted attention=false suppressed=true unread=false spine=middle run=acme/billing#1500 group=acme/billing#1500 issue=BIL-1501 extra=0
+  row id=acme/billing#1500 status=inReview attention=false suppressed=false unread=false spine=base run=acme/billing#1500 group=acme/billing#1500 issue=BIL-1500 extra=0
+  row id=acme/billing#1710 status=inReview attention=false suppressed=true unread=false spine=none run=- group=- issue=BIL-1710 extra=0
