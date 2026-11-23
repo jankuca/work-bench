@@ -23,6 +23,8 @@ struct PRRowView: View {
     var onWake: () -> Void = {}
     /// One layer of a collapsed row.
     var onOpenMember: (CollapsedMember) -> Void = { _ in }
+    /// Wakes one layer of a collapsed row, leaving the rest asleep.
+    var onWakeMember: (CollapsedMember) -> Void = { _ in }
     var onDismiss: () -> Void = {}
     /// The ⋯ button: opens the row menu, built on demand by ``RowMenuPresenter``.
     var onShowMenu: () -> Void = {}
@@ -73,9 +75,12 @@ struct PRRowView: View {
             if row.isSnoozed {
                 Button(row.wakeTitle, action: onWake)
             }
-            // A collapsed row's layers have no row of their own to be reached through.
+            // A collapsed row's layers have no row of their own to be reached through, and
+            // the ⋯ menu's per-layer `Open` and `Wake now` are hidden from VoiceOver, so both
+            // are here too.
             ForEach(row.collapsedMembers, id: \.id) { member in
                 Button("Open #\(member.id.number)") { onOpenMember(member) }
+                Button("Wake #\(member.id.number)") { onWakeMember(member) }
             }
             if row.supports(.snooze) {
                 // The option's own capitalisation, not a lowercased join: `Until Monday`

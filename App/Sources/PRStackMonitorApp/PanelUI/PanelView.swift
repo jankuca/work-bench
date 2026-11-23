@@ -133,6 +133,7 @@ struct PanelView: View {
                 onSnooze: { controller.snooze(row.memberIDs, $0) },
                 onWake: { controller.wake(row.memberIDs) },
                 onOpenMember: { controller.open(member: $0) },
+                onWakeMember: { controller.wake($0.id) },
                 onDismiss: { controller.dismiss(row.id) },
                 onShowMenu: { controller.rowMenus.presentRowMenu(for: row) }
             )
