@@ -1,0 +1,248 @@
+{
+  "comment": "Adjacent snoozed layers of one stack run fold into a single row named after the bottom-most layer: its title, link, ticket and condition, with `N snoozed` in place of its number, the newest member's age, and an unread dot if any member is unread. The top three layers of #1500 fold above their awake base. In #1600's stack the top layer was woken by hand, so the two snoozed layers under it fold in the middle of the run and the sleeve passes through them. #1700's whole run is snoozed and folds into one row with no sleeve. #1710 is snoozed alone and stays an ordinary row.",
+  "now": "2026-01-10T12:00:00Z",
+  "snapshot": {
+    "viewerLogin": "jankuca",
+    "pullRequests": [
+      {
+        "repo": "acme/billing",
+        "number": 1500,
+        "title": "Base of the long stack",
+        "headRef": "jk/n1500",
+        "baseRef": "main",
+        "state": "open",
+        "checks": "passing",
+        "updatedAt": "2026-01-10T06:00:00Z",
+        "linearIssues": [
+          {
+            "identifier": "BIL-1500",
+            "projectId": "proj-billing",
+            "projectName": "Billing"
+          }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1501,
+        "title": "Second layer",
+        "headRef": "jk/n1501",
+        "baseRef": "jk/n1500",
+        "state": "open",
+        "checks": "passing",
+        "updatedAt": "2026-01-10T07:00:00Z",
+        "linearIssues": [
+          {
+            "identifier": "BIL-1501",
+            "projectId": "proj-billing",
+            "projectName": "Billing"
+          }
+        ],
+        "mergeable": "conflicting"
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1502,
+        "title": "Third layer",
+        "headRef": "jk/n1502",
+        "baseRef": "jk/n1501",
+        "state": "open",
+        "checks": {
+          "state": "failing",
+          "failingCount": 1
+        },
+        "updatedAt": "2026-01-10T11:00:00Z",
+        "linearIssues": [
+          {
+            "identifier": "BIL-1502",
+            "projectId": "proj-billing",
+            "projectName": "Billing"
+          }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1503,
+        "title": "Top layer",
+        "headRef": "jk/n1503",
+        "baseRef": "jk/n1502",
+        "state": "open",
+        "checks": "passing",
+        "updatedAt": "2026-01-10T08:00:00Z",
+        "linearIssues": [
+          {
+            "identifier": "BIL-1503",
+            "projectId": "proj-billing",
+            "projectName": "Billing"
+          }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1600,
+        "title": "Base of the woken stack",
+        "headRef": "jk/n1600",
+        "baseRef": "main",
+        "state": "open",
+        "checks": "passing",
+        "updatedAt": "2026-01-09T10:00:00Z",
+        "linearIssues": [
+          {
+            "identifier": "BIL-1600",
+            "projectId": "proj-billing",
+            "projectName": "Billing"
+          }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1601,
+        "title": "Asleep on the base",
+        "headRef": "jk/n1601",
+        "baseRef": "jk/n1600",
+        "state": "open",
+        "checks": "passing",
+        "updatedAt": "2026-01-09T11:00:00Z",
+        "linearIssues": [
+          {
+            "identifier": "BIL-1601",
+            "projectId": "proj-billing",
+            "projectName": "Billing"
+          }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1602,
+        "title": "Asleep on the layer below",
+        "headRef": "jk/n1602",
+        "baseRef": "jk/n1601",
+        "state": "open",
+        "checks": "passing",
+        "updatedAt": "2026-01-09T12:00:00Z",
+        "linearIssues": [
+          {
+            "identifier": "BIL-1602",
+            "projectId": "proj-billing",
+            "projectName": "Billing"
+          }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1603,
+        "title": "Woken by hand",
+        "headRef": "jk/n1603",
+        "baseRef": "jk/n1602",
+        "state": "open",
+        "checks": "passing",
+        "updatedAt": "2026-01-09T09:00:00Z",
+        "linearIssues": [
+          {
+            "identifier": "BIL-1603",
+            "projectId": "proj-billing",
+            "projectName": "Billing"
+          }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1700,
+        "title": "Put aside for the week",
+        "headRef": "jk/n1700",
+        "baseRef": "main",
+        "state": "open",
+        "checks": "passing",
+        "updatedAt": "2026-01-08T12:00:00Z",
+        "linearIssues": [
+          {
+            "identifier": "BIL-1700",
+            "projectId": "proj-billing",
+            "projectName": "Billing"
+          }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1701,
+        "title": "Waits on the base put aside",
+        "headRef": "jk/n1701",
+        "baseRef": "jk/n1700",
+        "state": "open",
+        "checks": "passing",
+        "updatedAt": "2026-01-08T13:00:00Z",
+        "linearIssues": [
+          {
+            "identifier": "BIL-1701",
+            "projectId": "proj-billing",
+            "projectName": "Billing"
+          }
+        ]
+      },
+      {
+        "repo": "acme/billing",
+        "number": 1710,
+        "title": "Snoozed on its own",
+        "headRef": "jk/n1710",
+        "baseRef": "main",
+        "state": "open",
+        "checks": "passing",
+        "updatedAt": "2026-01-10T10:00:00Z",
+        "linearIssues": [
+          {
+            "identifier": "BIL-1710",
+            "projectId": "proj-billing",
+            "projectName": "Billing"
+          }
+        ]
+      }
+    ]
+  },
+  "local": {
+    "snoozes": {
+      "acme/billing#1501": {
+        "kind": "merged",
+        "pullRequest": "acme/billing#1500"
+      },
+      "acme/billing#1502": {
+        "kind": "merged",
+        "pullRequest": "acme/billing#1501"
+      },
+      "acme/billing#1503": {
+        "kind": "merged",
+        "pullRequest": "acme/billing#1502"
+      },
+      "acme/billing#1601": {
+        "kind": "merged",
+        "pullRequest": "acme/billing#1600"
+      },
+      "acme/billing#1602": {
+        "kind": "merged",
+        "pullRequest": "acme/billing#1601"
+      },
+      "acme/billing#1700": {
+        "kind": "until",
+        "until": "2026-01-17T12:00:00Z"
+      },
+      "acme/billing#1701": {
+        "kind": "merged",
+        "pullRequest": "acme/billing#1700"
+      },
+      "acme/billing#1710": {
+        "kind": "until",
+        "until": "2026-01-10T15:00:00Z"
+      }
+    }
+  },
+  "readAsOfSnapshot": [
+    "acme/billing#1500",
+    "acme/billing#1501",
+    "acme/billing#1503",
+    "acme/billing#1600",
+    "acme/billing#1601",
+    "acme/billing#1602",
+    "acme/billing#1603",
+    "acme/billing#1700",
+    "acme/billing#1701",
+    "acme/billing#1710"
+  ]
+}

@@ -1,0 +1,17 @@
+header title="Pull requests" summary="3 in review · 8 snoozed" refreshing=false attention=0
+section heading="Billing" count=11 muted=false clearAll=-
+  row id=acme/billing#1700 title="Put aside for the week" emphasis=dim chip=neutral/bar tint=false unread=false spine=none track= reviewers=[]+0 dismissible=false members=[acme/billing#1701,acme/billing#1700]
+    meta phrase(2 snoozed|neutral) snooze(wakes in 7d) age(1d) issue(BIL-1700)
+  row id=acme/billing#1603 title="Woken by hand" emphasis=dim chip=neutral/bar tint=false unread=false spine=down track=passing|empty|empty reviewers=[]+0 dismissible=false
+    meta num(#1603) phrase(waiting on #1602|neutral) age(1d) issue(BIL-1603)
+  row id=acme/billing#1601 title="Asleep on the base" emphasis=dim chip=neutral/bar tint=false unread=false spine=both track= reviewers=[]+0 dismissible=false members=[acme/billing#1602,acme/billing#1601]
+    meta phrase(2 snoozed|neutral) snooze(until #1600 is merged) age(1d) issue(BIL-1601)
+  row id=acme/billing#1600 title="Base of the woken stack" emphasis=normal chip=neutral/dot tint=false unread=false spine=up track=passing|empty|empty reviewers=[]+0 dismissible=false
+    meta num(#1600) phrase(in review|neutral) age(1d) issue(BIL-1600)
+  row id=acme/billing#1501 title="Second layer" emphasis=dim chip=neutral/bar tint=false unread=true spine=down track= reviewers=[]+0 dismissible=false members=[acme/billing#1503,acme/billing#1502,acme/billing#1501]
+    meta phrase(3 snoozed|neutral) snooze(until #1500 is merged) age(1h) issue(BIL-1501)
+  row id=acme/billing#1500 title="Base of the long stack" emphasis=normal chip=neutral/dot tint=false unread=false spine=up track=passing|empty|empty reviewers=[]+0 dismissible=false
+    meta num(#1500) phrase(in review|neutral) age(6h) issue(BIL-1500)
+  row id=acme/billing#1710 title="Snoozed on its own" emphasis=dim chip=neutral/bar tint=false unread=false spine=none track=passing|empty|empty reviewers=[]+0 dismissible=false
+    meta num(#1710) phrase(snoozed|neutral) snooze(wakes in 3h) age(2h) issue(BIL-1710)
+footer tone=success text="synced 34s ago" markAllRead=true
