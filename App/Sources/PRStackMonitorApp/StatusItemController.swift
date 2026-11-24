@@ -16,12 +16,16 @@ final class StatusItemController: NSObject {
     private let statusItem: NSStatusItem
     private let popover: NSPopover
     private let controller: PanelController
+    private let hosting: PanelHostingController<PanelView>
+    /// The room the screen has for the panel, measured here because this is where the icon is.
+    private let layout: PanelLayout
     private let events: EventBus
     /// The hovered-row key handler. One instance for the life of the process, started when
     /// the popover opens and stopped when it closes — never re-created, so there is one
     /// monitor to own rather than one per open.
     private let keys = HoverKeyMonitor()
-    /// The activation observers, held only because `addObserver(forName:)` hands them back.
+    /// The activation and screen-change observers, held only because
+    /// `addObserver(forName:)` hands them back.
     ///
     /// Never removed: this object is built in `applicationDidFinishLaunching` and held for
     /// the life of the process, exactly like the status item it owns, so there is no moment
@@ -54,8 +58,15 @@ final class StatusItemController: NSObject {
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         popover = NSPopover()
-        events = EventBus()
-        controller = PanelController(source: GitHubPanelSource(), events: events)
+        let events = EventBus()
+        self.events = events
+        // Through locals: the hosting controller is built from the panel controller and the
+        // layout, and phase one may write stored properties but not read them back.
+        let controller = PanelController(source: GitHubPanelSource(), events: events)
+        let layout = PanelLayout()
+        self.controller = controller
+        self.layout = layout
+        hosting = PanelHostingController(rootView: PanelView(controller: controller, layout: layout))
         super.init()
         // One sink today, and the list is what makes a `UserNotificationSink` a drop-in
         // later (IMPLEMENTATION_PLAN §1). Registered before anything can publish.
@@ -72,7 +83,7 @@ final class StatusItemController: NSObject {
         // the click that activates the app rather than swallowing it — both are
         // ``PanelHostingController``'s doing, and the second is what makes a panel left open
         // in the background clickable the first time.
-        popover.contentViewController = PanelHostingController(rootView: PanelView(controller: controller))
+        popover.contentViewController = hosting
         // Re-read on every open; see ``togglePopover(_:)``. Set here as well so the popover
         // is never briefly configured for a behaviour the user did not choose.
         dismissal = AppDefaults.panelDismissal()
@@ -117,6 +128,7 @@ final class StatusItemController: NSObject {
         // Activating on open is the standard arrangement, and it is what makes the
         // hovered-row keyboard actions work.
         NSApp.activate()
+        fitPanelToScreen()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         controller.panelDidOpen()
         // After `show`, because the popover has no window before it. Scoping the monitor to
@@ -133,6 +145,30 @@ final class StatusItemController: NSObject {
         )
         startOutsideClickMonitor()
     }
+
+    /// Tells the panel how tall it may be on the screen the icon is on, and settles its size
+    /// before AppKit places it.
+    ///
+    /// `preferredEdge: .minY` is a preference, not a promise: a popover too tall to fit below
+    /// its status item is put beside it instead and clamped against the top of the screen —
+    /// arrow at a corner, header under the menu bar. Measured per open because the answer
+    /// moves: which display was clicked, whether the Dock is showing, the resolution.
+    private func fitPanelToScreen() {
+        guard let button = statusItem.button,
+              let window = button.window,
+              let screen = window.screen
+        else { return }
+        let icon = window.convertToScreen(button.convert(button.bounds, to: nil))
+        // `visibleFrame` is the screen less the menu bar and the Dock — the room a popover
+        // can actually use. The overhead is the arrow and the gap AppKit leaves around the
+        // popover's frame; not published anywhere, and generous rather than exact, because
+        // a few points short is a scroll and a few points over is the bug.
+        layout.update(availableHeight: icon.minY - screen.visibleFrame.minY - Self.popoverOverhead)
+        hosting.layoutNow()
+    }
+
+    /// The popover's arrow plus its margin to the screen edge, in points.
+    private static let popoverOverhead: CGFloat = 24
 
     /// Closes an autoclosing panel on a click in another app, which is `.transient`'s own
     /// job and is done here as well because it has not proved reliable on a status item:
@@ -200,6 +236,20 @@ final class StatusItemController: NSObject {
             }
             activationTokens.append(token)
         }
+        // A display unplugged, the resolution changed, the Dock moved — any of which can take
+        // room from a panel that is already open. Kept with the observers above for the same
+        // reason they are kept: held for the life of the process.
+        let screens = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.popover.isShown else { return }
+                self.fitPanelToScreen()
+            }
+        }
+        activationTokens.append(screens)
     }
 
     private func applicationActivationChanged(isActive: Bool) {

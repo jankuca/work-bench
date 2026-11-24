@@ -56,6 +56,17 @@ final class PanelHostingController<Content: View>: NSViewController {
         updatePreferredContentSize()
     }
 
+    /// Brings the panel's size up to date now rather than on the next layout pass.
+    ///
+    /// For the moment just before the popover is shown, which is when AppKit decides where it
+    /// goes: a size change still waiting for a pass would be measured after that decision, and
+    /// a popover that grows past the screen once shown is moved off its edge just the same.
+    func layoutNow() {
+        hosting.needsLayout = true
+        hosting.layoutSubtreeIfNeeded()
+        updatePreferredContentSize()
+    }
+
     private func updatePreferredContentSize() {
         let size = contentSize
         // Zero is what an unmeasured hosting view answers, and writing it would collapse the
@@ -87,4 +98,27 @@ final class PanelHostingController<Content: View>: NSViewController {
 /// a hosted tree that is the hosting view for everything the user can aim at.
 final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+/// How much room the screen has for the panel below its menu bar icon.
+///
+/// Its own object rather than a property on ``PanelController``: it is a fact about where the
+/// panel is on screen, not about pull requests, and nothing but the view's height reads it.
+/// Written by ``StatusItemController``, which owns the status item and so is the one place
+/// that knows where the icon is.
+@MainActor
+final class PanelLayout: ObservableObject {
+    /// The tallest the whole panel may be, from the bottom of the menu bar icon to the bottom
+    /// of the usable screen (Dock excluded), with the popover's arrow already taken off.
+    /// Unbounded until the icon has been placed on a screen, which leaves the 800 pt cap the
+    /// only one.
+    @Published private(set) var availableHeight: CGFloat = .infinity
+
+    /// Rounded and compared first: this is re-measured on every open, and publishing a value
+    /// that has not changed re-renders the whole panel for nothing.
+    func update(availableHeight height: CGFloat) {
+        let height = height.rounded(.down)
+        guard height != availableHeight else { return }
+        availableHeight = height
+    }
 }
