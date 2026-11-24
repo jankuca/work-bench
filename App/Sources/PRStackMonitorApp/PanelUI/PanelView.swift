@@ -4,15 +4,20 @@ import PRStackCore
 
 /// The panel: header, optional banner, scrolling body, footer.
 ///
-/// 440 pt wide, height to content up to 800 pt and then it scrolls. Nothing collapses on
+/// 440 pt wide, height to content up to 800 pt — or less, when the screen has less room below
+/// the menu bar than that (see ``PanelLayout``) — and then it scrolls. Nothing collapses on
 /// request — not stacks, not projects — which is what makes position stability hold: a row
 /// never moves because something above it folded (IMPLEMENTATION_PLAN §5). The one fold is
 /// adjacent snoozed stack layers, and that is decided by core from the snooze state alone,
 /// with no expanded or collapsed flag here.
 struct PanelView: View {
     @ObservedObject var controller: PanelController
+    @ObservedObject var layout: PanelLayout
 
     @State private var contentHeight: CGFloat = Tokens.Panel.minBodyHeight
+    /// Header, banner and footer together: everything that is not the scrolling body, and so
+    /// what has to come off the screen's room before the body gets the rest.
+    @State private var chromeHeight: CGFloat = 0
     /// Whether the sync-step card is showing. Owned here rather than in the footer so the card
     /// can float over the rows as a panel-wide overlay instead of being clipped inside the
     /// footer's own row.
@@ -29,9 +34,11 @@ struct PanelView: View {
                 onOpenSettings: { controller.openSettings() },
                 onQuit: { controller.quit() }
             )
+            .measuringChromeHeight()
 
             if let banner = controller.panel.banner {
                 PanelBannerView(banner: banner, onReconnect: { controller.openSettings() })
+                    .measuringChromeHeight()
             }
 
             content(for: controller.panel.body)
@@ -43,7 +50,9 @@ struct PanelView: View {
                 onToggleProgress: { showingProgress.toggle() },
                 isProgressShown: showingProgress
             )
+            .measuringChromeHeight()
         }
+        .onPreferenceChange(ChromeHeightKey.self) { chromeHeight = $0 }
         .frame(width: Tokens.Panel.width)
         .background(Tokens.field.color)
         // The step card, floated over the panel: a dim scrim to catch the click that
@@ -91,7 +100,7 @@ struct PanelView: View {
             }
             // Height to content, capped. `.frame(maxHeight:)` on its own would stretch a
             // three-row panel to the full 800.
-            .frame(height: min(max(contentHeight, Tokens.Panel.minBodyHeight), Tokens.Panel.maxHeight))
+            .frame(height: min(max(contentHeight, Tokens.Panel.minBodyHeight), maxBodyHeight))
             .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
 
         case .allClear(let message):
@@ -106,6 +115,22 @@ struct PanelView: View {
             )
             .frame(minHeight: Tokens.Panel.minBodyHeight)
         }
+    }
+
+    /// The tallest the scrolling body may be: 800 pt, or whatever the screen has room for once
+    /// the header, banner and footer are taken off — whichever is less.
+    ///
+    /// The second half is the one that matters. A popover that does not fit below its status
+    /// item is not shortened by AppKit, it is *moved* — to a side edge, clamped against the
+    /// top of the screen — which is a panel beside the icon with its arrow drawn at a corner
+    /// and its header under the menu bar. On a laptop screen with the Dock showing, 800 pt of
+    /// rows plus the chrome is already more than there is.
+    ///
+    /// Never below ``Tokens/Panel/minBodyHeight``: on a screen that small the panel will not
+    /// fit whatever this answers, and a body with no rows in it is no answer at all.
+    private var maxBodyHeight: CGFloat {
+        let room = layout.availableHeight - chromeHeight
+        return max(Tokens.Panel.minBodyHeight, min(Tokens.Panel.maxHeight, room))
     }
 
     @ViewBuilder
@@ -166,5 +191,27 @@ private struct ContentHeightKey: PreferenceKey {
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
+    }
+}
+
+/// The summed height of the panel's fixed parts — header, banner, footer — each reporting its
+/// own through ``SwiftUI/View/measuringChromeHeight()``.
+private struct ChromeHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value += nextValue()
+    }
+}
+
+private extension View {
+    /// Reports this view's height as part of the panel's chrome. A background rather than a
+    /// wrapper, so it measures without taking part in the layout it measures.
+    func measuringChromeHeight() -> some View {
+        background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: ChromeHeightKey.self, value: proxy.size.height)
+            }
+        )
     }
 }
